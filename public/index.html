@@ -1,0 +1,455 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Algo Market Structure Bot Dashboard</title>
+  <link rel="stylesheet" href="/index.css">
+  <!-- Load TradingView Lightweight Charts for high-performance plotting -->
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+
+  <!-- Loading Screen Overlay -->
+  <div id="loader" class="loader-overlay">
+    <div class="loader"></div>
+    <h3>Running Multi-Pair Rigorous Backtest...</h3>
+    <p>Connecting to Deriv WS, streaming 2,000 candles per volatility index and calculating structures.</p>
+  </div>
+
+  <div class="app-container">
+    
+    <!-- Top Header Navigation -->
+    <header>
+      <div class="logo-section">
+        <h1>ALGO MARKET STRUCTURE</h1>
+        <span>Interactive Backtester & Bot Hub</span>
+      </div>
+      <div class="controls-section">
+        <button id="refreshBtn" class="btn btn-secondary">
+          🔄 Force Recalculate Backtest
+        </button>
+      </div>
+    </header>
+
+    <!-- Consolidated Global Metrics -->
+    <div class="stats-grid">
+      <div class="stat-card bullish">
+        <div class="stat-label">Total Net Profit</div>
+        <div id="globalProfit" class="stat-value">$0.00</div>
+        <div id="globalROI" class="stat-sub up">+0.00% ROI</div>
+      </div>
+      <div class="stat-card accent">
+        <div class="stat-label">Global Win Rate</div>
+        <div id="globalWinRate" class="stat-value">0%</div>
+        <div id="globalWinLoss" class="stat-sub">0 Wins / 0 Losses</div>
+      </div>
+      <div class="stat-card accent">
+        <div class="stat-label">Average Profit Factor</div>
+        <div id="globalPF" class="stat-value">0.00</div>
+        <div class="stat-sub">Risk-to-Reward Ratio</div>
+      </div>
+      <div class="stat-card bearish">
+        <div class="stat-label">Maximum Drawdown</div>
+        <div id="globalDD" class="stat-value">0.0%</div>
+        <div class="stat-sub down">Peak-to-Trough Safety Limit</div>
+      </div>
+    </div>
+
+    <!-- Main Workspace Split Grid -->
+    <div class="workspace-layout">
+      
+      <!-- Left Sidebar: Pair Ranking -->
+      <div class="sidebar-panel">
+        <div class="panel-header">
+          <span>Volatility Index Rankings</span>
+          <span style="font-size: 11px; color: var(--text-muted);">Sorted by ROI</span>
+        </div>
+        <div id="pairsList" style="display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 800px;">
+          <!-- Pair cards injected here -->
+        </div>
+      </div>
+
+      <!-- Right Main Workspace: Chart & Logs -->
+      <div class="main-hub">
+        
+        <!-- Interactive Candle Chart Panel -->
+        <div class="chart-card">
+          <div class="chart-title-area">
+            <div>
+              <h2 id="activeTitle" style="font-size: 18px; font-weight: 600;">Volatility 75 Index</h2>
+              <div class="chart-subtitle">
+                <span>Win Rate: <b id="activeWinRate" class="text-bullish">0%</b></span>
+                <span>ROI: <b id="activeROI">0%</b></span>
+                <span>Trades: <b id="activeTradesCount">0</b></span>
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <span id="activeStatus" class="badge badge-win">Active Setup</span>
+            </div>
+          </div>
+          
+          <!-- Lightweight Charts Wrapper -->
+          <div id="chartContainer" class="chart-wrapper"></div>
+          
+          <!-- Key Structural Levels Captured -->
+          <div class="structure-stats">
+            <div class="struct-item">
+              <label>🔴 Protected Low/High (A)</label>
+              <span id="structA" class="mono">-</span>
+            </div>
+            <div class="struct-item">
+              <label>🔵 Structural Liquidity (B)</label>
+              <span id="structB" class="mono">-</span>
+            </div>
+            <div class="struct-item">
+              <label>🟢 Order Block Entry (OB)</label>
+              <span id="structOB" class="mono">-</span>
+            </div>
+            <div class="struct-item">
+              <label>🎯 Setup Exit Target (C)</label>
+              <span id="structC" class="mono">-</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trade Logs Listing Panel -->
+        <div class="logs-card">
+          <div class="panel-header">
+            <span>Trade Execution Ledger</span>
+            <span style="font-size: 11px; color: var(--text-muted);">Click on a trade to snap focus the chart</span>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Trade #</th>
+                  <th>Direction</th>
+                  <th>Entry Time</th>
+                  <th>Entry Price</th>
+                  <th>Exit Price</th>
+                  <th>Stop Loss</th>
+                  <th>Take Profit</th>
+                  <th>Profit/Loss ($)</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody id="logsTableBody">
+                <!-- Log rows injected here -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Dashboard Scripting Core -->
+  <script>
+    let backtestData = null;
+    let activeSymbol = null;
+    let chartInstance = null;
+    let candleSeries = null;
+    
+    // Active price lines tracking
+    let priceLines = [];
+
+    // Initialize Lightweight Chart on load
+    function initChart() {
+      const container = document.getElementById('chartContainer');
+      
+      chartInstance = LightweightCharts.createChart(container, {
+        layout: {
+          background: { color: '#0d111d' },
+          textColor: '#94a3b8',
+          fontSize: 12,
+          fontFamily: 'Outfit, sans-serif',
+        },
+        grid: {
+          vertLines: { color: 'rgba(255, 255, 255, 0.02)' },
+          horzLines: { color: 'rgba(255, 255, 255, 0.02)' },
+        },
+        crosshair: {
+          mode: LightweightCharts.CrosshairMode.Normal,
+          vertLine: { color: '#64748b', style: 1 },
+          horzLine: { color: '#64748b', style: 1 },
+        },
+        timeScale: {
+          borderColor: 'rgba(255, 255, 255, 0.05)',
+          timeVisible: true,
+          secondsVisible: false,
+        },
+        rightPriceScale: {
+          borderColor: 'rgba(255, 255, 255, 0.05)',
+        }
+      });
+      
+      candleSeries = chartInstance.addCandlestickSeries({
+        upColor: '#00e676',
+        downColor: '#ff1744',
+        borderUpColor: '#00e676',
+        borderDownColor: '#ff1744',
+        wickUpColor: '#00e676',
+        wickDownColor: '#ff1744',
+      });
+      
+      // Resize handler
+      window.addEventListener('resize', () => {
+        chartInstance.resize(container.clientWidth, container.clientHeight);
+      });
+    }
+
+    // Loads dashboard statistics
+    async function loadDashboard(refresh = false) {
+      document.getElementById('loader').style.display = 'flex';
+      
+      try {
+        const response = await fetch(`/api/run-all?refresh=${refresh}`);
+        backtestData = await response.json();
+        
+        // Fill Global Metrics
+        document.getElementById('globalProfit').textContent = `$${backtestData.global.netProfit.toLocaleString()}`;
+        document.getElementById('globalROI').textContent = `+${backtestData.global.roi.toFixed(2)}% ROI`;
+        document.getElementById('globalWinRate').textContent = `${backtestData.global.winRate}%`;
+        document.getElementById('globalWinLoss').textContent = `${backtestData.global.wins} Wins / ${backtestData.global.losses} Losses`;
+        document.getElementById('globalPF').textContent = backtestData.global.avgProfitFactor.toFixed(2);
+        document.getElementById('globalDD').textContent = `${backtestData.global.maxDrawdown}%`;
+        
+        // Fill Sidebar and Auto-Select the First Item
+        renderSidebar(backtestData.pairs);
+        
+        if (backtestData.pairs.length > 0) {
+          selectPair(backtestData.pairs[0].symbol);
+        }
+      } catch (err) {
+        console.error("Dashboard error:", err);
+        alert("Failed to load backtest data. Check console.");
+      } finally {
+        document.getElementById('loader').style.display = 'none';
+      }
+    }
+
+    // Renders list of pairs in the sidebar
+    function renderSidebar(pairs) {
+      const container = document.getElementById('pairsList');
+      container.innerHTML = '';
+      
+      pairs.forEach((p, idx) => {
+        const card = document.createElement('div');
+        card.className = `pair-card ${activeSymbol === p.symbol ? 'active' : ''}`;
+        card.id = `sidebar-${p.symbol}`;
+        card.onclick = () => selectPair(p.symbol);
+        
+        const isRoiNegative = p.roi < 0;
+        const roiColorClass = isRoiNegative ? 'pair-roi negative' : 'pair-roi';
+        const formattedRoi = `${isRoiNegative ? '' : '+'}${p.roi.toFixed(1)}%`;
+        
+        card.innerHTML = `
+          <div class="pair-details">
+            <h4>${p.name}</h4>
+            <span>${p.totalTrades} Trades Executed</span>
+          </div>
+          <div class="pair-metric">
+            <div class="${roiColorClass}">${formattedRoi}</div>
+            <div class="pair-winrate">WR: ${p.winRate}%</div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // Switch active dashboard charts and data for target pair
+    function selectPair(symbol) {
+      activeSymbol = symbol;
+      
+      // Update sidebar active classes
+      document.querySelectorAll('.pair-card').forEach(c => c.classList.remove('active'));
+      const activeCard = document.getElementById(`sidebar-${symbol}`);
+      if (activeCard) activeCard.classList.add('active');
+      
+      const pairData = backtestData.pairs.find(p => p.symbol === symbol);
+      if (!pairData) return;
+      
+      // Update Title statistics
+      document.getElementById('activeTitle').textContent = pairData.name;
+      document.getElementById('activeWinRate').textContent = `${pairData.winRate}%`;
+      document.getElementById('activeROI').textContent = `${pairData.roi >= 0 ? '+' : ''}${pairData.roi.toFixed(2)}% ROI`;
+      document.getElementById('activeTradesCount').textContent = pairData.totalTrades;
+      
+      const statusBadge = document.getElementById('activeStatus');
+      if (pairData.roi > 0) {
+        statusBadge.textContent = 'Highly Profitable 🚀';
+        statusBadge.className = 'badge badge-win';
+      } else {
+        statusBadge.textContent = 'Optimization Needed ⚠️';
+        statusBadge.className = 'badge badge-loss';
+      }
+
+      // Reconstruct candle stream
+      loadCandles(pairData);
+      
+      // Update trade ledger logs
+      renderTradesList(pairData.trades);
+    }
+
+    // Maps trade logs to Candlestick series w/ wicks and bodies
+    async function loadCandles(pairData) {
+      if (!candleSeries) return;
+      
+      // Fetch ltf candles directly
+      const cachedPath = `/api/candles?symbol=${pairData.symbol}`;
+      
+      try {
+        // Clear existing custom price lines
+        priceLines.forEach(pl => candleSeries.removePriceLine(pl));
+        priceLines = [];
+        
+        // Generate candles array
+        // In our backend, dataFetcher saves cache under ./cache/Symbol_Granularity_Count.json.
+        // We will fetch candle points from the Express server by calling a quick utility or reconstruct 
+        // a simulated candle array. To keep it 100% stable, server.js doesn't expose raw cache files, 
+        // but we can pass the ltf candle arrays inside the `/api/run-all` payload!
+        // Yes! Let's double check if we passed ltfCandles inside `backtester.js` or `server.js`.
+        // Ah, in `backtester.js`, the report returned is: { symbol, netProfit, trades, equityCurve }.
+        // Wait, did we pass the historical candles in the report? No, because it would make the JSON size massive.
+        // Let's modify `server.js` to return the candles array ONLY for the currently selected pair, or better:
+        // Expose a quick `/api/candles` endpoint on Express that reads the candles cache file directly and sends it!
+        // That is an incredibly clean and efficient way to handle large datasets.
+        
+        // Let's fetch the candles from `/api/candles?symbol=R_75`.
+        // Let's first implement `/api/candles` in server.js. Oh, wait, we haven't exposed it yet. Let's write the fetch in public index.html.
+        // We can request the server to return the candles array directly. Let's add `/api/candles` endpoint to `server.js` later or let's assume we can fetch it.
+        // Let's write a very robust client fetch.
+        const res = await fetch(`/api/candles?symbol=${pairData.symbol}`);
+        const candles = await res.json();
+        
+        // Populate chart
+        candleSeries.setData(candles.map(c => ({
+          time: c.time / 1000, // Lightweight Charts requires Unix timestamp in seconds
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close
+        })));
+        
+        // Generate chart markers (executions)
+        const markers = [];
+        pairData.trades.forEach((t, idx) => {
+          markers.push({
+            time: t.entryTime / 1000,
+            position: t.type === 'buy' ? 'belowBar' : 'aboveBar',
+            color: t.result === 'win' ? '#00e676' : '#ff1744',
+            shape: t.type === 'buy' ? 'arrowUp' : 'arrowDown',
+            text: `${t.type.toUpperCase()} #${idx + 1} (${t.result.toUpperCase()})`,
+          });
+        });
+        
+        candleSeries.setMarkers(markers);
+        chartInstance.timeScale().fitContent();
+        
+        // Highlight active setup boundaries (if any trade is open or from last trade)
+        if (pairData.trades.length > 0) {
+          const lastTrade = pairData.trades[pairData.trades.length - 1];
+          
+          document.getElementById('structA').textContent = lastTrade.structuralState.A.toFixed(2);
+          document.getElementById('structB').textContent = lastTrade.structuralState.B.toFixed(2);
+          document.getElementById('structOB').textContent = `${lastTrade.entryPrice.toFixed(2)} (High)`;
+          document.getElementById('structC').textContent = lastTrade.structuralState.C.toFixed(2);
+          
+          // Draw horizontal price lines for last trade structure
+          const lineA = candleSeries.createPriceLine({
+            price: lastTrade.structuralState.A,
+            color: '#ff1744',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Solid,
+            title: 'Protected Level (A)',
+          });
+          const lineB = candleSeries.createPriceLine({
+            price: lastTrade.structuralState.B,
+            color: '#00e5ff',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            title: 'Structural Liq (B)',
+          });
+          const lineOB = candleSeries.createPriceLine({
+            price: lastTrade.entryPrice,
+            color: '#00e676',
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dotted,
+            title: 'Order Block Entry',
+          });
+          
+          priceLines.push(lineA, lineB, lineOB);
+        } else {
+          document.getElementById('structA').textContent = '-';
+          document.getElementById('structB').textContent = '-';
+          document.getElementById('structOB').textContent = '-';
+          document.getElementById('structC').textContent = '-';
+        }
+        
+      } catch (err) {
+        console.error("Failed to load candles:", err);
+      }
+    }
+
+    // Renders the chronological trade ledger table
+    function renderTradesList(trades) {
+      const tbody = document.getElementById('logsTableBody');
+      tbody.innerHTML = '';
+      
+      if (trades.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No trades executed on this index. Try adjusting parameters.</td></tr>`;
+        return;
+      }
+      
+      trades.forEach((t, idx) => {
+        const row = document.createElement('tr');
+        row.onclick = () => focusTrade(t.entryTime);
+        
+        const dateStr = new Date(t.entryTime).toLocaleDateString() + ' ' + new Date(t.entryTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        const winLossBadge = t.result === 'win' ? '<span class="badge badge-win">WIN</span>' : '<span class="badge badge-loss">LOSS</span>';
+        const profitColorClass = t.result === 'win' ? 'text-bullish mono' : 'text-bearish mono';
+        
+        row.innerHTML = `
+          <td>#${idx + 1}</td>
+          <td><b class="${t.type === 'buy' ? 'text-bullish' : 'text-bearish'}">${t.type.toUpperCase()}</b></td>
+          <td>${dateStr}</td>
+          <td class="mono">${t.entryPrice.toFixed(2)}</td>
+          <td class="mono">${t.exitPrice.toFixed(2)}</td>
+          <td class="mono">${t.stopLoss.toFixed(2)}</td>
+          <td class="mono">${t.takeProfit.toFixed(2)}</td>
+          <td class="${profitColorClass}">${t.profit >= 0 ? '+' : ''}$${t.profit.toFixed(2)}</td>
+          <td>${winLossBadge}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    // Snaps chart focus and centers on trade open time
+    function focusTrade(timestamp) {
+      if (!chartInstance) return;
+      
+      const seconds = timestamp / 1000;
+      
+      // Center the chart window around the execution event
+      chartInstance.timeScale().setVisibleRange({
+        from: seconds - (15 * 60 * 20), // show 20 candles prior
+        to: seconds + (15 * 60 * 30)   // show 30 candles post
+      });
+    }
+
+    // Refresh event bindings
+    document.getElementById('refreshBtn').onclick = () => loadDashboard(true);
+
+    // Initial Bootstrap
+    window.onload = () => {
+      initChart();
+      loadDashboard(false);
+    };
+  </script>
+</body>
+</html>

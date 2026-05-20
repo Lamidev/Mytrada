@@ -1,0 +1,1326 @@
+{
+  "global": {
+    "totalTrades": 39,
+    "wins": 12,
+    "losses": 27,
+    "winRate": 30.77,
+    "netProfit": 855.34,
+    "roi": 0.86,
+    "maxDrawdown": 4.96,
+    "avgProfitFactor": 1.62,
+    "startingBalance": 100000,
+    "pairsCount": 10
+  },
+  "pairs": [
+    {
+      "symbol": "1HZ50V",
+      "startingBalance": 10000,
+      "finalBalance": 10397.8809,
+      "netProfit": 397.8809000000001,
+      "roi": 3.9788090000000014,
+      "totalTrades": 4,
+      "wins": 2,
+      "losses": 2,
+      "winRate": 50,
+      "profitFactor": 3,
+      "maxDrawdown": 1.99,
+      "trades": [
+        {
+          "symbol": "1HZ50V",
+          "type": "sell",
+          "entryTime": 1778074200000,
+          "entryIndex": 645,
+          "entryPrice": 320800.2,
+          "stopLoss": 321536.836,
+          "takeProfit": 316780.82,
+          "riskAmount": 100,
+          "positionUnits": 0.13575225756004347,
+          "initialBalance": 10000,
+          "structuralState": {
+            "A": 321449.38,
+            "B": 321416.8,
+            "C": 316780.82
+          },
+          "exitTime": 1778075100000,
+          "exitIndex": 646,
+          "result": "loss",
+          "exitPrice": 321536.836,
+          "profit": -100,
+          "finalBalance": 9900,
+          "holdTime": 1
+        },
+        {
+          "symbol": "1HZ50V",
+          "type": "sell",
+          "entryTime": 1778103900000,
+          "entryIndex": 678,
+          "entryPrice": 321235.12,
+          "stopLoss": 321536.836,
+          "takeProfit": 316780.82,
+          "riskAmount": 99,
+          "positionUnits": 0.3281231356639857,
+          "initialBalance": 9900,
+          "structuralState": {
+            "A": 321449.38,
+            "B": 321416.8,
+            "C": 316780.82
+          },
+          "exitTime": 1778106600000,
+          "exitIndex": 681,
+          "result": "loss",
+          "exitPrice": 321536.836,
+          "profit": -99,
+          "finalBalance": 9801,
+          "holdTime": 3
+        },
+        {
+          "symbol": "1HZ50V",
+          "type": "sell",
+          "entryTime": 1778925600000,
+          "entryIndex": 1591,
+          "entryPrice": 324249.89,
+          "stopLoss": 325507.484,
+          "takeProfit": 321398.09,
+          "riskAmount": 98.01,
+          "positionUnits": 0.07793453213040245,
+          "initialBalance": 9801,
+          "structuralState": {
+            "A": 325415.2,
+            "B": 323976.55,
+            "C": 321398.09
+          },
+          "exitTime": 1778938200000,
+          "exitIndex": 1605,
+          "result": "win",
+          "exitPrice": 321398.09,
+          "profit": 294.03000000000003,
+          "finalBalance": 10095.03,
+          "holdTime": 14
+        },
+        {
+          "symbol": "1HZ50V",
+          "type": "sell",
+          "entryTime": 1778944500000,
+          "entryIndex": 1612,
+          "entryPrice": 324249.89,
+          "stopLoss": 325507.484,
+          "takeProfit": 321398.09,
+          "riskAmount": 100.95030000000001,
+          "positionUnits": 0.08027256809431453,
+          "initialBalance": 10095.03,
+          "structuralState": {
+            "A": 325415.2,
+            "B": 323976.55,
+            "C": 321398.09
+          },
+          "exitTime": 1778946300000,
+          "exitIndex": 1614,
+          "result": "win",
+          "exitPrice": 321398.09,
+          "profit": 302.8509,
+          "finalBalance": 10397.8809,
+          "holdTime": 2
+        }
+      ],
+      "equityCurve": [
+        {
+          "time": 1777493700000,
+          "balance": 10000
+        },
+        {
+          "time": 1778075100000,
+          "balance": 9900
+        },
+        {
+          "time": 1778106600000,
+          "balance": 9801
+        },
+        {
+          "time": 1778938200000,
+          "balance": 10095.03
+        },
+        {
+          "time": 1778946300000,
+          "balance": 10397.8809
+        }
+      ],
+      "name": "Volatility 50 (1s) Index"
+    },
+    {
+      "symbol": "1HZ25V",
+      "startingBalance": 10000,
+      "finalBalance": 10300,
+      "netProfit": 300,
+      "roi": 3,
+      "totalTrades": 1,
+      "wins": 1,
+      "losses": 0,
+      "winRate": 100,
+      "profitFactor": null,
+      "maxDrawdown": 0,
+      "trades": [
+        {
+          "symbol": "1HZ25V",
+          "type": "sell",
+          "entryTime": 1778517000000,
+          "entryIndex": 1137,
+          "entryPrice": 794177.5,
+          "stopLoss": 796792.271,
+          "takeProfit": 787149.14,
+          "riskAmount": 100,
+          "positionUnits": 0.03824426689756079,
+          "initialBalance": 10000,
+          "structuralState": {
+            "A": 796602,
+            "B": 792729.33,
+            "C": 787149.14
+          },
+          "exitTime": 1778530500000,
+          "exitIndex": 1152,
+          "result": "win",
+          "exitPrice": 787149.14,
+          "profit": 300,
+          "finalBalance": 10300,
+          "holdTime": 15
+        }
+      ],
+      "equityCurve": [
+        {
+          "time": 1777493700000,
+          "balance": 10000
+        },
+        {
+          "time": 1778530500000,
+          "balance": 10300
+        }
+      ],
+      "name": "Volatility 25 (1s) Index"
+    },
+    {
+      "symbol": "R_75",
+      "startingBalance": 10000,
+      "finalBalance": 10197,
+      "netProfit": 197,
+      "roi": 1.97,
+      "totalTrades": 2,
+      "wins": 1,
+      "losses": 1,
+      "winRate": 50,
+      "profitFactor": 2.97,
+      "maxDrawdown": 1,
+      "trades": [
+        {
+          "symbol": "R_75",
+          "type": "buy",
+          "entryTime": 1777658400000,
+          "entryIndex": 183,
+          "entryPrice": 35948.6927,
+          "stopLoss": 35506.7651,
+          "takeProfit": 36460.1854,
+          "riskAmount": 100,
+          "positionUnits": 0.2262814089909736,
+          "initialBalance": 10000,
+          "structuralState": {
+            "A": 35531.1035,
+            "B": 35659.5117,
+            "C": 36460.1854
+          },
+          "exitTime": 1777660200000,
+          "exitIndex": 185,
+          "result": "loss",
+          "exitPrice": 35506.7651,
+          "profit": -100,
+          "finalBalance": 9900,
+          "holdTime": 2
+        },
+        {
+          "symbol": "R_75",
+          "type": "buy",
+          "entryTime": 1777677300000,
+          "entryIndex": 204,
+          "entryPrice": 35796.0934,
+          "stopLoss": 35506.7651,
+          "takeProfit": 36460.1854,
+          "riskAmount": 99,
+          "positionUnits": 0.3421718511462572,
+          "initialBalance": 9900,
+          "structuralState": {
+            "A": 35531.1035,
+            "B": 35659.5117,
+            "C": 36460.1854
+          },
+          "exitTime": 1777683600000,
+          "exitIndex": 211,
+          "result": "win",
+          "exitPrice": 36460.1854,
+          "profit": 297,
+          "finalBalance": 10197,
+          "holdTime": 7
+        }
+      ],
+      "equityCurve": [
+        {
+          "time": 1777493700000,
+          "balance": 10000
+        },
+        {
+          "time": 1777660200000,
+          "balance": 9900
+        },
+        {
+          "time": 1777683600000,
+          "balance": 10197
+        }
+      ],
+      "name": "Volatility 75 Index"
+    },
+    {
+      "symbol": "R_25",
+      "startingBalance": 10000,
+      "finalBalance": 10190.96307009,
+      "netProfit": 190.96307008999975,
+      "roi": 1.9096307008999975,
+      "totalTrades": 6,
+      "wins": 2,
+      "losses": 4,
+      "winRate": 33.33,
+      "profitFactor": 1.48,
+      "maxDrawdown": 2.97,
+      "trades": [
+        {
+          "symbol": "R_25",
+          "type": "sell",
+          "entryTime": 1778585400000,
+          "entryIndex": 1213,
+          "entryPrice": 2877.736,
+          "stopLoss": 2881.2402,
+          "takeProfit": 2863.934,
+          "riskAmount": 100,
+          "positionUnits": 28.537183950685222,
+          "initialBalance": 10000,
+          "structuralState": {
+            "A": 2880.636,
+            "B": 2878.277,
+            "C": 2863.934
+          },
+          "exitTime": 1778590800000,
+          "exitIndex": 1219,
+          "result": "loss",
+          "exitPrice": 2881.2402,
+          "profit": -100,
+          "finalBalance": 9900,
+          "holdTime": 6
+        },
+        {
+          "symbol": "R_25",
+          "type": "sell",
+          "entryTime": 1778713200000,
+          "entryIndex": 1355,
+          "entryPrice": 2879.554,
+          "stopLoss": 2881.2402,
+          "takeProfit": 2863.934,
+          "riskAmount": 99,
+          "positionUnits": 58.71189657217067,
+          "initialBalance": 9900,
+          "structuralState": {
+            "A": 2880.636,
+            "B": 2878.277,
+            "C": 2863.934
+          },
+          "exitTime": 1778720400000,
+          "exitIndex": 1363,
+          "result": "loss",
+          "exitPrice": 2881.2402,
+          "profit": -99,
+          "finalBalance": 9801,
+          "holdTime": 8
+        },
+        {
+          "symbol": "R_25",
+          "type": "sell",
+          "entryTime": 1778730300000,
+          "entryIndex": 1374,
+          "entryPrice": 2876.145,
+          "stopLoss": 2881.2402,
+          "takeProfit": 2863.934,
+          "riskAmount": 98.01,
+          "positionUnits": 19.235751295336016,
+          "initialBalance": 9801,
+          "structuralState": {
+            "A": 2880.636,
+            "B": 2878.277,
+            "C": 2863.934
+          },
+          "exitTime": 1778731200000,
+          "exitIndex": 1375,
+          "result": "loss",
+          "exitPrice": 2881.2402,
+          "profit": -98.01,
+          "finalBalance": 9702.99,
+          "holdTime": 1
+        },
+        {
+          "symbol": "R_25",
+          "type": "sell",
+          "entryTime": 1778740200000,
+          "entryIndex": 1385,
+          "entryPrice": 2877.603,
+          "stopLoss": 2881.2402,
+          "takeProfit": 2863.934,
+          "riskAmount": 97.0299,
+          "positionUnits": 26.677086770042003,
+          "initialBalance": 9702.99,
+          "structuralState": {
+            "A": 2880.636,
+            "B": 2878.277,
+            "C": 2863.934
+          },
+          "exitTime": 1778743800000,
+          "exitIndex": 1389,
+          "result": "win",
+          "exitPrice": 2863.934,
+          "profit": 291.0897,
+          "finalBalance": 9994.0797,
+          "holdTime": 4
+        },
+        {
+          "symbol": "R_25",
+          "type": "sell",
+          "entryTime": 1778940000000,
+          "entryIndex": 1607,
+          "entryPrice": 2805.974,
+          "stopLoss": 2813.388,
+          "takeProfit": 2791.344,
+          "riskAmount": 99.940797,
+          "positionUnits": 13.480010385757113,
+          "initialBalance": 9994.0797,
+          "structuralState": {
+            "A": 2812.725,
+            "B": 2805.094,
+            "C": 2791.344
+          },
+          "exitTime": 1778962500000,
+          "exitIndex": 1632,
+          "result": "win",
+          "exitPrice": 2791.344,
+          "profit": 299.82239100000004,
+          "finalBalance": 10293.902091,
+          "holdTime": 25
+        },
+        {
+          "symbol": "R_25",
+          "type": "sell",
+          "entryTime": 1778986800000,
+          "entryIndex": 1659,
+          "entryPrice": 2805.974,
+          "stopLoss": 2813.388,
+          "takeProfit": 2791.344,
+          "riskAmount": 102.93902091,
+          "positionUnits": 13.884410697329827,
+          "initialBalance": 10293.902091,
+          "structuralState": {
+            "A": 2812.725,
+            "B": 2805.094,
+            "C": 2791.344
+          },
+          "exitTime": 1778990400000,
+          "exitIndex": 1663,
+          "result": "loss",
+          "exitPrice": 2813.388,
+          "profit": -102.93902091,
+          "finalBalance": 10190.96307009,
+          "holdTime": 4
+        }
+      ],
+      "equityCurve": [
+        {
+          "time": 1777493700000,
+          "balance": 10000
+        },
+        {
+          "time": 1778590800000,
+          "balance": 9900
+        },
+        {
+          "time": 1778720400000,
+          "balance": 9801
+        },
+        {
+          "time": 1778731200000,
+          "balance": 9702.99
+        },
+        {
+          "time": 1778743800000,
+          "balance": 9994.0797
+        },
+        {
+          "time": 1778962500000,
+          "balance": 10293.902091
+        },
+        {
+          "time": 1778990400000,
+          "balance": 10190.96307009
+        }
+      ],
+      "name": "Volatility 25 Index"
+    },
+    {
+      "symbol": "1HZ75V",
+      "startingBalance": 10000,
+      "finalBalance": 10095.03,
+      "netProfit": 95.03000000000065,
+      "roi": 0.9503000000000065,
+      "totalTrades": 3,
+      "wins": 1,
+      "losses": 2,
+      "winRate": 33.33,
+      "profitFactor": 1.46,
+      "maxDrawdown": 1.99,
+      "trades": [
+        {
+          "symbol": "1HZ75V",
+          "type": "sell",
+          "entryTime": 1778288400000,
+          "entryIndex": 883,
+          "entryPrice": 3593.31,
+          "stopLoss": 3616.201,
+          "takeProfit": 3495.17,
+          "riskAmount": 100,
+          "positionUnits": 4.368529116246545,
+          "initialBalance": 10000,
+          "structuralState": {
+            "A": 3614.12,
+            "B": 3564.04,
+            "C": 3495.17
+          },
+          "exitTime": 1778298300000,
+          "exitIndex": 894,
+          "result": "win",
+          "exitPrice": 3495.17,
+          "profit": 300,
+          "finalBalance": 10300,
+          "holdTime": 11
+        },
+        {
+          "symbol": "1HZ75V",
+          "type": "sell",
+          "entryTime": 1778321700000,
+          "entryIndex": 920,
+          "entryPrice": 3593.31,
+          "stopLoss": 3616.201,
+          "takeProfit": 3495.17,
+          "riskAmount": 103,
+          "positionUnits": 4.4995849897339415,
+          "initialBalance": 10300,
+          "structuralState": {
+            "A": 3614.12,
+            "B": 3564.04,
+            "C": 3495.17
+          },
+          "exitTime": 1778323500000,
+          "exitIndex": 922,
+          "result": "loss",
+          "exitPrice": 3616.201,
+          "profit": -103,
+          "finalBalance": 10197,
+          "holdTime": 2
+        },
+        {
+          "symbol": "1HZ75V",
+          "type": "sell",
+          "entryTime": 1778359500000,
+          "entryIndex": 962,
+          "entryPrice": 3594.87,
+          "stopLoss": 3616.201,
+          "takeProfit": 3495.17,
+          "riskAmount": 101.97,
+          "positionUnits": 4.780366602597129,
+          "initialBalance": 10197,
+          "structuralState": {
+            "A": 3614.12,
+            "B": 3564.04,
+            "C": 3495.17
+          },
+          "exitTime": 1778363100000,
+          "exitIndex": 966,
+          "result": "loss",
+          "exitPrice": 3616.201,
+          "profit": -101.97,
+          "finalBalance": 10095.03,
+          "holdTime": 4
+        }
+      ],
+      "equityCurve": [
+        {
+          "time": 1777493700000,
+          "balance": 10000
+        },
+        {
+          "time": 1778298300000,
+          "balance": 10300
+        },
+        {
+          "time": 1778323500000,
+          "balance": 10197
+        },
+        {
+          "time": 1778363100000,
+          "balance": 10095.03
+        }
+      ],
+      "name": "Volatility 75 (1s) Index"
+    },
+    {
+      "symbol": "R_100",
+      "startingBalance": 10000,
+      "finalBalance": 10089.053439389101,
+      "netProfit": 89.05343938910119,
+      "roi": 0.890534393891012,
+      "totalTrades": 7,
+      "wins": 2,
+      "losses": 5,
+      "winRate": 28.57,
+      "profitFactor": 1.18,
+      "maxDrawdown": 3.94,
+      "trades": [
+        {
+          "symbol": "R_100",
+          "type": "sell",
+          "entryTime": 1778912100000,
+          "entryIndex": 1576,
+          "entryPrice": 407.19,
+          "stopLoss": 408.438,
+          "takeProfit": 396.61,
+          "riskAmount": 100,
+          "positionUnits": 80.12820512820574,
+          "initialBalance": 10000,
+          "structuralState": {
+            "A": 408.05,
+            "B": 406.98,
+            "C": 396.61
+          },
+          "exitTime": 1778915700000,
+          "exitIndex": 1580,
+          "result": "win",
+          "exitPrice": 396.61,
+          "profit": 300,
+          "finalBalance": 10300,
+          "holdTime": 4
+        },
+        {
+          "symbol": "R_100",
+          "type": "sell",
+          "entryTime": 1778966100000,
+          "entryIndex": 1636,
+          "entryPrice": 406.64,
+          "stopLoss": 408.438,
+          "takeProfit": 396.61,
+          "riskAmount": 103,
+          "positionUnits": 57.28587319243598,
+          "initialBalance": 10300,
+          "structuralState": {
+            "A": 408.05,
+            "B": 406.98,
+            "C": 396.61
+          },
+          "exitTime": 1778967900000,
+          "exitIndex": 1638,
+          "result": "loss",
+          "exitPrice": 408.438,
+          "profit": -103,
+          "finalBalance": 10197,
+          "holdTime": 2
+        },
+        {
+          "symbol": "R_100",
+          "type": "sell",
+          "entryTime": 1778994900000,
+          "entryIndex": 1668,
+          "entryPrice": 406.58,
+          "stopLoss": 408.438,
+          "takeProfit": 396.61,
+          "riskAmount": 101.97,
+          "positionUnits": 54.88159311087178,
+          "initialBalance": 10197,
+          "structuralState": {
+            "A": 408.05,
+            "B": 406.98,
+            "C": 396.61
+          },
+          "exitTime": 1779000300000,
+          "exitIndex": 1674,
+          "result": "loss",
+          "exitPrice": 408.438,
+          "profit": -101.97,
+          "finalBalance": 10095.03,
+          "holdTime": 6
+        },
+        {
+          "symbol": "R_100",
+          "type": "sell",
+          "entryTime": 1779004800000,
+          "entryIndex": 1679,
+          "entryPrice": 406.3,
+          "stopLoss": 408.438,
+          "takeProfit": 396.61,
+          "riskAmount": 100.95030000000001,
+          "positionUnits": 47.21716557530454,
+          "initialBalance": 10095.03,
+          "structuralState": {
+            "A": 408.05,
+            "B": 406.98,
+            "C": 396.61
+          },
+          "exitTime": 1779005700000,
+          "exitIndex": 1680,
+          "result": "loss",
+          "exitPrice": 408.438,
+          "profit": -100.95030000000001,
+          "finalBalance": 9994.0797,
+          "holdTime": 1
+        },
+        {
+          "symbol": "R_100",
+          "type": "sell",
+          "entryTime": 1779027300000,
+          "entryIndex": 1704,
+          "entryPrice": 404.7,
+          "stopLoss": 408.438,
+          "takeProfit": 396.61,
+          "riskAmount": 99.940797,
+          "positionUnits": 26.73643579454254,
+          "initialBalance": 9994.0797,
+          "structuralState": {
+            "A": 408.05,
+            "B": 406.98,
+            "C": 396.61
+          },
+          "exitTime": 1779028200000,
+          "exitIndex": 1705,
+          "result": "loss",
+          "exitPrice": 408.438,
+          "profit": -99.940797,
+          "finalBalance": 9894.138903000001,
+          "holdTime": 1
+        },
+        {
+          "symbol": "R_100",
+          "type": "sell",
+          "entryTime": 1779190200000,
+          "entryIndex": 1885,
+          "entryPrice": 407.33,
+          "stopLoss": 408.438,
+          "takeProfit": 396.61,
+          "riskAmount": 98.94138903000001,
+          "positionUnits": 89.29728251805022,
+          "initialBalance": 9894.138903000001,
+          "structuralState": {
+            "A": 408.05,
+            "B": 406.98,
+            "C": 396.61
+          },
+          "exitTime": 1779219000000,
+          "exitIndex": 1917,
+          "result": "win",
+          "exitPrice": 396.61,
+          "profit": 296.82416709000006,
+          "finalBalance": 10190.963070090002,
+          "holdTime": 32
+        },
+        {
+          "symbol": "R_100",
+          "type": "sell",
+          "entryTime": 1779247800000,
+          "entryIndex": 1949,
+          "entryPrice": 405.55,
+          "stopLoss": 408.438,
+          "takeProfit": 396.61,
+          "riskAmount": 101.90963070090002,
+          "positionUnits": 35.28726824823436,
+          "initialBalance": 10190.963070090002,
+          "structuralState": {
+            "A": 408.05,
+            "B": 406.98,
+            "C": 396.61
+          },
+          "exitTime": 1779251400000,
+          "exitIndex": 1953,
+          "result": "loss",
+          "exitPrice": 408.438,
+          "profit": -101.90963070090002,
+          "finalBalance": 10089.053439389101,
+          "holdTime": 4
+        }
+      ],
+      "equityCurve": [
+        {
+          "time": 1777493700000,
+          "balance": 10000
+        },
+        {
+          "time": 1778915700000,
+          "balance": 10300
+        },
+        {
+          "time": 1778967900000,
+          "balance": 10197
+        },
+        {
+          "time": 1779000300000,
+          "balance": 10095.03
+        },
+        {
+          "time": 1779005700000,
+          "balance": 9994.0797
+        },
+        {
+          "time": 1779028200000,
+          "balance": 9894.138903000001
+        },
+        {
+          "time": 1779219000000,
+          "balance": 10190.963070090002
+        },
+        {
+          "time": 1779251400000,
+          "balance": 10089.053439389101
+        }
+      ],
+      "name": "Volatility 100 Index"
+    },
+    {
+      "symbol": "R_10",
+      "startingBalance": 10000,
+      "finalBalance": 10000,
+      "netProfit": 0,
+      "roi": 0,
+      "totalTrades": 0,
+      "wins": 0,
+      "losses": 0,
+      "winRate": 0,
+      "profitFactor": 1,
+      "maxDrawdown": 0,
+      "trades": [],
+      "equityCurve": [
+        {
+          "time": 1777493700000,
+          "balance": 10000
+        }
+      ],
+      "name": "Volatility 10 Index"
+    },
+    {
+      "symbol": "1HZ100V",
+      "startingBalance": 10000,
+      "finalBalance": 10000,
+      "netProfit": 0,
+      "roi": 0,
+      "totalTrades": 0,
+      "wins": 0,
+      "losses": 0,
+      "winRate": 0,
+      "profitFactor": 1,
+      "maxDrawdown": 0,
+      "trades": [],
+      "equityCurve": [
+        {
+          "time": 1777493700000,
+          "balance": 10000
+        }
+      ],
+      "name": "Volatility 100 (1s) Index"
+    },
+    {
+      "symbol": "R_50",
+      "startingBalance": 10000,
+      "finalBalance": 9882.427116781459,
+      "netProfit": -117.57288321854139,
+      "roi": -1.175728832185414,
+      "totalTrades": 13,
+      "wins": 3,
+      "losses": 10,
+      "winRate": 23.08,
+      "profitFactor": 0.88,
+      "maxDrawdown": 4.96,
+      "trades": [
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1778543100000,
+          "entryIndex": 1166,
+          "entryPrice": 87.8602,
+          "stopLoss": 88.37577,
+          "takeProfit": 87.0197,
+          "riskAmount": 100,
+          "positionUnits": 193.96008301491676,
+          "initialBalance": 10000,
+          "structuralState": {
+            "A": 88.3289,
+            "B": 87.7552,
+            "C": 87.0197
+          },
+          "exitTime": 1778545800000,
+          "exitIndex": 1169,
+          "result": "loss",
+          "exitPrice": 88.37577,
+          "profit": -100,
+          "finalBalance": 9900,
+          "holdTime": 3
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1778553000000,
+          "entryIndex": 1177,
+          "entryPrice": 88.174,
+          "stopLoss": 88.37577,
+          "takeProfit": 87.0197,
+          "riskAmount": 99,
+          "positionUnits": 490.65767953611464,
+          "initialBalance": 9900,
+          "structuralState": {
+            "A": 88.3289,
+            "B": 87.7552,
+            "C": 87.0197
+          },
+          "exitTime": 1778559300000,
+          "exitIndex": 1184,
+          "result": "win",
+          "exitPrice": 87.0197,
+          "profit": 297,
+          "finalBalance": 10197,
+          "holdTime": 7
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1778578200000,
+          "entryIndex": 1205,
+          "entryPrice": 87.8602,
+          "stopLoss": 88.37577,
+          "takeProfit": 87.0197,
+          "riskAmount": 101.97,
+          "positionUnits": 197.78109665031062,
+          "initialBalance": 10197,
+          "structuralState": {
+            "A": 88.3289,
+            "B": 87.7552,
+            "C": 87.0197
+          },
+          "exitTime": 1778580900000,
+          "exitIndex": 1208,
+          "result": "loss",
+          "exitPrice": 88.37577,
+          "profit": -101.97,
+          "finalBalance": 10095.03,
+          "holdTime": 3
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1778586300000,
+          "entryIndex": 1214,
+          "entryPrice": 88.177,
+          "stopLoss": 88.37577,
+          "takeProfit": 87.0197,
+          "riskAmount": 100.95030000000001,
+          "positionUnits": 507.8749308245811,
+          "initialBalance": 10095.03,
+          "structuralState": {
+            "A": 88.3289,
+            "B": 87.7552,
+            "C": 87.0197
+          },
+          "exitTime": 1778590800000,
+          "exitIndex": 1219,
+          "result": "win",
+          "exitPrice": 87.0197,
+          "profit": 302.8509,
+          "finalBalance": 10397.8809,
+          "holdTime": 5
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1778622300000,
+          "entryIndex": 1254,
+          "entryPrice": 87.8602,
+          "stopLoss": 88.37577,
+          "takeProfit": 87.0197,
+          "riskAmount": 103.978809,
+          "positionUnits": 201.67738425432174,
+          "initialBalance": 10397.8809,
+          "structuralState": {
+            "A": 88.3289,
+            "B": 87.7552,
+            "C": 87.0197
+          },
+          "exitTime": 1778627700000,
+          "exitIndex": 1260,
+          "result": "loss",
+          "exitPrice": 88.37577,
+          "profit": -103.978809,
+          "finalBalance": 10293.902091,
+          "holdTime": 6
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1778654700000,
+          "entryIndex": 1290,
+          "entryPrice": 88.1444,
+          "stopLoss": 88.37577,
+          "takeProfit": 87.0197,
+          "riskAmount": 102.93902091,
+          "positionUnits": 444.9108393914542,
+          "initialBalance": 10293.902091,
+          "structuralState": {
+            "A": 88.3289,
+            "B": 87.7552,
+            "C": 87.0197
+          },
+          "exitTime": 1778661000000,
+          "exitIndex": 1297,
+          "result": "loss",
+          "exitPrice": 88.37577,
+          "profit": -102.93902091,
+          "finalBalance": 10190.96307009,
+          "holdTime": 7
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1778665500000,
+          "entryIndex": 1302,
+          "entryPrice": 87.8602,
+          "stopLoss": 88.37577,
+          "takeProfit": 87.0197,
+          "riskAmount": 101.9096307009,
+          "positionUnits": 197.66400430766072,
+          "initialBalance": 10190.96307009,
+          "structuralState": {
+            "A": 88.3289,
+            "B": 87.7552,
+            "C": 87.0197
+          },
+          "exitTime": 1778676300000,
+          "exitIndex": 1314,
+          "result": "loss",
+          "exitPrice": 88.37577,
+          "profit": -101.9096307009,
+          "finalBalance": 10089.0534393891,
+          "holdTime": 12
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1778761800000,
+          "entryIndex": 1409,
+          "entryPrice": 88.2625,
+          "stopLoss": 88.37577,
+          "takeProfit": 87.0197,
+          "riskAmount": 100.890534393891,
+          "positionUnits": 890.7083463749539,
+          "initialBalance": 10089.0534393891,
+          "structuralState": {
+            "A": 88.3289,
+            "B": 87.7552,
+            "C": 87.0197
+          },
+          "exitTime": 1778763600000,
+          "exitIndex": 1411,
+          "result": "loss",
+          "exitPrice": 88.37577,
+          "profit": -100.890534393891,
+          "finalBalance": 9988.162904995208,
+          "holdTime": 2
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1778781600000,
+          "entryIndex": 1431,
+          "entryPrice": 88.2808,
+          "stopLoss": 88.37577,
+          "takeProfit": 87.0197,
+          "riskAmount": 99.88162904995208,
+          "positionUnits": 1051.7176903227162,
+          "initialBalance": 9988.162904995208,
+          "structuralState": {
+            "A": 88.3289,
+            "B": 87.7552,
+            "C": 87.0197
+          },
+          "exitTime": 1778809500000,
+          "exitIndex": 1462,
+          "result": "win",
+          "exitPrice": 87.0197,
+          "profit": 299.64488714985623,
+          "finalBalance": 10287.807792145064,
+          "holdTime": 31
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1779182100000,
+          "entryIndex": 1876,
+          "entryPrice": 86.6781,
+          "stopLoss": 87.26649,
+          "takeProfit": 85.149,
+          "riskAmount": 102.87807792145064,
+          "positionUnits": 174.84674777180092,
+          "initialBalance": 10287.807792145064,
+          "structuralState": {
+            "A": 87.2234,
+            "B": 86.8196,
+            "C": 85.149
+          },
+          "exitTime": 1779193800000,
+          "exitIndex": 1889,
+          "result": "loss",
+          "exitPrice": 87.26649,
+          "profit": -102.87807792145064,
+          "finalBalance": 10184.929714223614,
+          "holdTime": 13
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1779231600000,
+          "entryIndex": 1931,
+          "entryPrice": 87.1581,
+          "stopLoss": 87.26649,
+          "takeProfit": 85.149,
+          "riskAmount": 101.84929714223614,
+          "positionUnits": 939.6558459473766,
+          "initialBalance": 10184.929714223614,
+          "structuralState": {
+            "A": 87.2234,
+            "B": 86.8196,
+            "C": 85.149
+          },
+          "exitTime": 1779255900000,
+          "exitIndex": 1958,
+          "result": "loss",
+          "exitPrice": 87.26649,
+          "profit": -101.84929714223614,
+          "finalBalance": 10083.080417081377,
+          "holdTime": 27
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1779260400000,
+          "entryIndex": 1963,
+          "entryPrice": 86.956,
+          "stopLoss": 87.26649,
+          "takeProfit": 85.149,
+          "riskAmount": 100.83080417081378,
+          "positionUnits": 324.74734829080904,
+          "initialBalance": 10083.080417081377,
+          "structuralState": {
+            "A": 87.2234,
+            "B": 86.8196,
+            "C": 85.149
+          },
+          "exitTime": 1779265800000,
+          "exitIndex": 1969,
+          "result": "loss",
+          "exitPrice": 87.26649,
+          "profit": -100.83080417081378,
+          "finalBalance": 9982.249612910564,
+          "holdTime": 6
+        },
+        {
+          "symbol": "R_50",
+          "type": "sell",
+          "entryTime": 1779270300000,
+          "entryIndex": 1974,
+          "entryPrice": 86.8865,
+          "stopLoss": 87.26649,
+          "takeProfit": 85.149,
+          "riskAmount": 99.82249612910564,
+          "positionUnits": 262.69769238428364,
+          "initialBalance": 9982.249612910564,
+          "structuralState": {
+            "A": 87.2234,
+            "B": 86.8196,
+            "C": 85.149
+          },
+          "exitTime": 1779280200000,
+          "exitIndex": 1985,
+          "result": "loss",
+          "exitPrice": 87.26649,
+          "profit": -99.82249612910564,
+          "finalBalance": 9882.427116781459,
+          "holdTime": 11
+        }
+      ],
+      "equityCurve": [
+        {
+          "time": 1777493700000,
+          "balance": 10000
+        },
+        {
+          "time": 1778545800000,
+          "balance": 9900
+        },
+        {
+          "time": 1778559300000,
+          "balance": 10197
+        },
+        {
+          "time": 1778580900000,
+          "balance": 10095.03
+        },
+        {
+          "time": 1778590800000,
+          "balance": 10397.8809
+        },
+        {
+          "time": 1778627700000,
+          "balance": 10293.902091
+        },
+        {
+          "time": 1778661000000,
+          "balance": 10190.96307009
+        },
+        {
+          "time": 1778676300000,
+          "balance": 10089.0534393891
+        },
+        {
+          "time": 1778763600000,
+          "balance": 9988.162904995208
+        },
+        {
+          "time": 1778809500000,
+          "balance": 10287.807792145064
+        },
+        {
+          "time": 1779193800000,
+          "balance": 10184.929714223614
+        },
+        {
+          "time": 1779255900000,
+          "balance": 10083.080417081377
+        },
+        {
+          "time": 1779265800000,
+          "balance": 9982.249612910564
+        },
+        {
+          "time": 1779280200000,
+          "balance": 9882.427116781459
+        }
+      ],
+      "name": "Volatility 50 Index"
+    },
+    {
+      "symbol": "1HZ10V",
+      "startingBalance": 10000,
+      "finalBalance": 9702.99,
+      "netProfit": -297.0100000000002,
+      "roi": -2.970100000000002,
+      "totalTrades": 3,
+      "wins": 0,
+      "losses": 3,
+      "winRate": 0,
+      "profitFactor": 0,
+      "maxDrawdown": 2.97,
+      "trades": [
+        {
+          "symbol": "1HZ10V",
+          "type": "sell",
+          "entryTime": 1778172300000,
+          "entryIndex": 754,
+          "entryPrice": 9976.54,
+          "stopLoss": 9990.156,
+          "takeProfit": 9958.11,
+          "riskAmount": 100,
+          "positionUnits": 7.3443008225617,
+          "initialBalance": 10000,
+          "structuralState": {
+            "A": 9989.29,
+            "B": 9985.53,
+            "C": 9958.11
+          },
+          "exitTime": 1778173200000,
+          "exitIndex": 755,
+          "result": "loss",
+          "exitPrice": 9990.156,
+          "profit": -100,
+          "finalBalance": 9900,
+          "holdTime": 1
+        },
+        {
+          "symbol": "1HZ10V",
+          "type": "sell",
+          "entryTime": 1778189400000,
+          "entryIndex": 773,
+          "entryPrice": 9987.46,
+          "stopLoss": 9990.156,
+          "takeProfit": 9958.11,
+          "riskAmount": 99,
+          "positionUnits": 36.72106824923458,
+          "initialBalance": 9900,
+          "structuralState": {
+            "A": 9989.29,
+            "B": 9985.53,
+            "C": 9958.11
+          },
+          "exitTime": 1778193000000,
+          "exitIndex": 777,
+          "result": "loss",
+          "exitPrice": 9990.156,
+          "profit": -99,
+          "finalBalance": 9801,
+          "holdTime": 4
+        },
+        {
+          "symbol": "1HZ10V",
+          "type": "sell",
+          "entryTime": 1778616900000,
+          "entryIndex": 1248,
+          "entryPrice": 9916.38,
+          "stopLoss": 9926.045999999998,
+          "takeProfit": 9884.35,
+          "riskAmount": 98.01,
+          "positionUnits": 10.139664804470053,
+          "initialBalance": 9801,
+          "structuralState": {
+            "A": 9925.31,
+            "B": 9910.65,
+            "C": 9884.35
+          },
+          "exitTime": 1778626800000,
+          "exitIndex": 1259,
+          "result": "loss",
+          "exitPrice": 9926.045999999998,
+          "profit": -98.01,
+          "finalBalance": 9702.99,
+          "holdTime": 11
+        }
+      ],
+      "equityCurve": [
+        {
+          "time": 1777493700000,
+          "balance": 10000
+        },
+        {
+          "time": 1778173200000,
+          "balance": 9900
+        },
+        {
+          "time": 1778193000000,
+          "balance": 9801
+        },
+        {
+          "time": 1778626800000,
+          "balance": 9702.99
+        }
+      ],
+      "name": "Volatility 10 (1s) Index"
+    }
+  ]
+}
