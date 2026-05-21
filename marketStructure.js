@@ -198,7 +198,7 @@ function analyzeStructure(candles, currentIndex) {
         peak: swingC,
         orderBlock: orderBlock,
         entryPrice: orderBlock.high, // Tap the top of the OB
-        stopLoss: protectedLow.price - (candles[protectedLow.index].high - candles[protectedLow.index].low) * 0.1, // slightly below Protected Low
+        stopLoss: protectedLow.price - (candles[protectedLow.index].high - candles[protectedLow.index].low) * (config.STOP_LOSS_BUFFER_RATIO || 0.1), // safer breathing room below Protected Low (A)
         takeProfit: swingC.price
       };
     }
@@ -303,7 +303,7 @@ function analyzeStructure(candles, currentIndex) {
         peak: swingC,
         orderBlock: orderBlock,
         entryPrice: orderBlock.low, // Tap the bottom of the OB
-        stopLoss: protectedHigh.price + (candles[protectedHigh.index].high - candles[protectedHigh.index].low) * 0.1, // slightly above Protected High
+        stopLoss: protectedHigh.price + (candles[protectedHigh.index].high - candles[protectedHigh.index].low) * (config.STOP_LOSS_BUFFER_RATIO || 0.1), // safer breathing room above Protected High (A)
         takeProfit: swingC.price
       };
     }

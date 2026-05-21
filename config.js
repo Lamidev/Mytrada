@@ -37,6 +37,11 @@ module.exports = {
   // compared to the total range, representing a sharp rejection wick (V/A shape).
   SWEEP_MAX_BODY_RATIO: 0.35, // Body size must be <= 35% of total candle length (high wick ratio)
 
+  // Stop Loss Buffer (Breathing Room)
+  // The safe buffer size below Protected Low (A) or above Protected High (A).
+  // Defined as a ratio of the swing candle's total range (e.g. 0.50 = 50% candle height breathing room).
+  STOP_LOSS_BUFFER_RATIO: 0.50,
+
   // Fibonacci Level
   FIB_RETRACEMENT_LIMIT: 0.5, // Pullback must be at least at or below 50% Fib retracement (discount zone)
 
