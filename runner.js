@@ -10,6 +10,7 @@ const https = require('https');
 const config = require('./config');
 const { getCandles } = require('./dataFetcher');
 const { analyzeStructure } = require('./marketStructure');
+const { placeTrade, monitorPositions } = require('./tradeExecutor');
 
 // Premium ASCII Color Codes
 const RESET = "\x1b[0m";
@@ -183,11 +184,48 @@ async function monitorMarket() {
                 `• Peak C (Breakout): <code>${setup.peak.price.toFixed(2)}</code>`,
                 `• HTF Bias (4H): <code>${trendBias.toUpperCase()}</code>`,
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-                `<i>⚠️ Note: Executing live order entry on MT5 account is recommended at current market taps. Manage your risk strictly!</i>`
+                `<i>⚠️ Note: SMC entry tapped. Bot will automatically execute trade if AUTO_TRADE is enabled.</i>`
               ].join('\n');
               
               await sendTelegramMessage(entryAlertHtml);
               console.log(`${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM ENTRY ALERT FOR ${symbol}${RESET}`);
+
+              // Place trade automatically on Deriv if AUTO_TRADE is true
+              if (config.AUTO_TRADE) {
+                try {
+                  console.log(`[runner] AUTO_TRADE is active. Triggering placeTrade on Deriv for ${symbol}...`);
+                  const contractId = await placeTrade(symbol, setup.type, setup.entryPrice, stopLossVal, takeProfitVal);
+                  
+                  const tradePlacedHtml = [
+                    `✅ <b>[DERIV TRADE EXECUTED]</b>`,
+                    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+                    `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol]})`,
+                    `<b>Contract ID:</b> <code>${contractId}</code>`,
+                    `<b>Direction:</b> ${setup.type === 'bullish' ? '🟢 BUY (MULTUP)' : '🔴 SELL (MULTDOWN)'}`,
+                    `<b>Stake Amount:</b> <code>$${process.env.TRADE_STAKE || 1} USD</code>`,
+                    `<b>Multiplier:</b> <code>x${process.env.TRADE_MULTIPLIER || 20}</code>`,
+                    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+                    `<i>🚀 Order successfully executed and filled. Positions monitor is tracking...</i>`
+                  ].join('\n');
+                  
+                  await sendTelegramMessage(tradePlacedHtml);
+                  console.log(`${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM TRADE PLACED CONFIRMATION FOR ${symbol}${RESET}`);
+                } catch (tradeErr) {
+                  console.error(`[runner] Failed to place trade on Deriv for ${symbol}:`, tradeErr.message);
+                  
+                  const tradeFailedHtml = [
+                    `⚠️ <b>[DERIV TRADE EXECUTION FAILED]</b>`,
+                    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+                    `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol]})`,
+                    `<b>Direction:</b> ${setup.type === 'bullish' ? '🟢 BUY' : '🔴 SELL'}`,
+                    `<b>Error:</b> <code>${tradeErr.message}</code>`,
+                    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+                    `<i>❌ Automated execution failed. Please verify API token permissions and connection logs on your VPS.</i>`
+                  ].join('\n');
+                  
+                  await sendTelegramMessage(tradeFailedHtml);
+                }
+              }
             }
           } 
           // C. Evaluate Stage 1: Setup Detected Alert
@@ -278,6 +316,41 @@ async function main() {
   console.log(`Status: Active and Listening 24/7 for optimized setups...`);
   console.log(`-------------------------------------------------------------------------------------------------`);
   
+  // Start persistent position monitoring if AUTO_TRADE is enabled
+  if (config.AUTO_TRADE) {
+    console.log(`[runner] AUTO_TRADE is active. Initializing persistent Deriv contract monitoring...`);
+    monitorPositions(async ({ symbol, contractId, profit, result, contractDetails }) => {
+      console.log(`[runner] Position closed event received for contract ${contractId} (${symbol}). Result: ${result}, Profit: $${profit}`);
+
+      const isProfit = profit > 0;
+      const resultEmoji = isProfit ? '🏆' : '🛡️';
+      const outcomeText = isProfit 
+        ? `🟢 <b>TAKE PROFIT (TP) HIT!</b>` 
+        : `🔴 <b>STOP LOSS (SL) HIT!</b>`;
+
+      const closedAlertHtml = [
+        `${resultEmoji} <b>[DERIV POSITION CLOSED]</b>`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] || symbol})`,
+        `<b>Contract ID:</b> <code>${contractId}</code>`,
+        `<b>Outcome:</b> ${outcomeText}`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `💰 <b>REALIZED PROFIT:</b> <code>${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} USD</code>`,
+        `📈 <b>Entry Spot:</b> <code>${contractDetails.entry_spot}</code>`,
+        `📉 <b>Exit Spot:</b> <code>${contractDetails.exit_spot || 'N/A'}</code>`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `<i>ℹ️ Open the Deriv GO app on your phone to check your updated balance sheet!</i>`
+      ].join('\n');
+
+      try {
+        await sendTelegramMessage(closedAlertHtml);
+        console.log(`${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM POSITION CLOSED NOTIFICATION FOR ${symbol}${RESET}`);
+      } catch (telegramErr) {
+        console.error("[runner] Failed sending Telegram closed position notification:", telegramErr.message);
+      }
+    });
+  }
+
   // Initial Scan
   await monitorMarket();
   

@@ -41,7 +41,7 @@ module.exports = {
   FIB_RETRACEMENT_LIMIT: 0.5, // Pullback must be at least at or below 50% Fib retracement (discount zone)
 
   // Bot Settings & Modes
-  AUTO_TRADE: false, // false = Telegram Alerts Only, true = Automated trading on Deriv
+  AUTO_TRADE: true, // false = Telegram Alerts Only, true = Automated trading on Deriv
 
   // Telegram Notifications Settings
   TELEGRAM: {
