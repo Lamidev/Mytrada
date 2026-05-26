@@ -12,6 +12,38 @@
 const config = require('./config');
 
 /**
+ * Computes the stop loss price for a setup.
+ *
+ * Two modes (controlled by config.STOP_LOSS_BUFFER_MODE):
+ *  - 'ratio'     : SL buffer = swing candle range × STOP_LOSS_BUFFER_RATIO
+ *                  (original approach; larger buffer when candle is tall)
+ *  - 'price_pct' : SL buffer = protected price level × STOP_LOSS_PRICE_PCT
+ *                  (preferred for live; gives a true 'pip distance' that
+ *                   auto-scales with each pair's price magnitude)
+ *
+ * @param {'bullish'|'bearish'} direction
+ * @param {number} protectedPrice  The Protected Low (bullish) or High (bearish)
+ * @param {object} protectedCandle The candle at the protected swing point
+ * @returns {number} Computed SL price
+ */
+function computeStopLoss(direction, protectedPrice, protectedCandle) {
+  let buffer;
+
+  if (config.STOP_LOSS_BUFFER_MODE === 'price_pct') {
+    // Fixed % of the protected price level — scales proportionally across all pairs
+    buffer = protectedPrice * (config.STOP_LOSS_PRICE_PCT || 0.001);
+  } else {
+    // Original: ratio of the swing candle's full range
+    const candleRange = protectedCandle.high - protectedCandle.low;
+    buffer = candleRange * (config.STOP_LOSS_BUFFER_RATIO || 0.10);
+  }
+
+  return direction === 'bullish'
+    ? protectedPrice - buffer   // SL just BELOW the protected low
+    : protectedPrice + buffer;  // SL just ABOVE the protected high
+}
+
+/**
  * Checks if a candle is a valid sweep (wick rejection) of a target price.
  * @param {object} candle Candle to evaluate
  * @param {number} targetPrice Price level being swept
@@ -191,16 +223,30 @@ function analyzeStructure(candles, currentIndex) {
     // If C is established, we are waiting for the Entry Setup!
     // Condition: Price retraces, sweeps/mitigates B (goes below B), and taps the OB (between A and B)
     if (protectedLow && structuralLiquidity && swingC && orderBlock) {
-      setup = {
-        type: 'bullish',
-        protectedPoint: protectedLow,
-        structuralLiquidity: structuralLiquidity,
-        peak: swingC,
-        orderBlock: orderBlock,
-        entryPrice: orderBlock.high, // Tap the top of the OB
-        stopLoss: protectedLow.price - (candles[protectedLow.index].high - candles[protectedLow.index].low) * (config.STOP_LOSS_BUFFER_RATIO || 0.1), // safer breathing room below Protected Low (A)
-        takeProfit: swingC.price
-      };
+      // Premium/Discount Zone Filter (Fibonacci OTE)
+      // When ENTRY_DISCOUNT_ONLY is true, we only accept BUY entries if the OB
+      // top is at or below the 50% Fibonacci level of the dealing range [A (protectedLow) → C (peak)].
+      // This prevents entering in the expensive "premium" half of the range.
+      const entryPrice = orderBlock.high;
+      const rangeHeight = swingC.price - protectedLow.price;
+      const discountThreshold = protectedLow.price + rangeHeight * 0.50;
+      const isInDiscountZone = !config.ENTRY_DISCOUNT_ONLY || (entryPrice <= discountThreshold);
+
+      if (isInDiscountZone) {
+        setup = {
+          type: 'bullish',
+          protectedPoint: protectedLow,
+          structuralLiquidity: structuralLiquidity,
+          peak: swingC,
+          orderBlock: orderBlock,
+          entryPrice: entryPrice, // Tap the top of the OB
+          stopLoss: computeStopLoss('bullish', protectedLow.price, candles[protectedLow.index]),
+          takeProfit: swingC.price,
+          // Debug info
+          discountThreshold: discountThreshold,
+          fibZone: entryPrice <= discountThreshold ? 'discount' : 'premium'
+        };
+      }
     }
   }
 
@@ -296,16 +342,30 @@ function analyzeStructure(candles, currentIndex) {
     
     // Bearish Setup
     if (protectedHigh && structuralLiquidity && swingC && orderBlock) {
-      setup = {
-        type: 'bearish',
-        protectedPoint: protectedHigh,
-        structuralLiquidity: structuralLiquidity,
-        peak: swingC,
-        orderBlock: orderBlock,
-        entryPrice: orderBlock.low, // Tap the bottom of the OB
-        stopLoss: protectedHigh.price + (candles[protectedHigh.index].high - candles[protectedHigh.index].low) * (config.STOP_LOSS_BUFFER_RATIO || 0.1), // safer breathing room above Protected High (A)
-        takeProfit: swingC.price
-      };
+      // Premium/Discount Zone Filter (Fibonacci OTE)
+      // When ENTRY_DISCOUNT_ONLY is true, we only accept SELL entries if the OB
+      // bottom is at or above the 50% Fibonacci level of the dealing range [C (trough) → A (protectedHigh)].
+      // This prevents entering in the cheap "discount" half of the range.
+      const entryPrice = orderBlock.low;
+      const rangeHeight = protectedHigh.price - swingC.price;
+      const premiumThreshold = protectedHigh.price - rangeHeight * 0.50;
+      const isInPremiumZone = !config.ENTRY_DISCOUNT_ONLY || (entryPrice >= premiumThreshold);
+
+      if (isInPremiumZone) {
+        setup = {
+          type: 'bearish',
+          protectedPoint: protectedHigh,
+          structuralLiquidity: structuralLiquidity,
+          peak: swingC,
+          orderBlock: orderBlock,
+          entryPrice: entryPrice, // Tap the bottom of the OB
+          stopLoss: computeStopLoss('bearish', protectedHigh.price, candles[protectedHigh.index]),
+          takeProfit: swingC.price,
+          // Debug info
+          premiumThreshold: premiumThreshold,
+          fibZone: entryPrice >= premiumThreshold ? 'premium' : 'discount'
+        };
+      }
     }
   }
 

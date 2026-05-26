@@ -21,7 +21,7 @@ module.exports = {
 
   // Timeframe Configuration
   DEFAULT_HTF: "4h",   // Higher Timeframe for Trend Bias (Daily, 4h, 8h)
-  DEFAULT_LTF: "15m",  // Lower Timeframe for Entry Setup (15m, 5m, 1m)
+  DEFAULT_LTF: "30m",  // Lower Timeframe for Entry Setup (30m, 15m, 5m)
   
   // Backtest Portfolio Settings
   STARTING_BALANCE: 10000.0, // Account size in USD
@@ -37,16 +37,28 @@ module.exports = {
   // compared to the total range, representing a sharp rejection wick (V/A shape).
   SWEEP_MAX_BODY_RATIO: 0.35, // Body size must be <= 35% of total candle length (high wick ratio)
 
-  // Stop Loss Buffer (Breathing Room)
-  // The safe buffer size below Protected Low (A) or above Protected High (A).
-  // Defined as a ratio of the swing candle's total range (e.g. 0.50 = 50% candle height breathing room).
-  STOP_LOSS_BUFFER_RATIO: 0.50,
+  // Stop Loss Configuration
+  // ── Mode 1: 'ratio'     → SL buffer = swing candle's range × STOP_LOSS_BUFFER_RATIO
+  //                         (original approach — 0.10 = 10% of candle height)
+  // ── Mode 2: 'price_pct' → SL buffer = protected price level × STOP_LOSS_PRICE_PCT
+  //                         (preferred for live — auto-scales to each pair's price magnitude)
+  //                         e.g. 0.0010 on R_50@87 = 0.087 (~9 pips)
+  //                              0.0010 on R_75@25000 = 25 pts
+  //                              0.0010 on 1HZ50V@250000 = 250 pts
+  STOP_LOSS_BUFFER_MODE: 'ratio', // 'ratio' | 'price_pct'
+  STOP_LOSS_BUFFER_RATIO: 0.10,       // used when mode = 'ratio'
+  STOP_LOSS_PRICE_PCT: 0.0010,        // used when mode = 'price_pct' (0.1% of price)
+
+  // Premium/Discount entry verification
+  // If true, the entry price (top of OB for buy, bottom of OB for sell)
+  // must be strictly in the discount zone (buy) or premium zone (sell) of the dealing range [A, C].
+  ENTRY_DISCOUNT_ONLY: true,
 
   // Fibonacci Level
   FIB_RETRACEMENT_LIMIT: 0.5, // Pullback must be at least at or below 50% Fib retracement (discount zone)
 
   // Bot Settings & Modes
-  AUTO_TRADE: true, // false = Telegram Alerts Only, true = Automated trading on Deriv
+  AUTO_TRADE: false, // false = Telegram Alerts Only, true = Automated trading on Deriv
 
   // Telegram Notifications Settings
   TELEGRAM: {

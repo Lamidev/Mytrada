@@ -7,10 +7,18 @@
  */
 
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
 const config = require('./config');
 const { getCandles } = require('./dataFetcher');
 const { analyzeStructure } = require('./marketStructure');
 const { placeTrade, monitorPositions } = require('./tradeExecutor');
+
+const CACHE_DIR = path.join(__dirname, 'cache');
+if (!fs.existsSync(CACHE_DIR)) {
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+const ACTIVE_TRADES_FILE = path.join(CACHE_DIR, 'active_trades.json');
 
 // Premium ASCII Color Codes
 const RESET = "\x1b[0m";
@@ -101,6 +109,108 @@ function sendTelegramMessage(htmlText) {
   });
 }
 
+function loadActiveTrades() {
+  if (fs.existsSync(ACTIVE_TRADES_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(ACTIVE_TRADES_FILE, 'utf8'));
+    } catch (e) {
+      console.error("[runner] Error reading active trades file:", e.message);
+    }
+  }
+  return [];
+}
+
+function saveActiveTrades(trades) {
+  try {
+    fs.writeFileSync(ACTIVE_TRADES_FILE, JSON.stringify(trades, null, 2), 'utf8');
+  } catch (e) {
+    console.error("[runner] Error writing active trades file:", e.message);
+  }
+}
+
+async function checkActiveTradesForSymbol(symbol, candles) {
+  const activeTrades = loadActiveTrades();
+  const symbolTrades = activeTrades.filter(t => t.symbol === symbol);
+  if (symbolTrades.length === 0) return;
+
+  let updatedTrades = [...activeTrades];
+  let changed = false;
+
+  for (const trade of symbolTrades) {
+    let hitSL = false;
+    let hitTP = false;
+    let exitTime = 0;
+    let exitPrice = 0;
+
+    // Get all candles that have occurred since the trade was triggered
+    const postTriggerCandles = candles.filter(c => c.time >= trade.triggeredTime);
+
+    for (const candle of postTriggerCandles) {
+      if (trade.type === 'bullish') {
+        if (candle.low <= trade.stopLoss) {
+          hitSL = true;
+          exitTime = candle.time;
+          exitPrice = trade.stopLoss;
+          break;
+        } else if (candle.high >= trade.takeProfit) {
+          hitTP = true;
+          exitTime = candle.time;
+          exitPrice = trade.takeProfit;
+          break;
+        }
+      } else { // bearish
+        if (candle.high >= trade.stopLoss) {
+          hitSL = true;
+          exitTime = candle.time;
+          exitPrice = trade.stopLoss;
+          break;
+        } else if (candle.low <= trade.takeProfit) {
+          hitTP = true;
+          exitTime = candle.time;
+          exitPrice = trade.takeProfit;
+          break;
+        }
+      }
+    }
+
+    if (hitSL || hitTP) {
+      const outcomeText = hitTP 
+        ? `🏆 <b>TAKE PROFIT (TP) HIT!</b>` 
+        : `🛡️ <b>STOP LOSS (SL) HIT!</b>`;
+      const outcomeEmoji = hitTP ? '🏆' : '🛡️';
+      
+      const closedAlertHtml = [
+        `${outcomeEmoji} <b>[SMC TRADE OUTCOME]</b>`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] || symbol})`,
+        `<b>Direction:</b> ${trade.type === 'bullish' ? '🟢 BUY' : '🔴 SELL'}`,
+        `<b>Outcome:</b> ${outcomeText}`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🔥 <b>Entry Price:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
+        `🛡️ <b>Stop Loss (SL):</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
+        `🏆 <b>Take Profit (TP):</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `<i>ℹ️ Check your Metatrader 5 account terminal to verify your manual position!</i>`
+      ].join('\n');
+
+      try {
+        await sendTelegramMessage(closedAlertHtml);
+        console.log(`\n${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM POSITION OUTCOME ALERT FOR ${symbol}: ${hitTP ? 'TP' : 'SL'}${RESET}\n`);
+      } catch (telegramErr) {
+        console.error("[runner] Failed sending Telegram outcome position notification:", telegramErr.message);
+      }
+
+      // Remove from active list
+      updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveActiveTrades(updatedTrades);
+  }
+}
+
 /**
  * Main Fronttesting and Setup Monitor cycle
  */
@@ -125,6 +235,9 @@ async function monitorMarket() {
       // 2. Fetch 700 candles on LTF (15m) to analyze SMC structure
       const ltfCandles = await getCandles(symbol, config.DEFAULT_LTF, 700, true);
       const latestLtfCandle = ltfCandles[ltfCandles.length - 1];
+      
+      // Monitor active virtual trades for this symbol
+      await checkActiveTradesForSymbol(symbol, ltfCandles);
       
       // 3. Analyze structural states
       const analysis = analyzeStructure(ltfCandles, ltfCandles.length - 1);
@@ -184,11 +297,27 @@ async function monitorMarket() {
                 `• Peak C (Breakout): <code>${setup.peak.price.toFixed(2)}</code>`,
                 `• HTF Bias (4H): <code>${trendBias.toUpperCase()}</code>`,
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-                `<i>⚠️ Note: SMC entry tapped. Bot will automatically execute trade if AUTO_TRADE is enabled.</i>`
+                `<i>⚠️ Note: SMC entry tapped. Please enter the trade manually on Metatrader 5.</i>`
               ].join('\n');
               
               await sendTelegramMessage(entryAlertHtml);
               console.log(`${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM ENTRY ALERT FOR ${symbol}${RESET}`);
+
+              // Add virtual trade to active monitoring list
+              const activeTrades = loadActiveTrades();
+              if (!activeTrades.some(t => t.setupId === setupId)) {
+                activeTrades.push({
+                  setupId: setupId,
+                  symbol: symbol,
+                  type: setup.type,
+                  entryPrice: setup.entryPrice,
+                  stopLoss: stopLossVal,
+                  takeProfit: takeProfitVal,
+                  triggeredTime: Date.now()
+                });
+                saveActiveTrades(activeTrades);
+                console.log(`[runner] Added ${symbol} trade to virtual active monitoring list.`);
+              }
 
               // Place trade automatically on Deriv if AUTO_TRADE is true
               if (config.AUTO_TRADE) {
