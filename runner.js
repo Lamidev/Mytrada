@@ -1,9 +1,10 @@
 // runner.js
 /**
  * SMC Live Fronttesting & Telegram Alert Bot.
+ * Senior Institutional Quantitative Engine.
  * Streams real-time market structure sweeps, breaks of structure (BOS),
- * and order block taps across our top 6 optimized Volatility Index pairs,
- * sending premium alerts directly to your phone 24/7.
+ * Fair Value Gaps (FVG), and order block taps across optimized Volatility Index pairs,
+ * calculating dynamic MT5 lot sizes and 1.1 R:R Break-Even alerts.
  */
 
 const https = require('https');
@@ -13,6 +14,16 @@ const config = require('./config');
 const { getCandles } = require('./dataFetcher');
 const { analyzeStructure } = require('./marketStructure');
 const { placeTrade, monitorPositions } = require('./tradeExecutor');
+const {
+  recordSignal,
+  recordTrigger,
+  recordClose,
+  generateDailyReport,
+  generateWeeklyReport,
+  generateMonthlyReport,
+  formatReportTelegramHTML
+} = require('./reportManager');
+
 
 const CACHE_DIR = path.join(__dirname, 'cache');
 if (!fs.existsSync(CACHE_DIR)) {
@@ -32,6 +43,31 @@ const MAGENTA = "\x1b[35m";
 // In-Memory Anti-Spam Duplicate Alert Prevention Caches
 const alertedSetups = new Set();
 const alertedEntries = new Set();
+const alertedBreakEvens = new Set();
+
+/**
+ * Calculates recommended MT5 Lot Size based on $100 Risk Baseline
+ * @param {string} symbol Asset symbol
+ * @param {number} entryPrice Entry price
+ * @param {number} stopLossPrice Stop loss price
+ * @returns {string} Formatted MT5 Lot Size string
+ */
+function calculateLotSize(symbol, entryPrice, stopLossPrice) {
+  const priceDistance = Math.abs(entryPrice - stopLossPrice);
+  if (priceDistance === 0) return "0.01";
+  
+  const riskUSD = config.RISK_AMOUNT_USD || 100.0;
+  const rawLotSize = riskUSD / priceDistance;
+  
+  // Format lot size based on symbol magnitude
+  if (symbol.includes('1HZ50V') || symbol.includes('1HZ25V')) {
+    return rawLotSize.toFixed(4);
+  } else if (symbol.includes('R_75') || symbol.includes('R_100') || symbol.includes('1HZ75V') || symbol.includes('1HZ100V')) {
+    return rawLotSize.toFixed(3);
+  } else {
+    return rawLotSize.toFixed(2);
+  }
+}
 
 /**
  * Calculates simple moving average (EMA) for trend filtering
@@ -63,7 +99,6 @@ function sendTelegramMessage(htmlText) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   
-  // Console-Only fallback if Telegram credentials are not yet configured
   if (!token || !chatId || token === 'YOUR_TELEGRAM_BOT_TOKEN_HERE' || chatId === 'YOUR_TELEGRAM_CHAT_ID_HERE') {
     const rawText = htmlText
       .replace(/<br\s*\/?>/gi, '\n')
@@ -142,88 +177,211 @@ async function checkActiveTradesForSymbol(symbol, candles) {
     let exitTime = 0;
     let exitPrice = 0;
 
-    // Get all candles that have occurred since the trade was triggered
     const postTriggerCandles = candles.filter(c => c.time >= trade.triggeredTime);
+    const riskDist = Math.abs(trade.entryPrice - trade.stopLoss);
+    const trigger1_1 = trade.type === 'bullish' ? trade.entryPrice + 1.1 * riskDist : trade.entryPrice - 1.1 * riskDist;
+
+    let isBEActive = false;
 
     for (const candle of postTriggerCandles) {
       if (trade.type === 'bullish') {
-        if (candle.low <= trade.stopLoss) {
-          hitSL = true;
-          exitTime = candle.time;
-          exitPrice = trade.stopLoss;
-          break;
-        } else if (candle.high >= trade.takeProfit) {
-          hitTP = true;
-          exitTime = candle.time;
-          exitPrice = trade.takeProfit;
-          break;
+        // Check 1.1 RR Break-Even alert for full position flow
+        if (config.ENABLE_BREAK_EVEN && !alertedBreakEvens.has(trade.setupId) && candle.high >= trigger1_1) {
+          alertedBreakEvens.add(trade.setupId);
+          isBEActive = true;
+          trade.isBEActive = true;
+          const beHtml = [
+            `🔒 <b>[SMC BREAK-EVEN TRAILING ALERT]</b>`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] || symbol})`,
+            `<b>Direction:</b> 🟢 BUY`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🎯 <b>Price reached 1.1 R:R (+1.1R Profit)!</b>`,
+            `👉 <b>Move Stop Loss on MT5 to Entry Price:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
+            `🚀 <b>Full position is now 100% Risk-Free ($0.00 Risk), running for full +$200.00 TP!</b>`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          ].join('\n');
+          try {
+            await sendTelegramMessage(beHtml);
+            console.log(`${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM 1.1 RR BREAK-EVEN ALERT FOR ${symbol}${RESET}`);
+          } catch (e) { console.error("[runner] Failed sending Break-Even alert:", e.message); }
+        }
+
+        if (trade.isBEActive || isBEActive) {
+          if (candle.high >= trade.takeProfit) {
+            hitTP = true;
+            exitTime = candle.time;
+            exitPrice = trade.takeProfit;
+            break;
+          } else if (candle.low <= trade.entryPrice) {
+            hitSL = true;
+            exitTime = candle.time;
+            exitPrice = trade.entryPrice;
+            break;
+          }
+        } else {
+          if (candle.low <= trade.stopLoss) {
+            hitSL = true;
+            exitTime = candle.time;
+            exitPrice = trade.stopLoss;
+            break;
+          } else if (candle.high >= trade.takeProfit) {
+            hitTP = true;
+            exitTime = candle.time;
+            exitPrice = trade.takeProfit;
+            break;
+          }
         }
       } else { // bearish
-        if (candle.high >= trade.stopLoss) {
-          hitSL = true;
-          exitTime = candle.time;
-          exitPrice = trade.stopLoss;
-          break;
-        } else if (candle.low <= trade.takeProfit) {
-          hitTP = true;
-          exitTime = candle.time;
-          exitPrice = trade.takeProfit;
-          break;
+        // Check 1.1 RR Break-Even alert for full position flow
+        if (config.ENABLE_BREAK_EVEN && !alertedBreakEvens.has(trade.setupId) && candle.low <= trigger1_1) {
+          alertedBreakEvens.add(trade.setupId);
+          isBEActive = true;
+          trade.isBEActive = true;
+          const beHtml = [
+            `🔒 <b>[SMC BREAK-EVEN TRAILING ALERT]</b>`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] || symbol})`,
+            `<b>Direction:</b> 🔴 SELL`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🎯 <b>Price reached 1.1 R:R (+1.1R Profit)!</b>`,
+            `👉 <b>Move Stop Loss on MT5 to Entry Price:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
+            `🚀 <b>Full position is now 100% Risk-Free ($0.00 Risk), running for full +$200.00 TP!</b>`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`
+          ].join('\n');
+          try {
+            await sendTelegramMessage(beHtml);
+            console.log(`${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM 1.1 RR BREAK-EVEN ALERT FOR ${symbol}${RESET}`);
+          } catch (e) { console.error("[runner] Failed sending Break-Even alert:", e.message); }
+        }
+
+        if (trade.isBEActive || isBEActive) {
+          if (candle.low <= trade.takeProfit) {
+            hitTP = true;
+            exitTime = candle.time;
+            exitPrice = trade.takeProfit;
+            break;
+          } else if (candle.high >= trade.entryPrice) {
+            hitSL = true;
+            exitTime = candle.time;
+            exitPrice = trade.entryPrice;
+            break;
+          }
+        } else {
+          if (candle.high >= trade.stopLoss) {
+            hitSL = true;
+            exitTime = candle.time;
+            exitPrice = trade.stopLoss;
+            break;
+          } else if (candle.low <= trade.takeProfit) {
+            hitTP = true;
+            exitTime = candle.time;
+            exitPrice = trade.takeProfit;
+            break;
+          }
         }
       }
     }
 
     if (hitSL || hitTP) {
-      const outcomeText = hitTP 
-        ? `🏆 <b>TAKE PROFIT (TP) HIT!</b>` 
-        : `🛡️ <b>STOP LOSS (SL) HIT!</b>`;
-      const outcomeEmoji = hitTP ? '🏆' : '🛡️';
-      
+      let outcomeHeader = "";
+      let outcomeDetails = [];
+
+      if (trade.isBEActive || isBEActive) {
+        if (hitTP) {
+          outcomeHeader = `🏆 <b>[SMC FULL TRADE OUTCOME: FULL WIN]</b>`;
+          outcomeDetails = [
+            `🟢 <b>OUTCOME: FULL 1:2 TAKE PROFIT HIT!</b>`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `💰 <b>TOTAL REALIZED PROFIT:</b> <code>+$200.00 USD (+2.00R)</code> (Full Position Payout!)`
+          ];
+        } else {
+          outcomeHeader = `🔒 <b>[SMC FULL TRADE OUTCOME: BREAK-EVEN EXIT]</b>`;
+          outcomeDetails = [
+            `🟡 <b>OUTCOME: REVERSED TO ENTRY PRICE (BREAK-EVEN EXIT)</b>`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `🔒 <b>Position Closed at Entry:</b> <code>$0.00 USD</code>`,
+            `🛡️ <b>TOTAL REALIZED NET LOSS:</b> <code>$0.00 USD (Zero Risk / No Loss!)</code>`
+          ];
+        }
+      } else {
+        if (hitTP) {
+          outcomeHeader = `🏆 <b>[SMC FULL TRADE OUTCOME: DIRECT TP HIT]</b>`;
+          outcomeDetails = [
+            `🟢 <b>OUTCOME: TAKE PROFIT HIT!</b>`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `💰 <b>TOTAL REALIZED PROFIT:</b> <code>+$200.00 USD (+2.00R)</code>`
+          ];
+        } else {
+          outcomeHeader = `🛡️ <b>[SMC FULL TRADE OUTCOME: STOP LOSS HIT]</b>`;
+          outcomeDetails = [
+            `🔴 <b>OUTCOME: STOP LOSS HIT</b>`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `💸 <b>TOTAL REALIZED LOSS:</b> <code>-$100.00 USD (-1.00R)</code>`
+          ];
+        }
+      }
+
+
+
       const closedAlertHtml = [
-        `${outcomeEmoji} <b>[SMC TRADE OUTCOME]</b>`,
+        outcomeHeader,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] || symbol})`,
         `<b>Direction:</b> ${trade.type === 'bullish' ? '🟢 BUY' : '🔴 SELL'}`,
-        `<b>Outcome:</b> ${outcomeText}`,
+        ...outcomeDetails,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `🔥 <b>Entry Price:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
         `🛡️ <b>Stop Loss (SL):</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
         `🏆 <b>Take Profit (TP):</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `<i>ℹ️ Check your Metatrader 5 account terminal to verify your manual position!</i>`
+        `<i>ℹ️ Check your Metatrader 5 terminal balance sheet!</i>`
       ].join('\n');
 
       try {
         await sendTelegramMessage(closedAlertHtml);
-        console.log(`\n${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM POSITION OUTCOME ALERT FOR ${symbol}: ${hitTP ? 'TP' : 'SL'}${RESET}\n`);
+        console.log(`\n${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM FINAL OUTCOME ALERT FOR ${symbol}${RESET}\n`);
       } catch (telegramErr) {
         console.error("[runner] Failed sending Telegram outcome position notification:", telegramErr.message);
       }
 
-      // Remove from active list
+      // Record trade outcome in persistent trade history database
+      let finalOutcome = 'LOSS';
+      let pnlUSD = -100.0;
+      let pnlR = -1.0;
+      if (trade.isBEActive || isBEActive) {
+        if (hitTP) { finalOutcome = 'WIN'; pnlUSD = 200.0; pnlR = 2.0; }
+        else { finalOutcome = 'BREAKEVEN'; pnlUSD = 0.0; pnlR = 0.0; }
+      } else {
+        if (hitTP) { finalOutcome = 'WIN'; pnlUSD = 200.0; pnlR = 2.0; }
+        else { finalOutcome = 'LOSS'; pnlUSD = -100.0; pnlR = -1.0; }
+      }
+      recordClose(trade.setupId, finalOutcome, exitPrice, pnlUSD, pnlR);
+
       updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
       changed = true;
     }
   }
+
 
   if (changed) {
     saveActiveTrades(updatedTrades);
   }
 }
 
+
 /**
  * Main Fronttesting and Setup Monitor cycle
  */
 async function monitorMarket() {
   const now = new Date();
-  console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning Live Market Structure across top 6 assets...${RESET}`);
+  console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning Live Institutional Market Structure across assets...${RESET}`);
   console.log(`-------------------------------------------------------------------------------------------------`);
   
   const symbols = Object.keys(config.SYMBOLS);
   
   for (const symbol of symbols) {
     try {
-      // 1. Fetch 200 candles on HTF (4h) to compute 50-EMA trend bias
       const htfCandles = await getCandles(symbol, config.DEFAULT_HTF, 200, true);
       const htfCloses = htfCandles.map(c => c.close);
       const htfEMAs = calculateEMA(htfCloses, 50);
@@ -232,31 +390,25 @@ async function monitorMarket() {
       
       const trendBias = latestHtfClose > latestHtfEma ? 'bullish' : 'bearish';
       
-      // 2. Fetch 700 candles on LTF (15m) to analyze SMC structure
       const ltfCandles = await getCandles(symbol, config.DEFAULT_LTF, 700, true);
       const latestLtfCandle = ltfCandles[ltfCandles.length - 1];
       
-      // Monitor active virtual trades for this symbol
       await checkActiveTradesForSymbol(symbol, ltfCandles);
       
-      // 3. Analyze structural states
-      const analysis = analyzeStructure(ltfCandles, ltfCandles.length - 1);
+      const analysis = analyzeStructure(ltfCandles, ltfCandles.length - 1, trendBias);
       const setup = analysis.setup;
       
-      // Output premium terminal monitoring logs
       const trendSymbol = trendBias === 'bullish' ? `${GREEN}📈 BULLISH${RESET}` : `${RED}📉 BEARISH${RESET}`;
-      const stateSymbol = setup ? `${YELLOW}⚡ SETUP ACTIVE${RESET}` : `💤 Idle`;
-      console.log(`| Symbol: ${CYAN}${symbol.padEnd(8)}${RESET} | HTF Bias: ${trendSymbol} | Status: ${stateSymbol.padEnd(20)} | Price: ${latestLtfCandle.close.toFixed(2)}`);
+      const stateSymbol = setup ? `${YELLOW}⚡ SETUP ACTIVE (${setup.confluenceScore}/10)${RESET}` : `💤 Idle`;
+      console.log(`| Symbol: ${CYAN}${symbol.padEnd(8)}${RESET} | HTF Bias: ${trendSymbol} | Status: ${stateSymbol.padEnd(25)} | Price: ${latestLtfCandle.close.toFixed(2)}`);
       
       if (setup) {
         const setupId = `${symbol}_${setup.type}_${setup.protectedPoint.time}`;
         
-        // A. Verify HTF Trend Alignment
         const isTrendAligned = (setup.type === 'bullish' && trendBias === 'bullish') || 
                                (setup.type === 'bearish' && trendBias === 'bearish');
         
-        if (isTrendAligned) {
-          // Calculate strict 1:2 RR Stop-Loss and Take Profit limit coordinates (equivalent to backtester)
+        if (isTrendAligned && setup.confluenceScore >= config.MIN_CONFLUENCE_SCORE) {
           const riskAmount = setup.entryPrice - setup.stopLoss;
           const stopLossVal = setup.stopLoss;
           let takeProfitVal;
@@ -266,9 +418,9 @@ async function monitorMarket() {
           } else {
             takeProfitVal = setup.entryPrice - Math.abs(riskAmount) * config.REWARD_RATIO;
           }
+
+          const recommendedLotSize = calculateLotSize(symbol, setup.entryPrice, stopLossVal);
           
-          // B. Evaluate Stage 2: Trade Entry Triggered Alert
-          // Triggers when price sweeps B and taps the Order Block zone in the current candle
           let hitEntry = false;
           if (setup.type === 'bullish') {
             hitEntry = latestLtfCandle.low <= setup.orderBlock.high && latestLtfCandle.low >= setup.protectedPoint.price;
@@ -280,16 +432,21 @@ async function monitorMarket() {
             if (!alertedEntries.has(setupId)) {
               alertedEntries.add(setupId);
               
-              // Generate premium HTML Alert
               const entryAlertHtml = [
                 `🎯 <b>[SMC LIVE TRADE TRIGGERED]</b>`,
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
                 `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol]})`,
                 `<b>Type:</b> ${setup.type === 'bullish' ? '🟢 <b>BULLISH BUY LIMIT</b>' : '🔴 <b>BEARISH SELL LIMIT</b>'}`,
+                `🔥 <b>Institutional Score:</b> <code>${setup.confluenceScore}/10 Points</code>`,
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
                 `🔥 <b>ENTRY PRICE:</b> <code>${setup.entryPrice.toFixed(2)}</code> (OB Tapped)`,
                 `🛡️ <b>STOP LOSS (SL):</b> <code>${stopLossVal.toFixed(2)}</code>`,
                 `🏆 <b>TAKE PROFIT (TP):</b> <code>${takeProfitVal.toFixed(2)}</code> (Strict 1:${config.REWARD_RATIO} RR)`,
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+                `💰 <b>MT5 POSITION SIZING ($${config.RISK_AMOUNT_USD} Risk):</b>`,
+                `• <b>Recommended Lot Size:</b> <code>${recommendedLotSize} Lots</code>`,
+                `• <b>Max Loss on SL:</b> <code>-$${config.RISK_AMOUNT_USD.toFixed(2)}</code>`,
+                `• <b>Target Profit on TP:</b> <code>+$${(config.RISK_AMOUNT_USD * config.REWARD_RATIO).toFixed(2)}</code>`,
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
                 `⚡ <b>SMC Coordinates:</b>`,
                 `• Protected A (SL): <code>${setup.protectedPoint.price.toFixed(2)}</code>`,
@@ -303,7 +460,18 @@ async function monitorMarket() {
               await sendTelegramMessage(entryAlertHtml);
               console.log(`${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM ENTRY ALERT FOR ${symbol}${RESET}`);
 
-              // Add virtual trade to active monitoring list
+              // Record signal in persistent database
+              recordSignal({
+                setupId: setupId,
+                symbol: symbol,
+                type: setup.type,
+                entryPrice: setup.entryPrice,
+                stopLoss: stopLossVal,
+                takeProfit: takeProfitVal,
+                confluenceScore: setup.confluenceScore
+              });
+              recordTrigger(setupId);
+
               const activeTrades = loadActiveTrades();
               if (!activeTrades.some(t => t.setupId === setupId)) {
                 activeTrades.push({
@@ -316,62 +484,40 @@ async function monitorMarket() {
                   triggeredTime: Date.now()
                 });
                 saveActiveTrades(activeTrades);
-                console.log(`[runner] Added ${symbol} trade to virtual active monitoring list.`);
-              }
-
-              // Place trade automatically on Deriv if AUTO_TRADE is true
-              if (config.AUTO_TRADE) {
-                try {
-                  console.log(`[runner] AUTO_TRADE is active. Triggering placeTrade on Deriv for ${symbol}...`);
-                  const contractId = await placeTrade(symbol, setup.type, setup.entryPrice, stopLossVal, takeProfitVal);
-                  
-                  const tradePlacedHtml = [
-                    `✅ <b>[DERIV TRADE EXECUTED]</b>`,
-                    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-                    `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol]})`,
-                    `<b>Contract ID:</b> <code>${contractId}</code>`,
-                    `<b>Direction:</b> ${setup.type === 'bullish' ? '🟢 BUY (MULTUP)' : '🔴 SELL (MULTDOWN)'}`,
-                    `<b>Stake Amount:</b> <code>$${process.env.TRADE_STAKE || 1} USD</code>`,
-                    `<b>Multiplier:</b> <code>x${process.env.TRADE_MULTIPLIER || 20}</code>`,
-                    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-                    `<i>🚀 Order successfully executed and filled. Positions monitor is tracking...</i>`
-                  ].join('\n');
-                  
-                  await sendTelegramMessage(tradePlacedHtml);
-                  console.log(`${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM TRADE PLACED CONFIRMATION FOR ${symbol}${RESET}`);
-                } catch (tradeErr) {
-                  console.error(`[runner] Failed to place trade on Deriv for ${symbol}:`, tradeErr.message);
-                  
-                  const tradeFailedHtml = [
-                    `⚠️ <b>[DERIV TRADE EXECUTION FAILED]</b>`,
-                    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-                    `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol]})`,
-                    `<b>Direction:</b> ${setup.type === 'bullish' ? '🟢 BUY' : '🔴 SELL'}`,
-                    `<b>Error:</b> <code>${tradeErr.message}</code>`,
-                    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-                    `<i>❌ Automated execution failed. Please verify API token permissions and connection logs on your VPS.</i>`
-                  ].join('\n');
-                  
-                  await sendTelegramMessage(tradeFailedHtml);
-                }
               }
             }
           } 
-          // C. Evaluate Stage 1: Setup Detected Alert
-          // Triggers when structure is fully set up, but price has not tapped the OB yet
           else {
             if (!alertedSetups.has(setupId)) {
               alertedSetups.add(setupId);
+              
+              // Record signal in persistent database
+              recordSignal({
+                setupId: setupId,
+                symbol: symbol,
+                type: setup.type,
+                entryPrice: setup.entryPrice,
+                stopLoss: stopLossVal,
+                takeProfit: takeProfitVal,
+                confluenceScore: setup.confluenceScore
+              });
+
               
               const setupAlertHtml = [
                 `🔔 <b>[SMC HIGH-PROBABILITY SETUP]</b>`,
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
                 `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol]})`,
                 `<b>Type:</b> ${setup.type === 'bullish' ? '🟢 <b>BULLISH PENDING OB TAP</b>' : '🔴 <b>BEARISH PENDING OB TAP</b>'}`,
+                `🔥 <b>Institutional Score:</b> <code>${setup.confluenceScore}/10 Points</code>`,
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
                 `🔹 <b>ENTRY ZONE:</b> <code>${setup.entryPrice.toFixed(2)}</code> (Order Block limit)`,
                 `🔹 <b>STOP LOSS:</b> <code>${stopLossVal.toFixed(2)}</code>`,
                 `🔹 <b>STRICT 1:2 TP:</b> <code>${takeProfitVal.toFixed(2)}</code>`,
+                `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+                `💰 <b>MT5 POSITION SIZING ($${config.RISK_AMOUNT_USD} Risk):</b>`,
+                `• <b>Recommended Lot Size:</b> <code>${recommendedLotSize} Lots</code>`,
+                `• <b>Max Loss on SL:</b> <code>-$${config.RISK_AMOUNT_USD.toFixed(2)}</code>`,
+                `• <b>Target Profit on TP:</b> <code>+$${(config.RISK_AMOUNT_USD * config.REWARD_RATIO).toFixed(2)}</code>`,
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
                 `📊 <b>Market Structure State:</b>`,
                 `• Protected Extremity A: <code>${setup.protectedPoint.price.toFixed(2)}</code>`,
@@ -403,8 +549,39 @@ async function monitorMarket() {
 async function main() {
   const args = process.argv.slice(2);
   const isTest = args.includes('--test');
+  const isDailyReport = args.includes('--daily-report');
+  const isWeeklyReport = args.includes('--weekly-report');
+  const isMonthlyReport = args.includes('--monthly-report');
+
+  if (isDailyReport) {
+    console.log(`\n📊 Generating and dispatching End-of-Day Performance Report to Telegram...`);
+    const report = generateDailyReport();
+    const html = formatReportTelegramHTML(report);
+    await sendTelegramMessage(html);
+    console.log(`${GREEN}✅ SUCCESS: End-of-Day Report dispatched to Telegram!${RESET}`);
+    process.exit(0);
+  }
+
+  if (isWeeklyReport) {
+    console.log(`\n📊 Generating and dispatching End-of-Week Performance Report to Telegram...`);
+    const report = generateWeeklyReport();
+    const html = formatReportTelegramHTML(report);
+    await sendTelegramMessage(html);
+    console.log(`${GREEN}✅ SUCCESS: End-of-Week Report dispatched to Telegram!${RESET}`);
+    process.exit(0);
+  }
+
+  if (isMonthlyReport) {
+    console.log(`\n📊 Generating and dispatching End-of-Month Performance Report to Telegram...`);
+    const report = generateMonthlyReport();
+    const html = formatReportTelegramHTML(report);
+    await sendTelegramMessage(html);
+    console.log(`${GREEN}✅ SUCCESS: End-of-Month Report dispatched to Telegram!${RESET}`);
+    process.exit(0);
+  }
   
   if (isTest) {
+
     console.log(`\n${BOLD}${CYAN}======================================================`);
     console.log(`🧪 TESTING TELEGRAM BOT NOTIFICATIONS CONNECTION...`);
     console.log(`======================================================${RESET}\n`);
@@ -418,10 +595,10 @@ async function main() {
       `🎉 <b>Congratulations!</b> Your live Telegram Alert Channel is now <b>100% operational</b>!`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
       `🤖 <b>Bot Status:</b> Active & Running 24/7 on VPS`,
-      `🚀 <b>Optimized Pairs:</b> 6 active Volatility Indices`,
-      `📊 <b>Target System:</b> Strict 1:2 Risk-to-Reward (RR) Limit`,
+      `🚀 <b>Optimized Pairs:</b> Active Volatility Indices`,
+      `📊 <b>Target System:</b> Institutional SMC 1:2 RR + 1.1 RR Break-Even Alerts`,
       `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      `<i>This is a mock alert confirming that your environment credentials are correct. Real-time fronttesting signals will stream below!</i>`
+      `<i>This is a mock alert confirming that your environment credentials are correct. Real-time signals will stream below!</i>`
     ].join('\n');
     
     try {
@@ -435,58 +612,21 @@ async function main() {
     process.exit(0);
   }
   
-  // Real-time live looping mode
   console.log(`\n${BOLD}${CYAN}=================================================================================================`);
   console.log(`🤖 ALGO MARKET STRUCTURE (SMC) LIVE TELEGRAM ALERT ENGINE`);
   console.log(`=================================================================================================${RESET}`);
   console.log(`Timeframe Settings: LTF = ${config.DEFAULT_LTF} | HTF Filter = ${config.DEFAULT_HTF} (50 EMA)`);
-  console.log(`Risk Settings: Risk per Trade = ${config.RISK_PERCENT}% | Target Reward-to-Risk = ${config.REWARD_RATIO}:1`);
+  console.log(`Risk Settings: Risk Amount = $${config.RISK_AMOUNT_USD} | Target Reward-to-Risk = ${config.REWARD_RATIO}:1`);
+  console.log(`Institutional Filters: ATR(14) SL | FVG Displacement | Min Score: 7/10 | 1.1 RR Break-Even Alerts`);
   console.log(`Bot Mode: Live Polling & Active Fronttesting Alert System`);
   console.log(`Status: Active and Listening 24/7 for optimized setups...`);
   console.log(`-------------------------------------------------------------------------------------------------`);
   
-  // Start persistent position monitoring if AUTO_TRADE is enabled
-  if (config.AUTO_TRADE) {
-    console.log(`[runner] AUTO_TRADE is active. Initializing persistent Deriv contract monitoring...`);
-    monitorPositions(async ({ symbol, contractId, profit, result, contractDetails }) => {
-      console.log(`[runner] Position closed event received for contract ${contractId} (${symbol}). Result: ${result}, Profit: $${profit}`);
-
-      const isProfit = profit > 0;
-      const resultEmoji = isProfit ? '🏆' : '🛡️';
-      const outcomeText = isProfit 
-        ? `🟢 <b>TAKE PROFIT (TP) HIT!</b>` 
-        : `🔴 <b>STOP LOSS (SL) HIT!</b>`;
-
-      const closedAlertHtml = [
-        `${resultEmoji} <b>[DERIV POSITION CLOSED]</b>`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] || symbol})`,
-        `<b>Contract ID:</b> <code>${contractId}</code>`,
-        `<b>Outcome:</b> ${outcomeText}`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `💰 <b>REALIZED PROFIT:</b> <code>${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} USD</code>`,
-        `📈 <b>Entry Spot:</b> <code>${contractDetails.entry_spot}</code>`,
-        `📉 <b>Exit Spot:</b> <code>${contractDetails.exit_spot || 'N/A'}</code>`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `<i>ℹ️ Open the Deriv GO app on your phone to check your updated balance sheet!</i>`
-      ].join('\n');
-
-      try {
-        await sendTelegramMessage(closedAlertHtml);
-        console.log(`${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM POSITION CLOSED NOTIFICATION FOR ${symbol}${RESET}`);
-      } catch (telegramErr) {
-        console.error("[runner] Failed sending Telegram closed position notification:", telegramErr.message);
-      }
-    });
-  }
-
-  // Initial Scan
-  await monitorMarket();
-  
-  // Run loop every 30 seconds
-  setInterval(async () => {
-    await monitorMarket();
-  }, 30000);
+  setInterval(monitorMarket, 30000);
+  monitorMarket();
 }
 
-main();
+main().catch(err => {
+  console.error("Fatal Runner Error:", err);
+});
+
