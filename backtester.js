@@ -112,11 +112,42 @@ function runBacktest(symbol, ltfCandles, htfCandles = null) {
         if (hitSL) {
           trade.result = 'loss';
           trade.exitPrice = trade.stopLoss;
-          trade.profit = -trade.riskAmount;
+          
+          // ─── SPIKE SLIPPAGE MODEL ──────────────────────────────────────────
+          // On Boom/Crash pairs, a spike candle can blast THROUGH the SL level
+          // in a single tick, filling at a far worse price than the SL.
+          // We model this realistically:
+          //   - Calculate candle range (high-low) vs SL distance from entry.
+          //   - If candle range >> SL distance, the spike very likely gapped
+          //     through the SL. Add proportional slippage cost.
+          //   - Max slippage cap: 2.0x the intended risk (worst realistic case).
+          // ──────────────────────────────────────────────────────────────────
+          const sym = trade.symbol ? trade.symbol.toUpperCase() : '';
+          const isBoomCrash = sym.startsWith('BOOM') || sym.startsWith('CRASH');
+          let slippageMultiplier = 1.0; // Default: exact SL fill
+          
+          if (isBoomCrash) {
+            const candleRange = currentCandle.high - currentCandle.low;
+            const slDistance = Math.abs(trade.entryPrice - trade.stopLoss);
+            const gapRatio = slDistance > 0 ? candleRange / slDistance : 1;
+            
+            if (gapRatio > 5) {
+              // Massive spike candle — heavy slippage likely (1.5x–2.0x loss)
+              slippageMultiplier = 1.5 + Math.random() * 0.5; // 1.5–2.0x
+            } else if (gapRatio > 2.5) {
+              // Moderate spike — mild slippage (1.1x–1.5x loss)
+              slippageMultiplier = 1.1 + Math.random() * 0.4; // 1.1–1.5x
+            }
+            // gapRatio <= 2.5: normal candle, no spike slippage
+          }
+          
+          trade.slippageMultiplier = parseFloat(slippageMultiplier.toFixed(3));
+          trade.profit = -(trade.riskAmount * slippageMultiplier);
         } else {
           trade.result = 'win';
           trade.exitPrice = trade.takeProfit;
           trade.profit = trade.riskAmount * config.REWARD_RATIO;
+          trade.slippageMultiplier = 1.0;
         }
         
         balance += trade.profit;
@@ -144,14 +175,14 @@ function runBacktest(symbol, ltfCandles, htfCandles = null) {
     
     // 2. If we are IDLE, scan market structure for setups and trigger entries
     if (!activeTrade && cooldownCounter === 0) {
-      const analysis = analyzeStructure(ltfCandles, i);
+      const analysis = analyzeStructure(ltfCandles, i, null, symbol);
       const setup = analysis.setup;
       
       if (setup) {
         // Initialize or update setup state
         if (!activeSetup || activeSetup.protectedPoint.index !== setup.protectedPoint.index) {
           activeSetup = setup;
-          hasSweptLiq = false;
+          hasSweptLiq = true; // Liquidity sweep B was already verified by analyzeStructure
         } else {
           activeSetup = setup; // Keep sync
         }
@@ -294,6 +325,30 @@ function runBacktest(symbol, ltfCandles, htfCandles = null) {
   const netProfit = balance - config.STARTING_BALANCE;
   const returnOnInvestment = (netProfit / config.STARTING_BALANCE) * 100;
 
+  // 4. Build Monthly Breakdown
+  // Group each trade by calendar month (YYYY-MM) based on entry timestamp
+  // NOTE: candle.time is already in milliseconds (set by dataFetcher: c.epoch * 1000)
+  const monthlyMap = {};
+  for (const t of trades) {
+    const d = new Date(t.entryTime); // already ms - do NOT * 1000
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!monthlyMap[key]) {
+      monthlyMap[key] = { month: key, trades: 0, wins: 0, losses: 0, netProfit: 0, slippageCost: 0 };
+    }
+    monthlyMap[key].trades++;
+    monthlyMap[key].netProfit += t.profit;
+    if (t.result === 'win') {
+      monthlyMap[key].wins++;
+    } else {
+      monthlyMap[key].losses++;
+      // Extra slippage cost vs clean -1R
+      const baseLoss = -(t.riskAmount);
+      const actualLoss = t.profit;
+      monthlyMap[key].slippageCost += Math.abs(actualLoss) - Math.abs(baseLoss);
+    }
+  }
+  const monthlyBreakdown = Object.values(monthlyMap).sort((a, b) => a.month.localeCompare(b.month));
+
   return {
     symbol,
     startingBalance: config.STARTING_BALANCE,
@@ -307,7 +362,8 @@ function runBacktest(symbol, ltfCandles, htfCandles = null) {
     profitFactor: parseFloat(profitFactor.toFixed(2)),
     maxDrawdown: parseFloat((maxDrawdown * 100).toFixed(2)),
     trades,
-    equityCurve
+    equityCurve,
+    monthlyBreakdown
   };
 }
 

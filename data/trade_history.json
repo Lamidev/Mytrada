@@ -1,0 +1,19 @@
+[
+  {
+    "setupId": "CRASH500_bearish_1786485000000",
+    "symbol": "CRASH500",
+    "symbolName": "Crash 500 Index",
+    "type": "bearish",
+    "entryPrice": 3094.227,
+    "stopLoss": 3098.674,
+    "takeProfit": 3085.3329999999996,
+    "confluenceScore": 8,
+    "status": "PENDING",
+    "signalTime": "2026-08-12T06:23:33.090Z",
+    "triggeredTime": null,
+    "closedTime": null,
+    "outcome": null,
+    "pnlR": 0,
+    "pnlUSD": 0
+  }
+]

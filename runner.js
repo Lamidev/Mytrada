@@ -144,6 +144,123 @@ function sendTelegramMessage(htmlText) {
   });
 }
 
+const PENDING_TRADES_FILE = path.join(CACHE_DIR, 'pending_trades.json');
+
+function loadPendingTrades() {
+  if (fs.existsSync(PENDING_TRADES_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(PENDING_TRADES_FILE, 'utf8'));
+    } catch (e) {
+      console.error("[runner] Error reading pending trades file:", e.message);
+    }
+  }
+  return [];
+}
+
+function savePendingTrades(trades) {
+  try {
+    fs.writeFileSync(PENDING_TRADES_FILE, JSON.stringify(trades, null, 2), 'utf8');
+  } catch (e) {
+    console.error("[runner] Error writing pending trades file:", e.message);
+  }
+}
+
+async function checkPendingTradesForSymbol(symbol, ltfCandles) {
+  const pendingTrades = loadPendingTrades();
+  const symbolPending = pendingTrades.filter(t => t.symbol === symbol);
+  if (symbolPending.length === 0) return;
+
+  const latestCandle = ltfCandles[ltfCandles.length - 1];
+  let updatedPending = [...pendingTrades];
+  let changed = false;
+
+  for (const pending of symbolPending) {
+    // Check if expired
+    const maxAgeMs = (config.PENDING_ORDER_MAX_HOURS || 24) * 60 * 60 * 1000;
+    if (Date.now() - pending.createdTime > maxAgeMs) {
+      console.log(`[runner] Pending order ${pending.setupId} expired (> ${config.PENDING_ORDER_MAX_HOURS}h). Removing.`);
+      updatedPending = updatedPending.filter(t => t.setupId !== pending.setupId);
+      changed = true;
+      continue;
+    }
+
+    // Check invalidation
+    let isInvalidated = false;
+    if (pending.type === 'bullish' && latestCandle.low < pending.protectedPrice) {
+      isInvalidated = true;
+    } else if (pending.type === 'bearish' && latestCandle.high > pending.protectedPrice) {
+      isInvalidated = true;
+    }
+
+    if (isInvalidated) {
+      console.log(`[runner] Pending order ${pending.setupId} invalidated. Removing.`);
+      updatedPending = updatedPending.filter(t => t.setupId !== pending.setupId);
+      changed = true;
+      continue;
+    }
+
+    // Check entry limit tap
+    let hitEntry = false;
+    if (pending.type === 'bullish') {
+      hitEntry = latestCandle.low <= pending.obHigh && latestCandle.low >= pending.protectedPrice;
+    } else {
+      hitEntry = latestCandle.high >= pending.obLow && latestCandle.high <= pending.protectedPrice;
+    }
+
+    if (hitEntry) {
+      const recommendedLotSize = calculateLotSize(symbol, pending.entryPrice, pending.stopLoss);
+      const entryAlertHtml = [
+        `🎯 <b>[SMC LIVE TRADE TRIGGERED]</b>`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] || symbol})`,
+        `<b>Type:</b> ${pending.type === 'bullish' ? '🟢 <b>BULLISH BUY LIMIT</b>' : '🔴 <b>BEARISH SELL LIMIT</b>'}`,
+        `🔥 <b>Institutional Score:</b> <code>${pending.confluenceScore}/10 Points</code>`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🔥 <b>ENTRY PRICE:</b> <code>${pending.entryPrice.toFixed(2)}</code> (OB Tapped)`,
+        `🛡️ <b>STOP LOSS (SL):</b> <code>${pending.stopLoss.toFixed(2)}</code>`,
+        `🏆 <b>TAKE PROFIT (TP):</b> <code>${pending.takeProfit.toFixed(2)}</code> (Strict 1:${config.REWARD_RATIO} RR)`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `💰 <b>MT5 POSITION SIZING ($${config.RISK_AMOUNT_USD} Risk):</b>`,
+        `• <b>Recommended Lot Size:</b> <code>${recommendedLotSize} Lots</code>`,
+        `• <b>Max Loss on SL:</b> <code>-$${config.RISK_AMOUNT_USD.toFixed(2)}</code>`,
+        `• <b>Target Profit on TP:</b> <code>+$${(config.RISK_AMOUNT_USD * config.REWARD_RATIO).toFixed(2)}</code>`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `<i>⚠️ Note: SMC entry tapped. Please enter the trade manually on Metatrader 5.</i>`
+      ].join('\n');
+
+      try {
+        await sendTelegramMessage(entryAlertHtml);
+        console.log(`${GREEN}${BOLD}   >>> 📢 SENT TELEGRAM ENTRY ALERT FOR ${symbol}${RESET}`);
+      } catch (e) {
+        console.error("[runner] Failed sending entry alert:", e.message);
+      }
+
+      recordTrigger(pending.setupId);
+
+      const activeTrades = loadActiveTrades();
+      if (!activeTrades.some(t => t.setupId === pending.setupId)) {
+        activeTrades.push({
+          setupId: pending.setupId,
+          symbol: symbol,
+          type: pending.type,
+          entryPrice: pending.entryPrice,
+          stopLoss: pending.stopLoss,
+          takeProfit: pending.takeProfit,
+          triggeredTime: Date.now()
+        });
+        saveActiveTrades(activeTrades);
+      }
+
+      updatedPending = updatedPending.filter(t => t.setupId !== pending.setupId);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    savePendingTrades(updatedPending);
+  }
+}
+
 function loadActiveTrades() {
   if (fs.existsSync(ACTIVE_TRADES_FILE)) {
     try {
@@ -394,8 +511,9 @@ async function monitorMarket() {
       const latestLtfCandle = ltfCandles[ltfCandles.length - 1];
       
       await checkActiveTradesForSymbol(symbol, ltfCandles);
+      await checkPendingTradesForSymbol(symbol, ltfCandles);
       
-      const analysis = analyzeStructure(ltfCandles, ltfCandles.length - 1, trendBias);
+      const analysis = analyzeStructure(ltfCandles, ltfCandles.length - 1, trendBias, symbol);
       const setup = analysis.setup;
       
       const trendSymbol = trendBias === 'bullish' ? `${GREEN}📈 BULLISH${RESET}` : `${RED}📉 BEARISH${RESET}`;
@@ -452,7 +570,7 @@ async function monitorMarket() {
                 `• Protected A (SL): <code>${setup.protectedPoint.price.toFixed(2)}</code>`,
                 `• Liquidity B (Swept): <code>${setup.structuralLiquidity.price.toFixed(2)}</code>`,
                 `• Peak C (Breakout): <code>${setup.peak.price.toFixed(2)}</code>`,
-                `• HTF Bias (4H): <code>${trendBias.toUpperCase()}</code>`,
+                `• HTF Bias (${config.DEFAULT_HTF.toUpperCase()}): <code>${trendBias.toUpperCase()}</code>`,
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
                 `<i>⚠️ Note: SMC entry tapped. Please enter the trade manually on Metatrader 5.</i>`
               ].join('\n');
@@ -488,6 +606,24 @@ async function monitorMarket() {
             }
           } 
           else {
+            const pendingTrades = loadPendingTrades();
+            if (!pendingTrades.some(p => p.setupId === setupId)) {
+              pendingTrades.push({
+                setupId: setupId,
+                symbol: symbol,
+                type: setup.type,
+                entryPrice: setup.entryPrice,
+                stopLoss: stopLossVal,
+                takeProfit: takeProfitVal,
+                confluenceScore: setup.confluenceScore,
+                protectedPrice: setup.protectedPoint.price,
+                obHigh: setup.orderBlock.high,
+                obLow: setup.orderBlock.low,
+                createdTime: Date.now()
+              });
+              savePendingTrades(pendingTrades);
+            }
+
             if (!alertedSetups.has(setupId)) {
               alertedSetups.add(setupId);
               
@@ -523,7 +659,7 @@ async function monitorMarket() {
                 `• Protected Extremity A: <code>${setup.protectedPoint.price.toFixed(2)}</code>`,
                 `• Liquidity Sweep B: <code>${setup.structuralLiquidity.price.toFixed(2)}</code>`,
                 `• Structural Peak C: <code>${setup.peak.price.toFixed(2)}</code>`,
-                `• HTF Trend Bias (4H): <code>${trendBias.toUpperCase()}</code>`,
+                `• HTF Trend Bias (${config.DEFAULT_HTF.toUpperCase()}): <code>${trendBias.toUpperCase()}</code>`,
                 `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
                 `<i>🕒 Waiting for price pullback to sweep liquidity point B and tap the entry corridor... Set your limit alerts!</i>`
               ].join('\n');

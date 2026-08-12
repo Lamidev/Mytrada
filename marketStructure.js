@@ -155,14 +155,40 @@ function isValidSweep(candle, targetPrice, type) {
 }
 
 /**
+ * Checks if a setup direction (bullish/bearish) is permitted by BOOM_CRASH_MODE
+ */
+function isSetupAllowedByMode(symbol, setupType) {
+  let mode = config.BOOM_CRASH_MODE || 'BOTH';
+  if (config.ENABLE_HYBRID_PORTFOLIO && config.HYBRID_PORTFOLIO_MODES && config.HYBRID_PORTFOLIO_MODES[symbol]) {
+    mode = config.HYBRID_PORTFOLIO_MODES[symbol];
+  }
+  if (mode === 'BOTH' || !symbol) return true;
+
+  const upperSymbol = symbol.toUpperCase();
+  const isBoom = upperSymbol.startsWith('BOOM');
+  const isCrash = upperSymbol.startsWith('CRASH');
+
+  if (isBoom) {
+    if (mode === 'SPIKE_CATCHING') return setupType === 'bullish'; // BUY ONLY for Boom
+    if (mode === 'TICK_SCALPING') return setupType === 'bearish';  // SELL ONLY for Boom
+  }
+  if (isCrash) {
+    if (mode === 'SPIKE_CATCHING') return setupType === 'bearish';  // SELL ONLY for Crash
+    if (mode === 'TICK_SCALPING') return setupType === 'bullish';  // BUY ONLY for Crash
+  }
+  return true;
+}
+
+/**
  * Analyzes market structure up to the current index (no lookahead bias).
  * 
  * @param {Array} candles All historical candles
  * @param {number} currentIndex The simulated "now" candle index
  * @param {string} htfTrend Optional HTF trend direction ('bullish' or 'bearish')
+ * @param {string} symbol Optional asset symbol to enforce Boom/Crash mode rules
  * @returns {object} Struct containing detected swings, BOS, OBs, and active setups
  */
-function analyzeStructure(candles, currentIndex, htfTrend = null) {
+function analyzeStructure(candles, currentIndex, htfTrend = null, symbol = '') {
   const left = config.PIVOT_LEFT_BARS;
   const right = config.PIVOT_RIGHT_BARS;
   
@@ -307,7 +333,7 @@ function analyzeStructure(candles, currentIndex, htfTrend = null) {
         const score = calculateConfluenceScore(candidateSetup, htfTrend, hasFVG);
         candidateSetup.confluenceScore = score;
 
-        if (score >= (config.MIN_CONFLUENCE_SCORE || 7)) {
+        if (score >= (config.MIN_CONFLUENCE_SCORE || 5) && isSetupAllowedByMode(symbol, 'bullish')) {
           setup = candidateSetup;
         }
       }
@@ -422,7 +448,7 @@ function analyzeStructure(candles, currentIndex, htfTrend = null) {
         const score = calculateConfluenceScore(candidateSetup, htfTrend, hasFVG);
         candidateSetup.confluenceScore = score;
 
-        if (score >= (config.MIN_CONFLUENCE_SCORE || 7)) {
+        if (score >= (config.MIN_CONFLUENCE_SCORE || 5) && isSetupAllowedByMode(symbol, 'bearish')) {
           setup = candidateSetup;
         }
       }
