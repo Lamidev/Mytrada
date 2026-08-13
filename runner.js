@@ -432,9 +432,10 @@ function detectSpikeExhaustion(ltfCandles, htfCandles, mode) {
     const entry  = c0.close;
     const sl     = spikePeak + (atr * 1.5);          // SL above spike peak
     const slDist = Math.abs(entry - sl);
-    const tp     = entry - (slDist * config.REWARD_RATIO);  // 1:2 R:R
+    const tp     = entry - (slDist * config.REWARD_RATIO);  // 1:1.3 R:R
+    const candleEpoch = c0.epoch || c0.time;
 
-    return { mode, htfTrend, entry, sl, tp, slDist, atr, spikePeak };
+    return { mode, htfTrend, entry, sl, tp, slDist, atr, spikePeak, candleEpoch };
   }
 
   // CRASH
@@ -450,9 +451,10 @@ function detectSpikeExhaustion(ltfCandles, htfCandles, mode) {
   const entry  = c0.close;
   const sl     = crashTrough - (atr * 1.5);           // SL below crash trough
   const slDist = Math.abs(entry - sl);
-  const tp     = entry + (slDist * config.REWARD_RATIO);    // 1:2 R:R
+  const tp     = entry + (slDist * config.REWARD_RATIO);    // 1:1.3 R:R
+  const candleEpoch = c0.epoch || c0.time;
 
-  return { mode, htfTrend, entry, sl, tp, slDist, atr, crashTrough };
+  return { mode, htfTrend, entry, sl, tp, slDist, atr, crashTrough, candleEpoch };
 }
 
 /**
@@ -477,8 +479,8 @@ async function monitorMarket() {
       const setup = detectSpikeExhaustion(ltfCandles, htfCandles, mode);
 
       if (setup) {
-        // De-duplicate: key on symbol + entry price (2dp)
-        const setupId = `${symbol}_${mode}_${setup.entry.toFixed(2)}`;
+        // De-duplicate strictly by symbol + mode + exact candle epoch timestamp
+        const setupId = `${symbol}_${mode}_${setup.candleEpoch}`;
 
         // Guard: one active trade per symbol at a time
         const existingActive = loadActiveTrades();
@@ -509,16 +511,16 @@ async function monitorMarket() {
             `  Max Loss (SL Hit): <code>-$${config.RISK_AMOUNT_USD.toFixed(2)} USD</code>`,
             `  Target Win (TP Hit): <code>+$${(config.RISK_AMOUNT_USD * config.REWARD_RATIO).toFixed(2)} USD</code>`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `<b>MAX HOLD TIME:</b> <code>5 x 5M candles = 15-20 mins — EXIT REGARDLESS</code>`,
+            `<b>EXIT STRATEGY:</b> <code>Hold until TP (${config.REWARD_RATIO}R) or SL hit — NO time stop</code>`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `<i>Enter MARKET ${direction} on MT5 immediately. Close all by candle 5.</i>`
+            `<i>Enter MARKET ${direction} on MT5. Hold until TP or SL is hit.</i>`
           ].join('\n');
 
           await sendTelegramMessage(alertHtml);
           console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> SPIKE EXHAUSTION SIGNAL: ${direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
 
-          // Auto-Execute direct trade via Deriv WebSocket API if DERIV_API_TOKEN is set
-          if (process.env.DERIV_API_TOKEN) {
+          // Auto-Execute direct trade via Deriv WebSocket API if AUTO_TRADE is true
+          if (config.AUTO_TRADE && process.env.DERIV_API_TOKEN) {
             try {
               console.log(`🚀 Executing auto-trade on Deriv API for ${symbol}...`);
               const contractId = await placeTrade(

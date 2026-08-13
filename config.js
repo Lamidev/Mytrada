@@ -45,16 +45,16 @@ module.exports = {
   // Risk & Position Management Settings ($10,000 Demo Account)
   STARTING_BALANCE: 10000.0, // Account size in USD ($10,000)
   RISK_PERCENT: 1.0,         // Risk exactly 1% of equity per trade
-  RISK_AMOUNT_USD: 100.0,    // Risk $100 per trade (1:2 RR = +$200 Win / -$100 Loss)
-  REWARD_RATIO: 2.0,         // Target 1:2 Risk-to-Reward ratio
+  RISK_AMOUNT_USD: 100.0,    // Risk $100 per trade ($3 risk for $100 account)
+  REWARD_RATIO: 1.3,         // Target 1:1.3 Risk-to-Reward ratio (Backtest Validated: 54.55% Win Rate)
 
   // Institutional Risk & Position Controls
-  ENABLE_BREAK_EVEN: false,     // false = Clean 1:2 R:R run without premature Break-Even stopouts
+  ENABLE_BREAK_EVEN: false,     // false = Clean 1:1.3 R:R run without premature Break-Even stopouts
   MAX_DAILY_LOSS_USD: null,      // null = disabled (run all signals during testing)
   DAILY_PROFIT_TARGET_USD: null, // null = disabled (run all signals during testing)
 
   // Bot Settings & Modes
-  AUTO_TRADE: true, // true = Automated trading on Deriv via WebSocket API
+  AUTO_TRADE: false, // false = Signal-only mode (No auto trade placement)
 
   // Telegram Notifications Settings
   TELEGRAM: {
