@@ -10,31 +10,18 @@ module.exports = {
   DERIV_APP_ID: 1089, // Public sandbox app_id
   DERIV_WS_URL: "wss://ws.derivws.com/websockets/v3?app_id=1089",
 
-  // Pure Boom & Crash Portfolio (All 20 Pairs)
-  // Backtested 2-Month Results: 78.21% Win Rate | +$1,317,600 combined net profit
+  // Top 8 Portfolio (Filtered by 1-Month MT5 Backtest Performance)
   SYMBOLS: {
     // ── BOOM Pairs (SELL ONLY in 1H Bearish Trend) ──
-    "BOOM50":    { name: "Boom 50 Index",   mode: "BOOM" },
-    "BOOM99":    { name: "Boom 99 Index",   mode: "BOOM" },
-    "BOOM100":   { name: "Boom 100 Index",  mode: "BOOM" },
-    "BOOM150N":  { name: "Boom 150 Index",  mode: "BOOM" },
     "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM" },
-    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM" },
     "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM" },
-    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM" },
-    "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM" },
+    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM" },
     "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM" },
 
     // ── CRASH Pairs (BUY ONLY in 1H Bullish Trend) ──
-    "CRASH50":   { name: "Crash 50 Index",   mode: "CRASH" },
-    "CRASH99":   { name: "Crash 99 Index",   mode: "CRASH" },
-    "CRASH100":  { name: "Crash 100 Index",  mode: "CRASH" },
-    "CRASH150N": { name: "Crash 150 Index",  mode: "CRASH" },
-    "CRASH200":  { name: "Crash 200 Index",  mode: "CRASH" },
-    "CRASH300N": { name: "Crash 300 Index",  mode: "CRASH" },
     "CRASH500":  { name: "Crash 500 Index",  mode: "CRASH" },
     "CRASH600":  { name: "Crash 600 Index",  mode: "CRASH" },
-    "CRASH900":  { name: "Crash 900 Index",  mode: "CRASH" },
+    "CRASH200":  { name: "Crash 200 Index",  mode: "CRASH" },
     "CRASH1000": { name: "Crash 1000 Index", mode: "CRASH" }
   },
 

@@ -309,18 +309,19 @@ async function checkActiveTradesForSymbol(symbol, candles) {
         }
       } else {
         if (hitTP) {
+          const winPnlUsd = config.RISK_AMOUNT_USD * config.REWARD_RATIO;
           outcomeHeader = `🏆 <b>[SMC FULL TRADE OUTCOME: DIRECT TP HIT]</b>`;
           outcomeDetails = [
             `🟢 <b>OUTCOME: TAKE PROFIT HIT!</b>`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `💰 <b>TOTAL REALIZED PROFIT:</b> <code>+$200.00 USD (+2.00R)</code>`
+            `💰 <b>TOTAL REALIZED PROFIT:</b> <code>+$${winPnlUsd.toFixed(2)} USD (+${config.REWARD_RATIO.toFixed(2)}R)</code>`
           ];
         } else {
           outcomeHeader = `🛡️ <b>[SMC FULL TRADE OUTCOME: STOP LOSS HIT]</b>`;
           outcomeDetails = [
             `🔴 <b>OUTCOME: STOP LOSS HIT</b>`,
             `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `💸 <b>TOTAL REALIZED LOSS:</b> <code>-$100.00 USD (-1.00R)</code>`
+            `💸 <b>TOTAL REALIZED LOSS:</b> <code>-$${config.RISK_AMOUNT_USD.toFixed(2)} USD (-1.00R)</code>`
           ];
         }
       }
@@ -350,14 +351,14 @@ async function checkActiveTradesForSymbol(symbol, candles) {
 
       // Record trade outcome in persistent trade history database
       let finalOutcome = 'LOSS';
-      let pnlUSD = -100.0;
+      let pnlUSD = -config.RISK_AMOUNT_USD;
       let pnlR = -1.0;
       if (trade.isBEActive || isBEActive) {
-        if (hitTP) { finalOutcome = 'WIN'; pnlUSD = 200.0; pnlR = 2.0; }
+        if (hitTP) { finalOutcome = 'WIN'; pnlUSD = config.RISK_AMOUNT_USD * config.REWARD_RATIO; pnlR = config.REWARD_RATIO; }
         else { finalOutcome = 'BREAKEVEN'; pnlUSD = 0.0; pnlR = 0.0; }
       } else {
-        if (hitTP) { finalOutcome = 'WIN'; pnlUSD = 200.0; pnlR = 2.0; }
-        else { finalOutcome = 'LOSS'; pnlUSD = -100.0; pnlR = -1.0; }
+        if (hitTP) { finalOutcome = 'WIN'; pnlUSD = config.RISK_AMOUNT_USD * config.REWARD_RATIO; pnlR = config.REWARD_RATIO; }
+        else { finalOutcome = 'LOSS'; pnlUSD = -config.RISK_AMOUNT_USD; pnlR = -1.0; }
       }
       recordClose(trade.setupId, finalOutcome, exitPrice, pnlUSD, pnlR);
 
