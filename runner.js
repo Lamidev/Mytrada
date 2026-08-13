@@ -521,12 +521,18 @@ async function monitorMarket() {
       console.log(`| Symbol: ${CYAN}${symbol.padEnd(8)}${RESET} | HTF Bias: ${trendSymbol} | Status: ${stateSymbol.padEnd(25)} | Price: ${latestLtfCandle.close.toFixed(2)}`);
       
       if (setup) {
-        const setupId = `${symbol}_${setup.type}_${setup.protectedPoint.time}`;
+        // Key the setupId on the entry PRICE LEVEL (2dp) not the candle timestamp.
+        // This ensures ATR-jitter on SL doesn't generate duplicate alerts for the same OB.
+        const setupId = `${symbol}_${setup.type}_${setup.entryPrice.toFixed(2)}`;
         
         const isTrendAligned = (setup.type === 'bullish' && trendBias === 'bullish') || 
                                (setup.type === 'bearish' && trendBias === 'bearish');
+
+        // Guard: Never open a second trade on the same symbol if one is already active
+        const existingActive = loadActiveTrades();
+        const symbolAlreadyActive = existingActive.some(t => t.symbol === symbol);
         
-        if (isTrendAligned && setup.confluenceScore >= config.MIN_CONFLUENCE_SCORE) {
+        if (isTrendAligned && setup.confluenceScore >= config.MIN_CONFLUENCE_SCORE && !symbolAlreadyActive) {
           const riskAmount = setup.entryPrice - setup.stopLoss;
           const stopLossVal = setup.stopLoss;
           let takeProfitVal;

@@ -10,44 +10,49 @@ module.exports = {
   DERIV_APP_ID: 1089, // Public sandbox app_id
   DERIV_WS_URL: "wss://ws.derivws.com/websockets/v3?app_id=1089",
 
-  // Supported Synthetic Indices (Top 6 Master Hybrid Portfolio - Backtested +15.87% Monthly ROI)
+  // Pure Boom & Crash Portfolio (NO Volatility pairs)
+  // Backtested 3-Month Results: +$34,067 combined net profit
   SYMBOLS: {
+    "BOOM300":   "Boom 300 Index",
     "BOOM500":   "Boom 500 Index",
-    "CRASH500":  "Crash 500 Index",
-    "1HZ100V":   "Volatility 100 (1s) Index",
     "BOOM1000":  "Boom 1000 Index",
-    "CRASH1000": "Crash 1000 Index",
-    "CRASH600":  "Crash 600 Index"
+    "CRASH300":  "Crash 300 Index",
+    "CRASH500":  "Crash 500 Index",
+    "CRASH600":  "Crash 600 Index",
+    "CRASH1000": "Crash 1000 Index"
   },
 
   // Timeframe Configuration (Scalping Engine)
   DEFAULT_HTF: "1h",   // Higher Timeframe for Trend Bias (1h, 15m)
   DEFAULT_LTF: "5m",   // Lower Timeframe for Entry Setup (5m, 3m)
 
-  // Master Hybrid Portfolio Strategy Mappings
+  // Boom & Crash Strategy Mode Mappings
   ENABLE_HYBRID_PORTFOLIO: true,
   HYBRID_PORTFOLIO_MODES: {
-    "BOOM500":   "TICK_SCALPING",  // SELL ONLY (80% Win Rate, +41.31% ROI)
-    "CRASH500":  "SPIKE_CATCHING", // SELL ONLY (56% Win Rate, +18.14% ROI)
-    "1HZ100V":   "BOTH",           // BUY & SELL (+14.63% ROI)
-    "BOOM1000":  "TICK_SCALPING",  // SELL ONLY (+7.10% ROI)
-    "CRASH1000": "SPIKE_CATCHING", // SELL ONLY (+7.07% ROI)
-    "CRASH600":  "SPIKE_CATCHING"  // SELL ONLY (+7.00% ROI)
+    "BOOM300":   "TICK_SCALPING",  // SELL ONLY – Price spikes UP, we sell the OB retrace (64% WR)
+    "BOOM500":   "TICK_SCALPING",  // SELL ONLY – Price spikes UP (70.77% WR, #1 performer)
+    "BOOM1000":  "TICK_SCALPING",  // SELL ONLY – Price spikes UP (60% WR)
+    "CRASH300":  "SPIKE_CATCHING", // BUY ONLY  – Price spikes DOWN, we buy the retrace (41% WR)
+    "CRASH500":  "SPIKE_CATCHING", // BUY ONLY  – Price spikes DOWN (47% WR)
+    "CRASH600":  "SPIKE_CATCHING", // BUY ONLY  – Price spikes DOWN (43% WR)
+    "CRASH1000": "SPIKE_CATCHING"  // BUY ONLY  – Price spikes DOWN (38% WR)
   },
 
-  // Daily Circuit-Breaker Controls (Risk & Profit Lock)
-  MAX_DAILY_LOSS_USD: 200.0,      // Max 2 losses ($200) per day before pausing to prevent drawdown
-  DAILY_PROFIT_TARGET_USD: 400.0, // Lock in daily profits at +$400 (+4R) to preserve wins
+  // Daily Circuit-Breaker Controls (DISABLED during testing phase)
+  // MAX_DAILY_LOSS_USD: 200.0,      // Re-enable for live: pause after 2 losses/day
+  // DAILY_PROFIT_TARGET_USD: 400.0, // Re-enable for live: lock profits at +$400/day
+  MAX_DAILY_LOSS_USD: null,      // null = disabled (no 2-loss stop rule during testing)
+  DAILY_PROFIT_TARGET_USD: null, // null = disabled (run all signals during testing)
   
-  // Risk & Position Management Settings
-  STARTING_BALANCE: 10000.0, // Account size in USD
+  // Risk & Position Management Settings ($10,000 Demo Account)
+  STARTING_BALANCE: 10000.0, // Account size in USD ($10,000)
   RISK_PERCENT: 1.0,         // Risk exactly 1% of equity per trade
-  RISK_AMOUNT_USD: 100.0,    // Base dollar risk for MT5 lot size calculation
+  RISK_AMOUNT_USD: 100.0,    // Risk $100 per trade (1:2 RR = +$200 Win / -$100 Loss)
   REWARD_RATIO: 2.0,         // Target 1:2 Risk-to-Reward ratio
 
   // Institutional Risk & Position Controls
-  ENABLE_BREAK_EVEN: true,      // Automatically send Break-Even alerts on Telegram
-  BREAK_EVEN_RR_TRIGGER: 1.1,   // Trigger BE alert when price reaches 1.1 R:R (Full Position Run)
+  ENABLE_BREAK_EVEN: false,     // false = Clean 1:2 R:R run without premature Break-Even stopouts
+  BREAK_EVEN_RR_TRIGGER: 1.1,   // Trigger BE alert when price reaches 1.1 R:R (Disabled)
   ENABLE_PARTIAL_TP: false,     // false = Full position flows to 1:2 TP without partial trimming
   PENDING_ORDER_MAX_HOURS: 24,  // Scalping Order Block Time-To-Live (Cancel pending signals older than 24 hours)
 
