@@ -480,7 +480,7 @@ def run_bot():
         f"Account: <code>{acc.login if acc else 'N/A'}</code>\n"
         f"Balance: <code>${acc.balance:,.2f} USD</code>\n"
         f"Strategy: Spike Exhaustion (BOOM SELL | CRASH BUY)\n"
-        f"Risk: <code>${RISK_AMOUNT_USD}/trade | 1:{REWARD_RATIO} R:R | Max 5 Candles</code>\n"
+        f"Risk: <code>${RISK_AMOUNT_USD}/trade | 1:{REWARD_RATIO} R:R | Price-Based Exit (TP or SL)</code>\n"
         f"Mode: <code>SIGNAL ONLY (Zero Duplicates / MT5 Chart Alignment)</code>\n"
         f"<i>Bot is now live and scanning MT5 charts 24/7.</i>"
     )
@@ -551,7 +551,8 @@ def run_bot():
                                 "candle_epoch": setup['candle_epoch']
                             }
                             state["active_signals"].append(new_signal_record)
-                            state["alerted_keys"] = list(alerted_keys)
+                            # Keep alerted_keys capped at last 500 to prevent state file bloat
+                            state["alerted_keys"] = list(alerted_keys)[-500:]
                             save_state(state)
 
                             if mode == "BOOM":
