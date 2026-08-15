@@ -356,13 +356,13 @@ def build_outcome_alert(signal: dict, outcome: str, exit_price: float, pnl_usd: 
     direction_emoji = "🟢 BUY" if signal['mode'] == "CRASH" else "🔴 SELL"
 
     if outcome == "WIN":
-        header = "🏆 <b>[SMC FULL TRADE OUTCOME: DIRECT TP HIT]</b>"
+        header = "🏆 <b>[MYTRADA SPIKE EXHAUSTION OUTCOME: DIRECT TP HIT]</b>"
         outcome_str = f"🟢 <b>OUTCOME: TAKE PROFIT HIT!</b>\n<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n💰 <b>TOTAL REALIZED PROFIT:</b> <code>+${pnl_usd:.2f} USD (+{pnl_r:.2f}R)</code>"
     elif outcome == "LOSS":
-        header = "🛡️ <b>[SMC FULL TRADE OUTCOME: STOP LOSS HIT]</b>"
+        header = "🛡️ <b>[MYTRADA SPIKE EXHAUSTION OUTCOME: STOP LOSS HIT]</b>"
         outcome_str = f"🔴 <b>OUTCOME: STOP LOSS HIT</b>\n<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n💸 <b>TOTAL REALIZED LOSS:</b> <code>-${abs(pnl_usd):.2f} USD ({pnl_r:.2f}R)</code>"
     else:  # TIME_EXIT
-        header = "⏰ <b>[SMC FULL TRADE OUTCOME: TIME EXIT (5 CANDLES)]</b>"
+        header = "⏰ <b>[MYTRADA SPIKE EXHAUSTION OUTCOME: TIME EXIT]</b>"
         pnl_sign = "+" if pnl_usd >= 0 else "-"
         outcome_str = f"🟡 <b>OUTCOME: MAX HOLD TIME EXPIRED (5 CANDLES)</b>\n<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n📊 <b>REALIZED PnL AT EXIT:</b> <code>{pnl_sign}${abs(pnl_usd):.2f} USD ({pnl_r:+.2f}R)</code>"
 

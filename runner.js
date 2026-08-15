@@ -321,40 +321,21 @@ async function checkActiveTradesForSymbol(symbol, candles) {
       let outcomeHeader = "";
       let outcomeDetails = [];
 
-      if (trade.isBEActive || isBEActive) {
-        if (hitTP) {
-          outcomeHeader = `🏆 <b>[SMC FULL TRADE OUTCOME: FULL WIN]</b>`;
-          outcomeDetails = [
-            `🟢 <b>OUTCOME: FULL 1:2 TAKE PROFIT HIT!</b>`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `💰 <b>TOTAL REALIZED PROFIT:</b> <code>+$200.00 USD (+2.00R)</code> (Full Position Payout!)`
-          ];
-        } else {
-          outcomeHeader = `🔒 <b>[SMC FULL TRADE OUTCOME: BREAK-EVEN EXIT]</b>`;
-          outcomeDetails = [
-            `🟡 <b>OUTCOME: REVERSED TO ENTRY PRICE (BREAK-EVEN EXIT)</b>`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `🔒 <b>Position Closed at Entry:</b> <code>$0.00 USD</code>`,
-            `🛡️ <b>TOTAL REALIZED NET LOSS:</b> <code>$0.00 USD (Zero Risk / No Loss!)</code>`
-          ];
-        }
+      if (hitTP) {
+        const winPnlUsd = config.RISK_AMOUNT_USD * config.REWARD_RATIO;
+        outcomeHeader = `🏆 <b>[MYTRADA SPIKE EXHAUSTION OUTCOME: DIRECT TP HIT]</b>`;
+        outcomeDetails = [
+          `🟢 <b>OUTCOME: TAKE PROFIT HIT! (+${config.REWARD_RATIO}R)</b>`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `💰 <b>TOTAL REALIZED PROFIT:</b> <code>+$${winPnlUsd.toFixed(2)} USD (+${config.REWARD_RATIO.toFixed(2)}R)</code>`
+        ];
       } else {
-        if (hitTP) {
-          const winPnlUsd = config.RISK_AMOUNT_USD * config.REWARD_RATIO;
-          outcomeHeader = `🏆 <b>[SMC FULL TRADE OUTCOME: DIRECT TP HIT]</b>`;
-          outcomeDetails = [
-            `🟢 <b>OUTCOME: TAKE PROFIT HIT!</b>`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `💰 <b>TOTAL REALIZED PROFIT:</b> <code>+$${winPnlUsd.toFixed(2)} USD (+${config.REWARD_RATIO.toFixed(2)}R)</code>`
-          ];
-        } else {
-          outcomeHeader = `🛡️ <b>[SMC FULL TRADE OUTCOME: STOP LOSS HIT]</b>`;
-          outcomeDetails = [
-            `🔴 <b>OUTCOME: STOP LOSS HIT</b>`,
-            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-            `💸 <b>TOTAL REALIZED LOSS:</b> <code>-$${config.RISK_AMOUNT_USD.toFixed(2)} USD (-1.00R)</code>`
-          ];
-        }
+        outcomeHeader = `🛡️ <b>[MYTRADA SPIKE EXHAUSTION OUTCOME: STOP LOSS HIT]</b>`;
+        outcomeDetails = [
+          `🔴 <b>OUTCOME: STOP LOSS HIT (-1.0R)</b>`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `💸 <b>TOTAL REALIZED LOSS:</b> <code>-$${config.RISK_AMOUNT_USD.toFixed(2)} USD (-1.00R)</code>`
+        ];
       }
 
 
