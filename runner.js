@@ -31,6 +31,7 @@ if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
 const ACTIVE_TRADES_FILE = path.join(CACHE_DIR, 'active_trades.json');
+const ALERTED_SETUPS_FILE = path.join(CACHE_DIR, 'alerted_setups.json');
 
 // Premium ASCII Color Codes
 const RESET = "\x1b[0m";
@@ -41,13 +42,35 @@ const CYAN = "\x1b[36m";
 const YELLOW = "\x1b[33m";
 const MAGENTA = "\x1b[35m";
 
-// In-Memory Anti-Spam Duplicate Alert Prevention Caches
-const alertedSetups = new Set();
+// Persistent Anti-Spam Duplicate Alert Prevention Cache
+function loadAlertedSetups() {
+  if (fs.existsSync(ALERTED_SETUPS_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(ALERTED_SETUPS_FILE, 'utf8'));
+      if (Array.isArray(data)) return new Set(data);
+    } catch (e) {
+      console.warn("[runner] Warning loading alerted setups cache:", e.message);
+    }
+  }
+  return new Set();
+}
+
+function saveAlertedSetup(setupId) {
+  alertedSetups.add(setupId);
+  try {
+    const list = Array.from(alertedSetups).slice(-500); // Keep last 500 setup IDs
+    fs.writeFileSync(ALERTED_SETUPS_FILE, JSON.stringify(list, null, 2), 'utf8');
+  } catch (e) {
+    console.warn("[runner] Warning saving alerted setup cache:", e.message);
+  }
+}
+
+const alertedSetups = loadAlertedSetups();
 const alertedEntries = new Set();
 const alertedBreakEvens = new Set();
 
 /**
- * Calculates recommended MT5 Lot Size based on $100 Risk Baseline
+ * Calculates recommended MT5 Lot Size based on $100 Account ($3.00 Risk Baseline)
  * @param {string} symbol Asset symbol
  * @param {number} entryPrice Entry price
  * @param {number} stopLossPrice Stop loss price
@@ -55,19 +78,27 @@ const alertedBreakEvens = new Set();
  */
 function calculateLotSize(symbol, entryPrice, stopLossPrice) {
   const priceDistance = Math.abs(entryPrice - stopLossPrice);
-  if (priceDistance === 0) return "0.01";
+  const minLots = {
+    'BOOM300N': 0.50,
+    'BOOM500': 0.20,
+    'BOOM1000': 0.20,
+    'BOOM200': 0.20,
+    'BOOM600': 0.20,
+    'CRASH300N': 0.50,
+    'CRASH500': 0.20,
+    'CRASH1000': 0.20,
+    'CRASH200': 0.20,
+    'CRASH600': 0.20
+  };
+  const minLot = minLots[symbol] || 0.20;
+
+  if (priceDistance === 0) return minLot.toFixed(2);
   
-  const riskUSD = config.RISK_AMOUNT_USD || 100.0;
+  const riskUSD = config.RISK_AMOUNT_USD || 3.0;
   const rawLotSize = riskUSD / priceDistance;
+  const finalLot = Math.max(minLot, rawLotSize);
   
-  // Format lot size based on symbol magnitude
-  if (symbol.includes('1HZ50V') || symbol.includes('1HZ25V')) {
-    return rawLotSize.toFixed(4);
-  } else if (symbol.includes('R_75') || symbol.includes('R_100') || symbol.includes('1HZ75V') || symbol.includes('1HZ100V')) {
-    return rawLotSize.toFixed(3);
-  } else {
-    return rawLotSize.toFixed(2);
-  }
+  return finalLot.toFixed(2);
 }
 
 /**
@@ -405,21 +436,36 @@ function detectSpikeExhaustion(ltfCandles, htfCandles, mode) {
   // 1H Trend Filter (50 EMA)
   const htfCloses = htfCandles.map(c => c.close);
   const htfEMA    = calculateEMA(htfCloses, 50);
-  const htfTrend  = htfCloses[htfCloses.length - 1] > htfEMA[htfEMA.length - 1] ? 'bullish' : 'bearish';
+  const lastHtfClose = htfCloses[htfCloses.length - 1];
+  const lastHtfEma   = htfEMA[htfEMA.length - 1];
+  const htfTrend  = lastHtfClose > lastHtfEma ? 'bullish' : 'bearish';
 
   if (mode === 'BOOM'  && htfTrend !== 'bearish') return null;
   if (mode === 'CRASH' && htfTrend !== 'bullish') return null;
+
+  // 1H Trend Clearance Chop Filter (Strategy 2): Skip when price is hovering flat on 50 EMA line
+  if (config.USE_HTF_CHOP_FILTER) {
+    const emaDistPct = Math.abs(lastHtfClose - lastHtfEma) / lastHtfEma;
+    if (emaDistPct < 0.0008) return null; // Filter out sideways chop
+  }
 
   // Last 3 completed 5M candles (c0 = most recent / exhaustion candidate)
   const c0 = ltfCandles[ltfCandles.length - 1];  // Exhaustion candle
   const c1 = ltfCandles[ltfCandles.length - 2];  // Spike candle 1
   const c2 = ltfCandles[ltfCandles.length - 3];  // Spike candle 2
 
+  // Optional 3+ spike confirmation
+  if (config.MIN_SPIKES === 3 && ltfCandles.length >= 4) {
+    const c3 = ltfCandles[ltfCandles.length - 4];
+    if (mode === 'BOOM' && !(c3.close > c3.open)) return null;
+    if (mode === 'CRASH' && !(c3.close < c3.open)) return null;
+  }
+
   const atr = calculateATR(ltfCandles, 14);
   if (!atr || atr === 0) return null;
 
   if (mode === 'BOOM') {
-    // Previous 2 candles must be bullish spikes (shot UP)
+    // Previous candles must be bullish spikes (shot UP)
     const c1Spike = c1.close > c1.open;
     const c2Spike = c2.close > c2.open;
     // Current candle must be bearish with solid body (>= 50% of range)
@@ -433,7 +479,7 @@ function detectSpikeExhaustion(ltfCandles, htfCandles, mode) {
     const entry  = c0.close;
     const sl     = spikePeak + (atr * 1.5);          // SL above spike peak
     const slDist = Math.abs(entry - sl);
-    const tp     = entry - (slDist * config.REWARD_RATIO);  // 1:1.3 R:R
+    const tp     = entry - (slDist * config.REWARD_RATIO);  // 1:1.4 R:R
     const candleEpoch = c0.epoch || c0.time;
 
     return { mode, htfTrend, entry, sl, tp, slDist, atr, spikePeak, candleEpoch };
@@ -452,7 +498,7 @@ function detectSpikeExhaustion(ltfCandles, htfCandles, mode) {
   const entry  = c0.close;
   const sl     = crashTrough - (atr * 1.5);           // SL below crash trough
   const slDist = Math.abs(entry - sl);
-  const tp     = entry + (slDist * config.REWARD_RATIO);    // 1:1.3 R:R
+  const tp     = entry + (slDist * config.REWARD_RATIO);    // 1:1.4 R:R
   const candleEpoch = c0.epoch || c0.time;
 
   return { mode, htfTrend, entry, sl, tp, slDist, atr, crashTrough, candleEpoch };
@@ -488,7 +534,7 @@ async function monitorMarket() {
         const symbolAlreadyActive = existingActive.some(t => t.symbol === symbol);
 
         if (!alertedSetups.has(setupId) && !symbolAlreadyActive) {
-          alertedSetups.add(setupId);
+          saveAlertedSetup(setupId);
 
           const lotSize   = calculateLotSize(symbol, setup.entry, setup.sl);
           const direction = mode === 'BOOM' ? 'SELL' : 'BUY';
@@ -499,22 +545,23 @@ async function monitorMarket() {
           const alertHtml = [
             `${dirEmoji} <b>[MYTRADA SPIKE EXHAUSTION SIGNAL]</b>`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `<b>Strategy:</b> <code>Strategy 2 — High-Action Balanced</code>`,
             `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol].name})`,
-            `<b>Direction:</b> ${dirEmoji} <b>${direction} — ${mode === 'BOOM' ? 'Boom Spike Exhaustion' : 'Crash Exhaustion'}</b>`,
-            `<b>HTF Trend (1H 50 EMA):</b> <code>${setup.htfTrend.toUpperCase()} — Aligned</code>`,
+            `<b>Direction:</b> ${dirEmoji} <b>${direction} (${mode === 'BOOM' ? 'Boom Spike Exhaustion' : 'Crash Exhaustion'})</b>`,
+            `<b>1H Trend Filter:</b> <code>${setup.htfTrend.toUpperCase()} — Clear Trend (No Chop)</code>`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `<b>ENTRY PRICE:</b> <code>${setup.entry.toFixed(2)}</code> (Market — close of exhaustion candle)`,
-            `<b>STOP LOSS (SL):</b> <code>${setup.sl.toFixed(2)}</code> (${refLabel} ${refPrice ? refPrice.toFixed(2) : ''} + 1.5x ATR)`,
-            `<b>TAKE PROFIT (TP):</b> <code>${setup.tp.toFixed(2)}</code> (1:${config.REWARD_RATIO} R:R)`,
+            `🎯 <b>ENTRY PRICE:</b> <code>${setup.entry.toFixed(2)}</code> (Market — 5M exhaustion close)`,
+            `🛡️ <b>STOP LOSS (SL):</b> <code>${setup.sl.toFixed(2)}</code> (${refLabel} ${refPrice ? refPrice.toFixed(2) : ''} + 1.5x ATR)`,
+            `🏆 <b>TAKE PROFIT (TP):</b> <code>${setup.tp.toFixed(2)}</code> (1:${config.REWARD_RATIO} R:R Target)`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `<b>Position Sizing ($10,000 Demo):</b>`,
-            `  Lot Size: <code>${lotSize} Lots</code>`,
-            `  Max Loss (SL Hit): <code>-$${config.RISK_AMOUNT_USD.toFixed(2)} USD</code>`,
-            `  Target Win (TP Hit): <code>+$${(config.RISK_AMOUNT_USD * config.REWARD_RATIO).toFixed(2)} USD</code>`,
+            `💰 <b>Position Sizing ($100 Account):</b>`,
+            `  • Recommended Lot: <code>${lotSize} Lots</code>`,
+            `  • Max Loss (SL Hit): <code>-$${config.RISK_AMOUNT_USD.toFixed(2)} USD (-1.0R / 3.0%)</code>`,
+            `  • Target Win (TP Hit): <code>+$${(config.RISK_AMOUNT_USD * config.REWARD_RATIO).toFixed(2)} USD (+${config.REWARD_RATIO}R / +4.2%)</code>`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `<b>EXIT STRATEGY:</b> <code>Hold until TP (${config.REWARD_RATIO}R) or SL hit — NO time stop</code>`,
+            `🚀 <b>EXIT STRATEGY:</b> <code>Hold to TP (+1.4R) or SL (-1.0R) — NO time stop</code>`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `<i>Enter MARKET ${direction} on MT5. Hold until TP or SL is hit.</i>`
+            `<i>Enter MARKET ${direction} on MT5. Hold strictly until TP or SL is hit.</i>`
           ].join('\n');
 
           await sendTelegramMessage(alertHtml);

@@ -35,12 +35,13 @@ load_dotenv()
 # ── Configuration ────────────────────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
-RISK_AMOUNT_USD    = 100.0    # $100 risk baseline per trade ($3 risk for $100 account)
-REWARD_RATIO       = 1.3      # 1:1.3 R:R → 54.55% Win Rate | $56,000/mo on $100 risk (backtest validated)
+RISK_AMOUNT_USD    = 3.0      # $3.00 risk baseline per trade for $100 account (3% risk)
+REWARD_RATIO       = 1.4      # 1:1.4 R:R (Win = +$4.20 / Loss = -$3.00)
 ATR_PERIOD         = 14
 ATR_SL_MULT        = 1.5      # SL = spike peak + (1.5 × ATR)
 SCAN_INTERVAL_SECS = 10       # Fast 10s scan interval for instant candle-close signals
 MAX_CORRELATED_EXPOSURE = 3   # Max 3 active signals per group (BOOM or CRASH)
+USE_HTF_CHOP_FILTER = True    # Filter out flat 50 EMA chop
 
 STATE_FILE_PATH = os.path.join(os.path.dirname(__file__), "cache", "signal_state.json")
 
@@ -238,6 +239,12 @@ def detect_spike_exhaustion(ltf_df: pd.DataFrame, htf_df: pd.DataFrame, mode: st
     if mode == "CRASH" and htf_trend != 'bullish':
         return None
 
+    # 1H Trend Clearance Chop Filter (Strategy 2): Skip flat EMA chop
+    if USE_HTF_CHOP_FILTER:
+        ema_dist_pct = abs(htf_close - htf_ema) / htf_ema
+        if ema_dist_pct < 0.0008:
+            return None
+
     # Target strictly completed candles
     c0 = ltf_df.iloc[-2]   # Last COMPLETED 5M candle (exhaustion candidate)
     c1 = ltf_df.iloc[-3]   # Previous spike candle 1
@@ -324,24 +331,24 @@ def build_signal_alert(symbol: str, setup: dict, lot_size: float) -> str:
     return (
         f"{dir_emoji} <b>[MYTRADA SPIKE EXHAUSTION SIGNAL]</b>\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+        f"<b>Strategy:</b> <code>Strategy 2 — High-Action Balanced</code>\n"
         f"<b>Asset:</b> <code>{symbol}</code>\n"
-        f"<b>Direction:</b> {dir_emoji} <b>{direction_str} — {setup['mode']} Spike Exhaustion</b>\n"
-        f"<b>HTF Trend (1H 50 EMA):</b> <code>{setup['htf_trend'].upper()} — Aligned</code>\n"
-        f"🎯 <b>SMC Liquidity Zone:</b> <code>{setup['smc_zone']} (Score: {setup['smc_score']}/10)</code>\n"
+        f"<b>Direction:</b> {dir_emoji} <b>{direction_str} ({setup['mode']} Spike Exhaustion)</b>\n"
+        f"<b>1H Trend Filter:</b> <code>{setup['htf_trend'].upper()} — Clear Trend (No Chop)</code>\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-        f"<b>ENTRY PRICE:</b> <code>{setup['entry']:.2f}</code> (Market — close of exhaustion candle)\n"
-        f"<b>STOP LOSS (SL):</b> <code>{setup['sl']:.2f}</code> ({ref_label} {setup['spike_ref']:.2f} + {ATR_SL_MULT}x ATR)\n"
-        f"<b>TAKE PROFIT (TP):</b> <code>{setup['tp']:.2f}</code> (1:{REWARD_RATIO} R:R)\n"
+        f"🎯 <b>ENTRY PRICE:</b> <code>{setup['entry']:.2f}</code> (Market — 5M exhaustion close)\n"
+        f"🛡️ <b>STOP LOSS (SL):</b> <code>{setup['sl']:.2f}</code> ({ref_label} {setup['spike_ref']:.2f} + {ATR_SL_MULT}x ATR)\n"
+        f"🏆 <b>TAKE PROFIT (TP):</b> <code>{setup['tp']:.2f}</code> (1:{REWARD_RATIO} R:R Target)\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-        f"<b>Position Sizing ($10,000 Demo):</b>\n"
-        f"  Lot Size: <code>{lot_size} Lots</code>\n"
-        f"  Max Loss (SL Hit): <code>-${RISK_AMOUNT_USD:.2f} USD</code>\n"
-        f"  Target Win (TP Hit): <code>+${RISK_AMOUNT_USD * REWARD_RATIO:.2f} USD</code>\n"
+        f"💰 <b>Position Sizing ($100 Account):</b>\n"
+        f"  • Recommended Lot: <code>{lot_size} Lots</code>\n"
+        f"  • Max Loss (SL Hit): <code>-${RISK_AMOUNT_USD:.2f} USD (-1.0R / 3.0%)</code>\n"
+        f"  • Target Win (TP Hit): <code>+${RISK_AMOUNT_USD * REWARD_RATIO:.2f} USD (+{REWARD_RATIO}R / +4.2%)</code>\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-        f"<b>EXIT STRATEGY:</b> <code>Hold until TP or SL hit — NO time stop</code>\n"
+        f"🚀 <b>EXIT STRATEGY:</b> <code>Hold to TP (+1.4R) or SL (-1.0R) — NO time stop</code>\n"
         f"<b>Candle Time:</b> <code>{setup['candle_time_str']}</code>\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-        f"<i>Enter MARKET {direction_str} on MT5. Hold until TP ({REWARD_RATIO}R) or SL is hit.</i>"
+        f"<i>Enter MARKET {direction_str} on MT5. Hold strictly until TP or SL is hit.</i>"
     )
 
 # ── Telegram Outcome Alert Builder ───────────────────────────────────────────
