@@ -706,9 +706,9 @@ async function main() {
   
   console.log(`\n${BOLD}${CYAN}=================================================================================================`);
   console.log(`  MYTRADA — SPIKE EXHAUSTION TELEGRAM ALERT BOT`);
-  console.log(`  Strategy: BOOM SELL | CRASH BUY | 1:2 R:R | Max 5 Candles (15-20 min exit)`);
+  console.log(`  Strategy: Strategy 2 — High-Action Balanced (1:1.4 R:R | 1H Chop Filter)`);
   console.log(`  Pairs: ${Object.keys(config.SYMBOLS).length} Boom & Crash Index Pairs`);
-  console.log(`  Backtest Validated: 78%+ Win Rate | 2-Month Real MT5 Data`);
+  console.log(`  Exit Rule: Hold until TP (+1.4R) or SL (-1.0R) is hit (No time stop)`);
   console.log(`=================================================================================================${RESET}`);
   console.log(`LTF: ${config.DEFAULT_LTF} (Signal) | HTF: ${config.DEFAULT_HTF} (50 EMA Trend Filter)`);
   console.log(`Risk: $${config.RISK_AMOUNT_USD}/trade | R:R = 1:${config.REWARD_RATIO} | ATR(14) SL above spike peak`);
