@@ -2,10 +2,7 @@
 /**
  * Senior Institutional Trade Logging & Periodic Performance Reporter.
  * Generates End-of-Day (EOD), End-of-Week (EOW), and End-of-Month (EOM) reports.
- * Solves multi-day pending order lifecycle accounting by tracking:
- * 1. signalTime    -> Timestamp when signal was generated
- * 2. triggeredTime -> Timestamp when order block tapped / position activated
- * 3. closedTime    -> Timestamp when trade hit TP (+2R), SL (-1R), or Break-Even ($0)
+ * Tracks balance progression, win rates, net USD/R, and MVP winning pairs.
  */
 
 const fs = require('fs');
@@ -45,7 +42,7 @@ function recordSignal(setup) {
     const record = {
       setupId: setup.setupId,
       symbol: setup.symbol,
-      symbolName: config.SYMBOLS[setup.symbol] || setup.symbol,
+      symbolName: config.SYMBOLS[setup.symbol] ? config.SYMBOLS[setup.symbol].name : setup.symbol,
       type: setup.type,
       entryPrice: setup.entryPrice,
       stopLoss: setup.stopLoss,
@@ -104,10 +101,23 @@ function getDateString(isoStr) {
 
 /**
  * Generate End of Day (EOD) Report
- * Groups closed trades strictly by closedTime date
  */
-function generateDailyReport(targetDateStr = getDateString(new Date().toISOString())) {
+function generateDailyReport(targetDateStr) {
   const history = loadTradeHistory();
+  
+  if (!targetDateStr) {
+    // Default to yesterday's date if called at midnight
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - 1);
+    targetDateStr = d.toISOString().split('T')[0];
+  }
+
+  // Trades closed before targetDateStr (Historical cumulative PnL for starting balance)
+  const priorClosed = history.filter(t => t.closedTime && getDateString(t.closedTime) < targetDateStr);
+  let priorPnL = 0;
+  priorClosed.forEach(t => priorPnL += (t.pnlUSD || 0));
+
+  const startingBalance = (config.STARTING_BALANCE || 100.0) + priorPnL;
 
   // Signals generated on target date
   const signalsToday = history.filter(t => getDateString(t.signalTime) === targetDateStr);
@@ -117,21 +127,49 @@ function generateDailyReport(targetDateStr = getDateString(new Date().toISOStrin
   const closedToday = history.filter(t => getDateString(t.closedTime) === targetDateStr);
 
   let wins = 0, losses = 0, breakevens = 0, netUSD = 0, netR = 0;
+  const perSymbol = {};
 
   closedToday.forEach(t => {
-    if (t.outcome === 'WIN') wins++;
-    else if (t.outcome === 'BREAKEVEN') breakevens++;
-    else if (t.outcome === 'LOSS') losses++;
+    if (!perSymbol[t.symbol]) {
+      perSymbol[t.symbol] = { wins: 0, losses: 0, pnlUSD: 0 };
+    }
+
+    if (t.outcome === 'WIN') {
+      wins++;
+      perSymbol[t.symbol].wins++;
+    } else if (t.outcome === 'BREAKEVEN') {
+      breakevens++;
+    } else if (t.outcome === 'LOSS') {
+      losses++;
+      perSymbol[t.symbol].losses++;
+    }
+    
     netUSD += (t.pnlUSD || 0);
     netR += (t.pnlR || 0);
+    perSymbol[t.symbol].pnlUSD += (t.pnlUSD || 0);
   });
 
   const totalClosed = closedToday.length;
-  const winRate = totalClosed > 0 ? ((wins / totalClosed) * 100).toFixed(2) : "0.00";
+  const winRate = totalClosed > 0 ? ((wins / totalClosed) * 100).toFixed(1) : "0.0";
+  const newBalance = startingBalance + netUSD;
+
+  // Identify MVP / Best Performing Pair of the Day
+  let mvpSymbol = "None";
+  let mvpPnL = -Infinity;
+  let mvpStats = "";
+  Object.keys(perSymbol).forEach(s => {
+    if (perSymbol[s].pnlUSD > mvpPnL) {
+      mvpPnL = perSymbol[s].pnlUSD;
+      mvpSymbol = s;
+      mvpStats = `${perSymbol[s].wins}W / ${perSymbol[s].losses}L (+$${perSymbol[s].pnlUSD.toFixed(2)})`;
+    }
+  });
 
   return {
     period: 'DAILY',
     date: targetDateStr,
+    startingBalance,
+    newBalance,
     signalsCount: signalsToday.length,
     triggeredCount: triggeredToday.length,
     closedCount: totalClosed,
@@ -141,6 +179,7 @@ function generateDailyReport(targetDateStr = getDateString(new Date().toISOStrin
     winRate,
     netUSD,
     netR,
+    mvpSymbol: mvpPnL > 0 ? `${mvpSymbol} [${mvpStats}]` : "Balanced",
     closedTrades: closedToday
   };
 }
@@ -165,7 +204,7 @@ function generateWeeklyReport() {
   });
 
   const totalClosed = closedThisWeek.length;
-  const winRate = totalClosed > 0 ? ((wins / totalClosed) * 100).toFixed(2) : "0.00";
+  const winRate = totalClosed > 0 ? ((wins / totalClosed) * 100).toFixed(1) : "0.0";
 
   return {
     period: 'WEEKLY',
@@ -198,7 +237,7 @@ function generateMonthlyReport(yearMonthStr = new Date().toISOString().slice(0, 
   });
 
   const totalClosed = closedThisMonth.length;
-  const winRate = totalClosed > 0 ? ((wins / totalClosed) * 100).toFixed(2) : "0.00";
+  const winRate = totalClosed > 0 ? ((wins / totalClosed) * 100).toFixed(1) : "0.0";
 
   return {
     period: 'MONTHLY',
@@ -225,30 +264,33 @@ function formatReportTelegramHTML(report) {
     : (report.period === 'WEEKLY' ? `END-OF-WEEK PERFORMANCE REPORT` : `END-OF-MONTH REPORT (${report.yearMonth})`);
 
   const lines = [
-    `${emojiHeader} <b>[SMC ${periodTitle}]</b>`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `<b>Signals Broadcasted:</b> <code>${report.signalsCount || 0}</code>`,
-    `<b>Orders Triggered:</b> <code>${report.triggeredCount || 0}</code>`,
+    `👑 ${emojiHeader} <b>[MYTRADA ${periodTitle}]</b>`,
+    `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+    `<b>Strategy:</b> <code>Strategy 5 Enhanced (Multi-TF + 3 Spikes)</code>`,
+    `<b>Signals Generated:</b> <code>${report.signalsCount || report.closedCount}</code>`,
     `<b>Positions Closed:</b> <code>${report.closedCount}</code>`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🟢 <b>Realized Wins (+$200 / +2R):</b> <code>${report.wins}</code>`,
-    `🟡 <b>Risk-Free Break-Evens ($0):</b> <code>${report.breakevens}</code>`,
-    `🔴 <b>Realized Losses (-$100 / -1R):</b> <code>${report.losses}</code>`,
-    `📊 <b>Realized Win Rate:</b> <code>${report.winRate}%</code>`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `💰 <b>TOTAL NET REALIZED PnL:</b> <code>${isPositive ? '+' : ''}$${report.netUSD.toFixed(2)} USD (${isPositive ? '+' : ''}${report.netR.toFixed(2)}R)</code>`,
-    `━━━━━━━━━━━━━━━━━━━━━━━━━━`
+    `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+    `🟢 <b>Winning Trades:</b> <code>${report.wins} Wins</code>`,
+    `🔴 <b>Losing Trades:</b> <code>${report.losses} Losses</code>`,
+    `📊 <b>Daily Win Rate:</b> <code>${report.winRate}%</code>`,
+    `🏆 <b>Top Winning Pair (MVP):</b> <code>${report.mvpSymbol || 'N/A'}</code>`,
+    `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+    `💵 <b>Yesterday's Start Balance:</b> <code>$${(report.startingBalance || 100.0).toFixed(2)} USD</code>`,
+    `💰 <b>New Account Balance:</b> <code>$${(report.newBalance || 100.0).toFixed(2)} USD</code>`,
+    `📈 <b>Net Realized PnL:</b> <code>${isPositive ? '+' : '-'}$${Math.abs(report.netUSD).toFixed(2)} USD (${isPositive ? '+' : ''}${report.netR.toFixed(1)}R)</code>`,
+    `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
   ];
 
   if (report.closedTrades && report.closedTrades.length > 0) {
     lines.push(`📋 <b>TRADE LIFECYCLE BREAKDOWN:</b>`);
     report.closedTrades.forEach(t => {
-      const outEmoji = t.outcome === 'WIN' ? '🟢 WIN' : (t.outcome === 'BREAKEVEN' ? '🟡 BE' : '🔴 LOSS');
-      const sigDate = t.signalTime ? t.signalTime.slice(5, 16).replace('T', ' ') : 'N/A';
-      const trigDate = t.triggeredTime ? t.triggeredTime.slice(5, 16).replace('T', ' ') : 'N/A';
-      lines.push(`• <b>${t.symbol}</b> (${t.type.toUpperCase()}): ${outEmoji} (Signal: ${sigDate} ➔ Trig: ${trigDate})`);
+      const outEmoji = t.outcome === 'WIN' ? '🟢 WIN (+1.3R)' : (t.outcome === 'BREAKEVEN' ? '🟡 BE' : '🔴 LOSS (-1.0R)');
+      const sigDate = t.signalTime ? t.signalTime.slice(11, 16) : 'N/A';
+      lines.push(`• <b>${t.symbol}</b> (${t.type ? t.type.toUpperCase() : 'TRADE'}): ${outEmoji} @ ${sigDate}`);
     });
-    lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+  } else {
+    lines.push(`<i>No trades closed during this session.</i>`);
   }
 
   return lines.join('\n');

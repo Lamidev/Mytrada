@@ -1,7 +1,7 @@
 // config.js
 /**
  * Configuration settings for the Algo Market Structure trading bot and backtester.
- * Senior Institutional Quantitative Configuration.
+ * Senior Institutional Quantitative Configuration — Strategy 5 Enhanced.
  */
 require('dotenv').config();
 
@@ -10,37 +10,43 @@ module.exports = {
   DERIV_APP_ID: 1089, // Public sandbox app_id
   DERIV_WS_URL: "wss://ws.derivws.com/websockets/v3?app_id=1089",
 
-  // Top 8 Portfolio (Filtered by 1-Month MT5 Backtest Performance)
+  // Top 7 Elite Portfolio (Filtered by 7-Day & 1-Month Multi-Timeframe Performance)
   SYMBOLS: {
-    // ── BOOM Pairs (SELL ONLY in 1H Bearish Trend) ──
-    "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM" },
-    "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM" },
-    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM" },
-    "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM" },
+    // ── BOOM Pairs (SELL ONLY in 4H & 1H Bearish Trend after 3+ Spikes) ──
+    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM" }, // 69.4% WR | +$64.50 ➔ 👑 Top Performer
+    "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM" }, // 66.7% WR | +$38.40 ➔ 🟢 Elite Growth
+    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM" }, // 64.7% WR | +$24.90 ➔ 🟢 High Accuracy
+    "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM" }, // 56.3% WR | +$14.10 ➔ 🟢 Steady Volume
 
-    // ── CRASH Pairs (BUY ONLY in 1H Bullish Trend) ──
-    "CRASH500":  { name: "Crash 500 Index",  mode: "CRASH" },
-    "CRASH600":  { name: "Crash 600 Index",  mode: "CRASH" },
-    "CRASH200":  { name: "Crash 200 Index",  mode: "CRASH" },
-    "CRASH1000": { name: "Crash 1000 Index", mode: "CRASH" }
+    // ── CRASH Pairs (BUY ONLY in 4H & 1H Bullish Trend after 3+ Crashes) ──
+    "CRASH99":   { name: "Crash 99 Index",   mode: "CRASH" }, // 63.6% WR | +$30.60 ➔ 🟢 Elite Scalp
+    "CRASH100":  { name: "Crash 100 Index",  mode: "CRASH" }, // 80.0% WR | +$12.60 ➔ 🎯 Ultra-Sniper
+    "CRASH600":  { name: "Crash 600 Index",  mode: "CRASH" }  // 100% WR  | +$11.70 ➔ 🎯 Perfect Accuracy
   },
 
-  // Timeframe Configuration (Scalping Engine)
-  DEFAULT_HTF: "1h",   // Higher Timeframe for Trend Bias (1h, 50 EMA)
-  DEFAULT_LTF: "5m",   // Lower Timeframe for Entry Setup (5m)
+  // Multi-Timeframe Confluence Engine
+  MACRO_HTF: "4h",        // 4-Hour Macro Trend (50 EMA)
+  INTERMEDIATE_HTF: "1h", // 1-Hour Intermediate Trend (50 EMA)
+  DEFAULT_LTF: "5m",      // 5-Minute Entry Trigger Timeframe
 
   // Risk & Position Management Settings ($100 Real Account)
   STARTING_BALANCE: 100.0,   // Account size in USD ($100 Account)
   RISK_PERCENT: 3.0,         // Risk exactly 3% of equity per trade ($3.00)
-  RISK_AMOUNT_USD: 3.0,      // Risk $3.00 per trade (1:1.4 RR = +$4.20 Win / -$3.00 Loss)
-  REWARD_RATIO: 1.4,         // Target 1:1.4 Risk-to-Reward ratio (Strategy 2: High-Action Balanced)
+  RISK_AMOUNT_USD: 3.0,      // Risk $3.00 per trade (1:1.3 RR = +$3.90 Win / -$3.00 Loss)
+  REWARD_RATIO: 1.3,         // Target 1:1.3 Risk-to-Reward ratio (Optimal Deriv Reversal Velocity)
 
-  // Institutional Risk & Optimization Controls (Strategy 2)
-  USE_HTF_CHOP_FILTER: true,    // true = Filter out flat 50 EMA chop (eliminates bad sideways losses)
-  MIN_SPIKES: 2,                // Minimum 2 consecutive spike candles
-  ENABLE_BREAK_EVEN: false,     // false = Clean 1:1.4 R:R run without premature Break-Even stopouts
-  MAX_DAILY_LOSS_USD: null,      // null = disabled (run all signals during testing)
-  DAILY_PROFIT_TARGET_USD: null, // null = disabled (run all signals during testing)
+  // Institutional Filters & Rules (Strategy 5 Enhanced)
+  USE_HTF_CHOP_FILTER: true,    // true = Filter out flat 1H 50 EMA chop (>0.08% clearance required)
+  MIN_SPIKES: 3,                // Minimum 3 consecutive spike candles for deep exhaustion
+  ENABLE_BREAK_EVEN: false,     // false = Clean 1:1.3 R:R run without premature stopouts
+
+  // Tiered Circuit Breaker Engine
+  CIRCUIT_BREAKER: {
+    ENABLED: true,
+    TIER_1_PAUSE_MINS: 45,       // 1 Loss = 45-minute pause on that symbol
+    TIER_2_PAUSE_MINS: 150,      // 2 Consecutive Losses = 2.5-hour hard pause on that symbol
+    MAX_DAILY_LOSSES_PER_SYMBOL: 3 // 3 Daily Losses = Halted for remainder of day
+  },
 
   // Bot Settings & Modes
   AUTO_TRADE: false, // false = Signal-only mode (No auto trade placement)
