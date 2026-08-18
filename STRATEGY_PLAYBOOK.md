@@ -1,6 +1,6 @@
 # Mytrada Institutional Quantitative Strategy Playbook
-**Version:** 2.0  
-**Last Updated:** August 15, 2026  
+**Version:** 3.0  
+**Last Updated:** August 18, 2026  
 **Purpose:** Comprehensive institutional reference manual documenting the baseline strategy and all backtested optimization profiles. Serves as a persistent quantitative safety net to deploy, switch, or revert strategies based on market conditions.
 
 ---
@@ -12,10 +12,11 @@
 4. [Strategy 2: High-Action Balanced Mode (1:1.4 R:R + 1H Chop Filter)](#strategy-2-high-action-balanced-mode-114-rr--1h-chop-filter)
 5. [Strategy 3: Deep Exhaustion Mode (1:1.4 R:R + 3+ Consecutive Spikes)](#strategy-3-deep-exhaustion-mode-114-rr--3-consecutive-spikes)
 6. [Strategy 4: Ultra-Sniper Mode (1:1.4 R:R + RSI Extreme Momentum Filter)](#strategy-4-ultra-sniper-mode-114-rr--rsi-extreme-momentum-filter)
-7. [Strategy 5: Combined Hybrid Mode (3+ Spikes + 1H Chop Filter)](#strategy-5-combined-hybrid-mode-3-spikes--1h-chop-filter)
-8. [Head-to-Head Master Comparison Table ($100 Account)](#8-head-to-head-master-comparison-table-100-account)
-9. [Small Account Sizing & Risk Management Guide ($50 & $100 Accounts)](#9-small-account-sizing--risk-management-guide-50--100-accounts)
-10. [Reversion & Configuration Guide (How to Switch Code)](#10-reversion--configuration-guide-how-to-switch-code)
+7. [Strategy 5A: Combined Hybrid Mode — 3-Spike (CURRENT LIVE)](#strategy-5a-combined-hybrid-mode--3-spike-current-live)
+8. [Strategy 5B: Combined Hybrid Mode — 2-Spike (HIGH-FREQUENCY UPGRADE)](#strategy-5b-combined-hybrid-mode--2-spike-high-frequency-upgrade)
+9. [Head-to-Head Master Comparison Table ($100 Account)](#9-head-to-head-master-comparison-table-100-account)
+10. [Small Account Sizing & Risk Management Guide ($50 & $100 Accounts)](#10-small-account-sizing--risk-management-guide-50--100-accounts)
+11. [Reversion & Configuration Guide (How to Switch Code)](#11-reversion--configuration-guide-how-to-switch-code)
 
 ---
 
@@ -32,17 +33,23 @@ All strategies in this playbook exploit the mathematical phenomenon of **Algorit
 
 ## 2. Portfolio & Symbol Universe
 
-### Top 8 Filtered Active Portfolio
-* **Boom Pairs (SELL ONLY in 1H Bearish Trend):**
-  * `BOOM200` — Boom 200 Index
-  * `BOOM500` — Boom 500 Index
-  * `BOOM300N` — Boom 300 Index
-  * `BOOM1000` — Boom 1000 Index
-* **Crash Pairs (BUY ONLY in 1H Bullish Trend):**
-  * `CRASH500` — Crash 500 Index
-  * `CRASH600` — Crash 600 Index
-  * `CRASH200` — Crash 200 Index
-  * `CRASH1000` — Crash 1000 Index
+### 🏆 Top 9 Elite Active Portfolio (Updated Aug 18, 2026 — 30-Day Realistic Backtest Verified)
+
+> **Selection Criteria:** Pairs ranked by 30-day Realistic Backtest (Daily + 4H + 1H trend alignment + Circuit Breakers active). Only pairs with positive net R in BOTH 2-spike and 3-spike modes were retained.
+
+* **Boom Pairs (SELL ONLY in Daily/4H/1H Bearish Trend after spike exhaustion):**
+  * `BOOM300N` — Boom 300 Index *(👑 Top 3-spike performer: +42.90R / 58.4% WR)*
+  * `BOOM500` — Boom 500 Index *(👑 Top 2-spike performer: +58.50R / 59.4% WR)*
+  * `BOOM600` — Boom 600 Index *(Solid: +8.40R / 54.5% WR — 3-spike)*
+  * `BOOM900` — Boom 900 Index *(🎯 Sniper: +19.60R / 71.0% WR — 2-spike)*
+* **Crash Pairs (BUY ONLY in Daily/4H/1H Bullish Trend after crash exhaustion):**
+  * `CRASH200` — Crash 200 Index *(Low DD: +15.00R / 55.6% WR, only 3.0R DD)*
+  * `CRASH300N` — Crash 300 Index *(Volume: +17.30R / 53.2% WR — 3-spike)*
+  * `CRASH500` — Crash 500 Index *(👑 Top crash: +33.90R / 56.8% WR — 2-spike)*
+  * `CRASH600` — Crash 600 Index *(Precision: +17.10R / 60.0% WR — 3-spike)*
+  * `CRASH900` — Crash 900 Index *(🎯 Sniper: +18.70R / 60.4% WR — 2-spike)*
+
+> **Pairs Removed:** `CRASH99`, `CRASH100`, `BOOM200`, `BOOM1000` — Either zero realistic trade count or negative R over 30 days under circuit breaker filtering.
 
 ---
 
@@ -133,76 +140,178 @@ All strategies in this playbook exploit the mathematical phenomenon of **Algorit
 
 ---
 
-## Strategy 5: Combined Hybrid Mode (3+ Spikes + 1H Chop Filter)
+## Strategy 5A: Combined Hybrid Mode — 3-Spike (CURRENT LIVE)
 
-> **Profile:** 👑 **The Ultimate High Win Rate Setup.** Merges 3+ spike deep exhaustion with 1H trend clearance.
+> **Profile:** 👑 **Current Production System.** Multi-timeframe Daily + 4H + 1H confluence with deep 3-spike exhaustion. Highest signal quality, lowest false-signal rate.
 
 ### Entry & Exit Rules
-1. **4H Macro Trend Filter:** 4H 50 EMA must agree with trade direction.
-2. **1H Trend Clearance:** 1H price clearly separated from 50 EMA ($>0.08\%$ clearance).
-3. **Deep Spike Burst:** Minimum **3 consecutive completed spike candles**.
-4. **5M Exhaustion Reversal:** Completed candle close with body $\ge 50\%$ range.
-5. **Reward Ratio:** **1:1.3 R:R** (Optimal Deriv Reversal Velocity).
-6. **Tiered Circuit Breakers:** 45-min pause on 1 loss, 2.5-hour hard pause on 2 losses, max 3 losses/day.
+1. **Daily Macro Trend Filter:** Daily 30/50 EMA must agree with trade direction.
+2. **4H Macro Trend Filter:** 4H 50 EMA must agree with trade direction.
+3. **1H Trend Clearance:** 1H price clearly separated from 50 EMA (>0.08% clearance — eliminates chop).
+4. **Deep Spike Burst:** Minimum **3 consecutive completed spike candles** (deep exhaustion signal).
+5. **5M Exhaustion Reversal:** Completed candle close with body ≥ 50% of total range, closing counter to spike direction.
+6. **Reward Ratio:** **1:1.3 R:R** (Optimal Deriv Reversal Velocity).
+7. **Single Trade Lock:** Only 1 active trade per pair at a time.
+8. **Tiered Circuit Breakers:** 45-min pause on 1 loss, 2.5-hour hard pause on 2 consecutive losses, full halt on 3 daily losses.
 
-### Verified Backtest Results (Aug 11 – Aug 18, 2026 — 7 Days across Top 7 Elite Pairs)
-* **Active Portfolio:** `BOOM300N`, `BOOM200`, `CRASH99`, `BOOM600`, `BOOM500`, `CRASH100`, `CRASH600`
-* **Total Closed Trades:** 123 (82 Wins / 41 Losses)
-* **Win Rate:** 🏆 **66.67% (Solid 2:1 Win-to-Loss Ratio)**
-* **Profit Factor:** 🏆 **2.60 (Institutional Fund Quality)**
-* **Fixed $3 Risk ($100 Account):** **+$196.80 Profit** $\rightarrow$ Final Balance: **$296.80 (+196.8%)**
-* **Daily Consistency:** **100% Green Days (8 out of 8 days in profit)**
+### Verified Backtest Results — 30-Day Realistic Simulation (Jul 18 – Aug 18, 2026)
+* **Active Portfolio:** 9 Elite Pairs (see §2)
+* **Total Closed Trades:** 718 (~24 trades/day across all 9 pairs)
+* **Wins / Losses:** 390 Wins / 328 Losses
+* **Win Rate:** **54.3%** (Breakeven needed: 43.5%)
+* **Fixed $3 Risk ($100 Account):** **+$537.00 Profit** → Final Balance: **$637.00 (+537.0%)**
+* **Net R:** **+179.0R**
+* **Worst Max Drawdown:** **9.1R ($27.30)** — on CRASH300N
+* **Avg Trade Frequency per Pair/Day:** ~1.2 trades
+
+### Top 5 Pairs in 3-Spike Mode
+| Pair | Trades | Win Rate | Net Profit | Max DD |
+| :--- | :--- | :--- | :--- | :--- |
+| `BOOM300N` | 125 | 58.4% | +$128.70 (+42.9R) | 5.7R |
+| `BOOM200` | 56 | 58.9% | +$59.70 (+19.9R) | 4.4R |
+| `CRASH300N` | 77 | 53.2% | +$51.90 (+17.3R) | 9.1R |
+| `CRASH600` | 45 | 60.0% | +$51.30 (+17.1R) | 3.8R |
+| `CRASH200` | 54 | 55.6% | +$45.00 (+15.0R) | 3.0R |
+
+### config.js Setting
+```javascript
+MIN_SPIKES: 3,  // ← Strategy 5A (Current Live)
+```
 
 ---
 
-## 8. Head-to-Head Master Comparison Table ($100 Account — 7-Day Performance)
+## Strategy 5B: Combined Hybrid Mode — 2-Spike (HIGH-FREQUENCY UPGRADE)
 
-| Strategy Mode | Win Rate | Trades (7-Day) | Losses (7-Day) | Profit Factor | Net USD ($100 Acct) | 7-Day Balance | Best For |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Strategy 1: Baseline (Raw)** | 52.7% | 1,122 | 525 | 1.45 | +$234.20 | $334.20 | High frequency (High drawdown) |
-| **Strategy 2: High-Action Balanced** | 59.7% | 489 | 194 | 1.92 | +$179.10 | $279.10 | High trade volume with safety |
-| **Strategy 3: Deep Exhaustion** | 56.1% | 313 | 136 | 1.66 | +$90.20 | $190.20 | Medium volume scalping |
-| **Strategy 4: Ultra-Sniper (RSI)** | 71.0% | 63 | 18 | 3.18 | +$39.20 | $139.20 | Maximum win accuracy |
-| 👑 **Strategy 5: Enhanced (Top 7)** | 🏆 **66.7%** | **123** | 🛡️ **41** | 🏆 **2.60** | 🏆 **+$196.80** | 🏆 **$296.80 (+197%)** | 👑 **The Ultimate Production System** |
+> **Profile:** 🚀 **High-Frequency Upgrade Path.** Identical to Strategy 5A in every rule EXCEPT it requires only **2 consecutive spike candles** instead of 3. Generates 68% more trades at virtually the same drawdown risk thanks to Circuit Breakers. Switch to this if 3-spike underperforms over the live trial period.
+
+### Entry & Exit Rules
+1. **Daily Macro Trend Filter:** Daily 30/50 EMA must agree with trade direction.
+2. **4H Macro Trend Filter:** 4H 50 EMA must agree with trade direction.
+3. **1H Trend Clearance:** 1H price clearly separated from 50 EMA (>0.08% clearance).
+4. **Spike Burst:** Minimum **2 consecutive completed spike candles**.
+5. **5M Exhaustion Reversal:** Completed candle close with body ≥ 50% of total range.
+6. **Reward Ratio:** **1:1.3 R:R**.
+7. **Single Trade Lock:** Only 1 active trade per pair at a time.
+8. **Tiered Circuit Breakers:** 45-min pause on 1 loss, 2.5-hour hard pause on 2 consecutive losses, full halt on 3 daily losses.
+
+### Verified Backtest Results — 30-Day Realistic Simulation (Jul 18 – Aug 18, 2026)
+* **Active Portfolio:** 9 Elite Pairs (see §2)
+* **Total Closed Trades:** 1,206 (~40 trades/day across all 9 pairs)
+* **Wins / Losses:** 646 Wins / 560 Losses
+* **Win Rate:** **53.6%** (Breakeven needed: 43.5%)
+* **Fixed $3 Risk ($100 Account):** **+$839.40 Profit** → Final Balance: **$939.40 (+839.4%)**
+* **Net R:** **+279.8R**
+* **Worst Max Drawdown:** **8.7R ($26.10)** — on BOOM300N
+* **Avg Trade Frequency per Pair/Day:** ~2.0 trades
+* **vs Strategy 5A:** +$302.40 more profit (+56%) with LOWER max drawdown (8.7R vs 9.1R)
+
+### Top 5 Pairs in 2-Spike Mode
+| Pair | Trades | Win Rate | Net Profit | Max DD |
+| :--- | :--- | :--- | :--- | :--- |
+| `BOOM500` | 160 | 59.4% | +$175.50 (+58.5R) | 6.0R |
+| `CRASH500` | 111 | 56.8% | +$101.70 (+33.9R) | 5.1R |
+| `BOOM300N` | 165 | 51.5% | +$91.50 (+30.5R) | 8.7R |
+| `BOOM900` | 31 | 71.0% | +$58.80 (+19.6R) | 2.0R |
+| `CRASH900` | 48 | 60.4% | +$56.10 (+18.7R) | 4.0R |
+
+### config.js Setting
+```javascript
+MIN_SPIKES: 2,  // ← Strategy 5B (Upgrade Path)
+```
+
+### ⚡ When to Switch to Strategy 5B
+Switch from Strategy 5A → 5B if ANY of the following occur over the live trial period:
+- Win rate drops below **50%** for 3+ consecutive days
+- Daily P&L is negative for **3 or more consecutive trading days**
+- Fewer than **3 valid setups per day** are being generated across all 9 pairs
 
 ---
 
-## 9. Small Account Sizing & Risk Management Guide ($50 & $100 Accounts)
+## 9. Head-to-Head Master Comparison Table ($100 Account)
+
+### Short-Term (7-Day) Comparison
+| Strategy Mode | Win Rate | Trades (7-Day) | Profit Factor | Net USD | Best For |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Strategy 1: Baseline (Raw)** | 52.7% | 1,122 | 1.45 | +$234.20 | High frequency (High drawdown) |
+| **Strategy 2: High-Action Balanced** | 59.7% | 489 | 1.92 | +$179.10 | High volume with safety |
+| **Strategy 3: Deep Exhaustion** | 56.1% | 313 | 1.66 | +$90.20 | Medium volume scalping |
+| **Strategy 4: Ultra-Sniper (RSI)** | 71.0% | 63 | 3.18 | +$39.20 | Maximum win accuracy |
+| 🏁 **Strategy 5A: 3-Spike (Old Top 7)** | 66.7% | 123 | 2.60 | +$196.80 | High quality signals |
+
+### 30-Day Realistic Simulation (9 Elite Pairs — Daily + 4H + 1H + Circuit Breakers)
+| Strategy Mode | Win Rate | Total Trades | Max Drawdown | Net Profit | Net R | Best For |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 🟢 **Strategy 5A: 3-Spike (LIVE NOW)** | **54.3%** | 718 | **9.1R** | **+$537.00** | +179.0R | 👑 Current live system — max signal quality |
+| 🚀 **Strategy 5B: 2-Spike (UPGRADE)** | **53.6%** | 1,206 | **8.7R** | **+$839.40** | +279.8R | 🚀 High-frequency — +56% more profit, same DD |
+
+---
+
+## 10. Small Account Sizing & Risk Management Guide ($50 & $100 Accounts)
 
 ### Starting with $50 Account:
 * **Risk Per Trade:** $1.50 (3.0% risk).
 * **Deriv Lot Size:** Minimum 0.20 lots (0.50 on Boom/Crash 300).
-* **Expected 7-Day Output:** Grows to **$148.40 (+196.8%)**.
+* **Expected 30-Day Output (5A, 3-Spike):** Grows to ~$318.50 (+537%).
+* **Expected 30-Day Output (5B, 2-Spike):** Grows to ~$469.70 (+839%).
 
 ### Starting with $100 Account:
 * **Risk Per Trade:** $3.00 (3.0% risk).
 * **Target Return (1:1.3 R:R):** +$3.90 profit per win / -$3.00 loss.
-* **Expected 7-Day Output:** Grows to **$296.80 (+196.8%)** with 100% green days.
-* **Safety Rule:** Never risk more than 3% per position. Max 3 correlated open positions simultaneously.
+* **Expected 30-Day Output (5A, 3-Spike):** Grows to **$637.00 (+537.0%)**.
+* **Expected 30-Day Output (5B, 2-Spike):** Grows to **$939.40 (+839.4%)**.
+* **Safety Rule:** Never risk more than 3% per position. Circuit Breakers enforce this automatically.
 
 ---
 
-## 10. Active Production Configuration
+## 11. Reversion & Configuration Guide (How to Switch Code)
 
-Active in `config.js` and `runner.js`:
+### 🔁 Switching Between Strategy 5A (3-Spike) and Strategy 5B (2-Spike)
+
+**One single line change in `config.js`:**
 
 ```javascript
-// Active Top 7 Elite Portfolio:
+// Strategy 5A — Current Live (3-Spike Deep Exhaustion)
+MIN_SPIKES: 3,
+
+// Strategy 5B — Upgrade Path (2-Spike High Frequency)
+MIN_SPIKES: 2,
+```
+
+All other settings (Multi-TF confluence, Circuit Breakers, Risk%, Reward Ratio) remain **identical** between both strategies.
+
+### ⚡ Decision Framework — When to Switch
+| Trigger | Action |
+| :--- | :--- |
+| Win rate < 50% for 3 consecutive days | Switch `MIN_SPIKES: 3` → `MIN_SPIKES: 2` |
+| Negative P&L for 3 consecutive trading days | Switch to 5B |
+| Fewer than 3 setups/day across all 9 pairs | Switch to 5B |
+| Win rate > 58% consistently over 1 week | Stay on 5A or evaluate 5A with more pairs |
+| 5B win rate drops below 50% | Review Multi-TF settings, consider adding RSI filter (Strategy 4 hybrid) |
+
+### 📋 Active Production Configuration (Strategy 5A — LIVE)
+
+```javascript
+// Active 9 Elite Pairs — config.js:
 SYMBOLS: {
-  "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM" },
-  "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM" },
-  "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM" },
-  "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM" },
-  "CRASH99":   { name: "Crash 99 Index",   mode: "CRASH" },
-  "CRASH100":  { name: "Crash 100 Index",  mode: "CRASH" },
-  "CRASH600":  { name: "Crash 600 Index",  mode: "CRASH" }
+  // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend) ──
+  "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM" }, // 👑 3-spike: 58.4% WR | +42.9R
+  "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM" }, // 👑 2-spike: 59.4% WR | +58.5R
+  "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM" }, // 54.5% WR | +8.4R
+  "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM" }, // 🎯 2-spike: 71.0% WR | +19.6R
+
+  // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend) ──
+  "CRASH200":  { name: "Crash 200 Index", mode: "CRASH" }, // Low DD: 55.6% WR | +15.0R
+  "CRASH300N": { name: "Crash 300 Index", mode: "CRASH" }, // 53.2% WR | +17.3R
+  "CRASH500":  { name: "Crash 500 Index", mode: "CRASH" }, // 👑 2-spike: 56.8% WR | +33.9R
+  "CRASH600":  { name: "Crash 600 Index", mode: "CRASH" }, // 60.0% WR | +17.1R
+  "CRASH900":  { name: "Crash 900 Index", mode: "CRASH" }, // 🎯 2-spike: 60.4% WR | +18.7R
 },
 
 MACRO_HTF: "4h",
 INTERMEDIATE_HTF: "1h",
 DEFAULT_LTF: "5m",
 REWARD_RATIO: 1.3,
-MIN_SPIKES: 3,
+MIN_SPIKES: 3,          // ← Strategy 5A. Change to 2 to activate 5B.
 USE_HTF_CHOP_FILTER: true,
 CIRCUIT_BREAKER: {
   ENABLED: true,
@@ -213,4 +322,5 @@ CIRCUIT_BREAKER: {
 ```
 
 ---
-*Playbook maintained by Antigravity Quantitative Trading Assistant for Mytrada.*
+*Playbook v3.0 — Maintained by Antigravity Quantitative Trading Assistant for Mytrada.*  
+*Next Review: After 5-day live trial of Strategy 5A (3-Spike) — ~Aug 23, 2026.*

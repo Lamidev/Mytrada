@@ -10,18 +10,20 @@ module.exports = {
   DERIV_APP_ID: 1089, // Public sandbox app_id
   DERIV_WS_URL: "wss://ws.derivws.com/websockets/v3?app_id=1089",
 
-  // Top 7 Elite Portfolio (Filtered by 7-Day & 1-Month Multi-Timeframe Performance)
+  // Top 9 Elite Portfolio (30-Day Realistic Backtest — Daily+4H+1H+Circuit Breakers | Aug 18, 2026)
   SYMBOLS: {
-    // ── BOOM Pairs (SELL ONLY in 4H & 1H Bearish Trend after 3+ Spikes) ──
-    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM" }, // 69.4% WR | +$64.50 ➔ 👑 Top Performer
-    "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM" }, // 66.7% WR | +$38.40 ➔ 🟢 Elite Growth
-    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM" }, // 64.7% WR | +$24.90 ➔ 🟢 High Accuracy
-    "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM" }, // 56.3% WR | +$14.10 ➔ 🟢 Steady Volume
+    // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend after spike exhaustion) ──
+    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM" }, // 👑 3-spike: 58.4% WR | +42.9R | 5.7R DD
+    "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM" }, // 👑 2-spike: 59.4% WR | +58.5R | 6.0R DD
+    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM" }, // 🟢 3-spike: 54.5% WR | +8.4R  | 4.0R DD
+    "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM" }, // 🎯 2-spike: 71.0% WR | +19.6R | 2.0R DD
 
-    // ── CRASH Pairs (BUY ONLY in 4H & 1H Bullish Trend after 3+ Crashes) ──
-    "CRASH99":   { name: "Crash 99 Index",   mode: "CRASH" }, // 63.6% WR | +$30.60 ➔ 🟢 Elite Scalp
-    "CRASH100":  { name: "Crash 100 Index",  mode: "CRASH" }, // 80.0% WR | +$12.60 ➔ 🎯 Ultra-Sniper
-    "CRASH600":  { name: "Crash 600 Index",  mode: "CRASH" }  // 100% WR  | +$11.70 ➔ 🎯 Perfect Accuracy
+    // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend after crash exhaustion) ──
+    "CRASH200":  { name: "Crash 200 Index", mode: "CRASH" }, // 🟢 3-spike: 55.6% WR | +15.0R | 3.0R DD
+    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH" }, // 🟢 3-spike: 53.2% WR | +17.3R | 9.1R DD
+    "CRASH500":  { name: "Crash 500 Index", mode: "CRASH" }, // 👑 2-spike: 56.8% WR | +33.9R | 5.1R DD
+    "CRASH600":  { name: "Crash 600 Index", mode: "CRASH" }, // 🎯 3-spike: 60.0% WR | +17.1R | 3.8R DD
+    "CRASH900":  { name: "Crash 900 Index", mode: "CRASH" }  // 🎯 2-spike: 60.4% WR | +18.7R | 4.0R DD
   },
 
   // Multi-Timeframe Confluence Engine
@@ -37,7 +39,7 @@ module.exports = {
 
   // Institutional Filters & Rules (Strategy 5 Enhanced)
   USE_HTF_CHOP_FILTER: true,    // true = Filter out flat 1H 50 EMA chop (>0.08% clearance required)
-  MIN_SPIKES: 3,                // Minimum 3 consecutive spike candles for deep exhaustion
+  MIN_SPIKES: 3,                // Strategy 5A (3-spike, LIVE). Change to 2 to switch to Strategy 5B (2-spike Upgrade).
   ENABLE_BREAK_EVEN: false,     // false = Clean 1:1.3 R:R run without premature stopouts
 
   // Tiered Circuit Breaker Engine
