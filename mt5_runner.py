@@ -2,22 +2,8 @@
 """
 Mytrada - Institutional Spike Exhaustion MT5 Signal Bot
 =========================================================
-Strategy (Backtest Validated: 54.55% Win Rate | 1-Month Real MT5 Data | 1:1.3 R:R):
-  - BOOM Pairs (SELL ONLY): Telegram SELL signal on completed 5M bearish
-    exhaustion candle after 2+ consecutive bullish spike candles in a 1H Bearish Trend.
-  - CRASH Pairs (BUY ONLY): Telegram BUY signal on completed 5M bullish
-    exhaustion candle after 2+ consecutive bearish crash candles in a 1H Bullish Trend.
-
-Confluences Required Before Signal:
-  1. 1H 50 EMA Trend Alignment (Non-negotiable)
-  2. Minimum 2 consecutive spike candles in sequence
-  3. First counter-direction 5M completed candle close (body > 50% of candle range)
-  4. Stop Loss placed above/below spike peak + 1.5x ATR buffer
-  5. Price-Based Exit: Hold until TP (1:1.3 R:R) or SL is hit (no time stop)
-
-Execution:
-  Signal-Only Bot (Telegram Alerts & Live Outcome Monitoring via MT5 Data).
-  No auto-trading / No MT5 order placement.
+Strategy: Strategy 5 Enhanced (Multi-Timeframe 4H+1H + 3 Spikes + 1:1.3 R:R + Tiered Circuit Breakers)
+Portfolio: Top 7 Elite Pairs (Boom 300, Boom 200, Crash 99, Boom 600, Boom 500, Crash 100, Crash 600)
 """
 
 import time
@@ -36,28 +22,29 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 RISK_AMOUNT_USD    = 3.0      # $3.00 risk baseline per trade for $100 account (3% risk)
-REWARD_RATIO       = 1.4      # 1:1.4 R:R (Win = +$4.20 / Loss = -$3.00)
+REWARD_RATIO       = 1.3      # 1:1.3 R:R (Optimal Deriv Reversal Velocity)
+MIN_SPIKES         = 3        # Deep 3-spike exhaustion burst
 ATR_PERIOD         = 14
 ATR_SL_MULT        = 1.5      # SL = spike peak + (1.5 × ATR)
-SCAN_INTERVAL_SECS = 10       # Fast 10s scan interval for instant candle-close signals
+SCAN_INTERVAL_SECS = 15       # Fast scan interval for instant candle-close signals
 MAX_CORRELATED_EXPOSURE = 3   # Max 3 active signals per group (BOOM or CRASH)
 USE_HTF_CHOP_FILTER = True    # Filter out flat 50 EMA chop
 
 STATE_FILE_PATH = os.path.join(os.path.dirname(__file__), "cache", "signal_state.json")
+CIRCUIT_BREAKER_FILE = os.path.join(os.path.dirname(__file__), "cache", "circuit_breaker_state.json")
 
-# ── Top 8 Portfolio (Filtered by 1-Month Backtest Performance) ────────────────
+# ── Top 7 Elite Portfolio ───────────────────────────────────────────────────
 SYMBOLS = {
-    # Top BOOM Pairs → SELL ONLY in 1H Bearish Trend
-    "Boom 200 Index":  {"mode": "BOOM"},
-    "Boom 500 Index":  {"mode": "BOOM"},
+    # Top BOOM Pairs → SELL ONLY in 4H + 1H Bearish Trend
     "Boom 300 Index":  {"mode": "BOOM"},
-    "Boom 1000 Index": {"mode": "BOOM"},
+    "Boom 200 Index":  {"mode": "BOOM"},
+    "Boom 600 Index":  {"mode": "BOOM"},
+    "Boom 500 Index":  {"mode": "BOOM"},
 
-    # Top CRASH Pairs → BUY ONLY in 1H Bullish Trend
-    "Crash 500 Index":  {"mode": "CRASH"},
-    "Crash 600 Index":  {"mode": "CRASH"},
-    "Crash 200 Index":  {"mode": "CRASH"},
-    "Crash 1000 Index": {"mode": "CRASH"},
+    # Top CRASH Pairs → BUY ONLY in 4H + 1H Bullish Trend
+    "Crash 99 Index":  {"mode": "CRASH"},
+    "Crash 100 Index": {"mode": "CRASH"},
+    "Crash 600 Index": {"mode": "CRASH"},
 }
 
 # ── Persistence Helper ────────────────────────────────────────────────────────
@@ -79,6 +66,67 @@ def save_state(state: dict):
     except Exception as e:
         print(f"[State Error] Failed saving state file: {e}")
 
+# ── Circuit Breakers ─────────────────────────────────────────────────────────
+def load_circuit_breaker() -> dict:
+    today_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    os.makedirs(os.path.dirname(CIRCUIT_BREAKER_FILE), exist_ok=True)
+    if os.path.exists(CIRCUIT_BREAKER_FILE):
+        try:
+            with open(CIRCUIT_BREAKER_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if data.get("date") == today_str:
+                    return data
+        except Exception:
+            pass
+    return {"date": today_str, "symbols": {}}
+
+def save_circuit_breaker(cb: dict):
+    os.makedirs(os.path.dirname(CIRCUIT_BREAKER_FILE), exist_ok=True)
+    try:
+        with open(CIRCUIT_BREAKER_FILE, "w", encoding="utf-8") as f:
+            json.dump(cb, f, indent=2)
+    except Exception as e:
+        print(f"[CB Error] {e}")
+
+def is_symbol_in_cooldown(symbol: str) -> tuple:
+    cb = load_circuit_breaker()
+    rec = cb.get("symbols", {}).get(symbol)
+    if not rec:
+        return False, ""
+    
+    if rec.get("daily_losses", 0) >= 3:
+        return True, "Daily loss limit (3 losses) reached — Halted for day"
+    
+    now_ms = time.time() * 1000
+    paused_until = rec.get("pause_until", 0)
+    if now_ms < paused_until:
+        rem_mins = int((paused_until - now_ms) / 60000)
+        return True, f"Tiered cooldown active — {rem_mins}m remaining"
+    
+    return False, ""
+
+def record_trade_outcome(symbol: str, outcome: str):
+    cb = load_circuit_breaker()
+    if symbol not in cb["symbols"]:
+        cb["symbols"][symbol] = {"consecutive_losses": 0, "daily_losses": 0, "pause_until": 0}
+    
+    rec = cb["symbols"][symbol]
+    now_ms = time.time() * 1000
+
+    if outcome == "WIN":
+        rec["consecutive_losses"] = 0
+    elif outcome == "LOSS":
+        rec["consecutive_losses"] += 1
+        rec["daily_losses"] += 1
+        if rec["daily_losses"] >= 3:
+            rec["pause_until"] = now_ms + (24 * 3600 * 1000)
+        elif rec["consecutive_losses"] >= 2:
+            rec["pause_until"] = now_ms + (150 * 60 * 1000)
+        elif rec["consecutive_losses"] == 1:
+            rec["pause_until"] = now_ms + (45 * 60 * 1000)
+    
+    save_circuit_breaker(cb)
+
 # ── Telegram ─────────────────────────────────────────────────────────────────
 def send_telegram(html_message: str):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -98,8 +146,22 @@ def send_telegram(html_message: str):
     except Exception as e:
         print(f"[Telegram Error] {e}")
 
-# ── MT5 Utilities ─────────────────────────────────────────────────────────────
-def get_candles(symbol: str, timeframe, count: int) -> pd.DataFrame | None:
+# ── Technical Indicators ─────────────────────────────────────────────────────
+def calc_ema(series: pd.Series, period: int = 50) -> pd.Series:
+    return series.ewm(span=period, adjust=False).mean()
+
+def calc_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    high = df['high']
+    low  = df['low']
+    close_prev = df['close'].shift(1)
+    tr = pd.concat([
+        high - low,
+        (high - close_prev).abs(),
+        (low - close_prev).abs()
+    ], axis=1).max(axis=1)
+    return tr.rolling(window=period).mean()
+
+def get_candles(symbol: str, timeframe, count: int = 200) -> pd.DataFrame:
     rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
     if rates is None or len(rates) == 0:
         return None
@@ -107,150 +169,70 @@ def get_candles(symbol: str, timeframe, count: int) -> pd.DataFrame | None:
     df['time'] = pd.to_datetime(df['time'], unit='s')
     return df
 
-def calc_ema(series: pd.Series, period: int) -> pd.Series:
-    return series.ewm(span=period, adjust=False).mean()
-
-def calc_atr(df: pd.DataFrame, period: int = ATR_PERIOD) -> pd.Series:
-    tr = pd.concat([
-        df['high'] - df['low'],
-        (df['high'] - df['close'].shift()).abs(),
-        (df['low']  - df['close'].shift()).abs()
-    ], axis=1).max(axis=1)
-    return tr.rolling(period).mean()
-
 def get_dynamic_lot_size(symbol: str, entry: float, sl: float) -> float:
-    """Calculate lot size so that SL distance = exactly $100 risk."""
-    sl_dist = abs(entry - sl)
-    if sl_dist == 0:
-        return 0.01
-    raw_lot = RISK_AMOUNT_USD / sl_dist
     info = mt5.symbol_info(symbol)
-    if info:
-        step = info.volume_step
-        min_lot = info.volume_min
-        lot = round(raw_lot / step) * step
-        return max(min_lot, round(lot, 2))
-    return round(raw_lot, 2)
+    if info is None:
+        return 0.20
+    
+    vol_min  = info.volume_min
+    vol_step = info.volume_step
+    vol_max  = info.volume_max
+    
+    sl_distance = abs(entry - sl)
+    if sl_distance <= 0:
+        return vol_min
 
-# ── Strategy: SMC Order Block & FVG Confluence Verification ────────────
-def check_smc_confluence(df: pd.DataFrame, spike_ref: float, mode: str, atr_val: float) -> dict:
-    """
-    Verifies if the spike peak (BOOM) or crash trough (CRASH) tapped:
-    1. Order Block (OB) Supply/Demand Zone
-    2. Fair Value Gap (FVG / Imbalance) Zone
-    3. Structural Liquidity Sweep
-    """
-    if len(df) < 30:
-        return {"has_smc": True, "zone": "HTF_STRUCTURE_ALIGNMENT", "score": 7}
+    tick_size = info.trade_tick_size or 0.01
+    tick_val  = info.trade_tick_value or 1.0
 
-    lookback_candles = df.iloc[-35:-4]  # Candles prior to current spike sequence
-    has_smc = False
-    zone_type = "HTF_STRUCTURE_ALIGNMENT"
-    confluence_score = 7
+    risk_per_lot = (sl_distance / tick_size) * tick_val
+    if risk_per_lot <= 0:
+        return vol_min
 
-    if mode == "BOOM":
-        # Check Bearish Order Block (prior up-candle before strong drop)
-        for idx in range(len(lookback_candles) - 1, 0, -1):
-            c_curr = lookback_candles.iloc[idx]
-            c_prev = lookback_candles.iloc[idx - 1]
-            
-            if c_prev['close'] > c_prev['open'] and c_curr['close'] < c_curr['open']:
-                ob_bottom = min(c_prev['open'], c_prev['low'])
-                ob_top = c_prev['high']
-                
-                if spike_ref >= (ob_bottom - 0.3 * atr_val) and spike_ref <= (ob_top + 1.0 * atr_val):
-                    has_smc = True
-                    zone_type = "BEARISH ORDER BLOCK (Supply Zone)"
-                    confluence_score = 9
-                    break
-        
-        # Check Bearish Fair Value Gap (3-candle imbalance)
-        if not has_smc:
-            for idx in range(len(lookback_candles) - 3, 0, -1):
-                c1 = lookback_candles.iloc[idx]
-                c3 = lookback_candles.iloc[idx + 2]
-                if c3['high'] < c1['low']:
-                    fvg_bottom = c3['high']
-                    fvg_top = c1['low']
-                    if spike_ref >= (fvg_bottom - 0.2 * atr_val) and spike_ref <= (fvg_top + 0.5 * atr_val):
-                        has_smc = True
-                        zone_type = "BEARISH FVG (Imbalance Fill)"
-                        confluence_score = 8
-                        break
+    raw_lot = RISK_AMOUNT_USD / risk_per_lot
+    stepped_lot = round(raw_lot / vol_step) * vol_step
+    final_lot = max(vol_min, min(vol_max, round(stepped_lot, 2)))
+    return final_lot
 
-    else:  # CRASH
-        # Check Bullish Order Block (prior down-candle before strong rally)
-        for idx in range(len(lookback_candles) - 1, 0, -1):
-            c_curr = lookback_candles.iloc[idx]
-            c_prev = lookback_candles.iloc[idx - 1]
-            
-            if c_prev['close'] < c_prev['open'] and c_curr['close'] > c_curr['open']:
-                ob_bottom = c_prev['low']
-                ob_top = max(c_prev['open'], c_prev['high'])
-                
-                if spike_ref <= (ob_top + 0.3 * atr_val) and spike_ref >= (ob_bottom - 1.0 * atr_val):
-                    has_smc = True
-                    zone_type = "BULLISH ORDER BLOCK (Demand Zone)"
-                    confluence_score = 9
-                    break
-
-        # Check Bullish Fair Value Gap
-        if not has_smc:
-            for idx in range(len(lookback_candles) - 3, 0, -1):
-                c1 = lookback_candles.iloc[idx]
-                c3 = lookback_candles.iloc[idx + 2]
-                if c3['low'] > c1['high']:
-                    fvg_bottom = c1['high']
-                    fvg_top = c3['low']
-                    if spike_ref <= (fvg_top + 0.2 * atr_val) and spike_ref >= (fvg_bottom - 0.5 * atr_val):
-                        has_smc = True
-                        zone_type = "BULLISH FVG (Imbalance Fill)"
-                        confluence_score = 8
-                        break
-
-    return {
-        "has_smc": has_smc,
-        "zone": zone_type,
-        "score": confluence_score
-    }
-
-# ── Strategy: Spike Exhaustion Detection (COMPLETED CANDLES ONLY) ─────────────
-def detect_spike_exhaustion(ltf_df: pd.DataFrame, htf_df: pd.DataFrame, mode: str) -> dict | None:
-    """
-    Detects a valid Spike Exhaustion setup strictly on COMPLETED candles.
-
-    In MT5 copy_rates_from_pos:
-      iloc[-1] = Currently forming in-progress 5M candle (IGNORE for entry)
-      iloc[-2] = Last COMPLETED 5M candle (c0: exhaustion candle candidate)
-      iloc[-3] = Spike candle 1 (c1)
-      iloc[-4] = Spike candle 2 (c2)
-    """
-    if ltf_df is None or htf_df is None or len(ltf_df) < 20:
+# ── Strategy 5 Enhanced Detection ────────────────────────────────────────────
+def detect_spike_exhaustion(ltf_df: pd.DataFrame, htf1h_df: pd.DataFrame, htf4h_df: pd.DataFrame, mode: str):
+    if ltf_df is None or htf1h_df is None or len(ltf_df) < 25 or len(htf1h_df) < 55:
         return None
 
-    # 1H Trend Filter on completed 1H candle (iloc[-2])
-    htf_df['ema50'] = calc_ema(htf_df['close'], 50)
-    htf_close = htf_df['close'].iloc[-2] if len(htf_df) >= 2 else htf_df['close'].iloc[-1]
-    htf_ema = htf_df['ema50'].iloc[-2] if len(htf_df) >= 2 else htf_df['ema50'].iloc[-1]
-    htf_trend = 'bullish' if htf_close > htf_ema else 'bearish'
+    # 1. 1H Trend & Chop Filter
+    htf1h_df['ema50'] = calc_ema(htf1h_df['close'], 50)
+    htf1h_close = htf1h_df['close'].iloc[-2] if len(htf1h_df) >= 2 else htf1h_df['close'].iloc[-1]
+    htf1h_ema   = htf1h_df['ema50'].iloc[-2] if len(htf1h_df) >= 2 else htf1h_df['ema50'].iloc[-1]
+    htf1h_trend = 'bullish' if htf1h_close > htf1h_ema else 'bearish'
 
-    if mode == "BOOM" and htf_trend != 'bearish':
+    if mode == "BOOM" and htf1h_trend != 'bearish':
         return None
-    if mode == "CRASH" and htf_trend != 'bullish':
+    if mode == "CRASH" and htf1h_trend != 'bullish':
         return None
 
-    # 1H Trend Clearance Chop Filter (Strategy 2): Skip flat EMA chop
-    if USE_HTF_CHOP_FILTER:
-        ema_dist_pct = abs(htf_close - htf_ema) / htf_ema
-        if ema_dist_pct < 0.0008:
+    ema_dist_pct = abs(htf1h_close - htf1h_ema) / htf1h_ema
+    if USE_HTF_CHOP_FILTER and ema_dist_pct < 0.0008:
+        return None
+
+    # 2. 4H Macro Trend Filter
+    htf4h_trend = "aligned"
+    if htf4h_df is not None and len(htf4h_df) >= 55:
+        htf4h_df['ema50'] = calc_ema(htf4h_df['close'], 50)
+        htf4h_close = htf4h_df['close'].iloc[-2] if len(htf4h_df) >= 2 else htf4h_df['close'].iloc[-1]
+        htf4h_ema   = htf4h_df['ema50'].iloc[-2] if len(htf4h_df) >= 2 else htf4h_df['ema50'].iloc[-1]
+        htf4h_trend = 'bullish' if htf4h_close > htf4h_ema else 'bearish'
+
+        if mode == "BOOM" and htf4h_trend != 'bearish':
+            return None
+        if mode == "CRASH" and htf4h_trend != 'bullish':
             return None
 
-    # Target strictly completed candles
-    c0 = ltf_df.iloc[-2]   # Last COMPLETED 5M candle (exhaustion candidate)
-    c1 = ltf_df.iloc[-3]   # Previous spike candle 1
-    c2 = ltf_df.iloc[-4]   # Previous spike candle 2
+    # 3. 5M Completed Candles
+    c0 = ltf_df.iloc[-2]   # Completed exhaustion candle candidate
+    c1 = ltf_df.iloc[-3]   # Spike candle 1
+    c2 = ltf_df.iloc[-4]   # Spike candle 2
+    c3 = ltf_df.iloc[-5]   # Spike candle 3 (3 consecutive spikes required)
 
-    # ATR up to c0
     ltf_df['atr'] = calc_atr(ltf_df)
     atr_val = ltf_df['atr'].iloc[-2]
     if pd.isna(atr_val) or atr_val == 0:
@@ -260,42 +242,44 @@ def detect_spike_exhaustion(ltf_df: pd.DataFrame, htf_df: pd.DataFrame, mode: st
     c0_body  = abs(c0['close'] - c0['open'])
 
     if mode == "BOOM":
-        # Previous 2 candles must be bullish spikes (shot UP)
+        # Previous 3 candles must be bullish spikes
         c1_is_spike = c1['close'] > c1['open']
         c2_is_spike = c2['close'] > c2['open']
+        c3_is_spike = c3['close'] > c3['open']
 
-        # c0 must be bearish with solid body (body >= 50% of range)
+        # c0 must be bearish with solid body >= 50%
         c0_is_exhaustion = (
             c0['close'] < c0['open'] and
             c0_range > 0 and
             (c0_body / c0_range) >= 0.5
         )
 
-        if not (c1_is_spike and c2_is_spike and c0_is_exhaustion):
+        if not (c1_is_spike and c2_is_spike and c3_is_spike and c0_is_exhaustion):
             return None
 
-        spike_peak = max(c1['high'], c2['high'], c0['high'])
+        spike_peak = max(c1['high'], c2['high'], c3['high'], c0['high'])
         entry = c0['close']
         sl    = spike_peak + (atr_val * ATR_SL_MULT)
         sl_dist = abs(entry - sl)
         tp    = entry - (sl_dist * REWARD_RATIO)
 
     else:  # CRASH
-        # Previous 2 candles must be bearish crashes (shot DOWN)
+        # Previous 3 candles must be bearish crashes
         c1_is_crash = c1['close'] < c1['open']
         c2_is_crash = c2['close'] < c2['open']
+        c3_is_crash = c3['close'] < c3['open']
 
-        # c0 must be bullish with solid body (body >= 50% of range)
+        # c0 must be bullish with solid body >= 50%
         c0_is_exhaustion = (
             c0['close'] > c0['open'] and
             c0_range > 0 and
             (c0_body / c0_range) >= 0.5
         )
 
-        if not (c1_is_crash and c2_is_crash and c0_is_exhaustion):
+        if not (c1_is_crash and c2_is_crash and c3_is_crash and c0_is_exhaustion):
             return None
 
-        crash_trough = min(c1['low'], c2['low'], c0['low'])
+        crash_trough = min(c1['low'], c2['low'], c3['low'], c0['low'])
         entry = c0['close']
         sl    = crash_trough - (atr_val * ATR_SL_MULT)
         sl_dist = abs(entry - sl)
@@ -304,9 +288,6 @@ def detect_spike_exhaustion(ltf_df: pd.DataFrame, htf_df: pd.DataFrame, mode: st
     candle_time_str = c0['time'].strftime('%Y-%m-%d %H:%M:%S')
     spike_ref_val = spike_peak if mode == "BOOM" else crash_trough
 
-    # Verify SMC Order Block / FVG Confluence
-    smc_info = check_smc_confluence(ltf_df, spike_ref_val, mode, atr_val)
-
     return {
         'mode':            mode,
         'entry':           entry,
@@ -314,12 +295,11 @@ def detect_spike_exhaustion(ltf_df: pd.DataFrame, htf_df: pd.DataFrame, mode: st
         'tp':              tp,
         'sl_dist':         sl_dist,
         'atr':             atr_val,
-        'htf_trend':       htf_trend,
+        'htf1h_trend':     htf1h_trend,
+        'htf4h_trend':     htf4h_trend,
         'candle_time_str': candle_time_str,
         'candle_epoch':    int(c0['time'].timestamp()),
-        'spike_ref':       spike_ref_val,
-        'smc_zone':        smc_info['zone'],
-        'smc_score':       smc_info['score']
+        'spike_ref':       spike_ref_val
     }
 
 # ── Telegram Signal Alert Builder ────────────────────────────────────────────
@@ -329,59 +309,54 @@ def build_signal_alert(symbol: str, setup: dict, lot_size: float) -> str:
     ref_label     = "Spike Peak" if setup['mode'] == "BOOM" else "Crash Trough"
 
     return (
-        f"{dir_emoji} <b>[MYTRADA SPIKE EXHAUSTION SIGNAL]</b>\n"
+        f"👑 {dir_emoji} <b>[MYTRADA SPIKE EXHAUSTION SIGNAL]</b>\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-        f"<b>Strategy:</b> <code>Strategy 2 — High-Action Balanced</code>\n"
+        f"<b>Strategy:</b> <code>Strategy 5 Enhanced (Multi-TF + 3 Spikes)</code>\n"
         f"<b>Asset:</b> <code>{symbol}</code>\n"
-        f"<b>Direction:</b> {dir_emoji} <b>{direction_str} ({setup['mode']} Spike Exhaustion)</b>\n"
-        f"<b>1H Trend Filter:</b> <code>{setup['htf_trend'].upper()} — Clear Trend (No Chop)</code>\n"
+        f"<b>Direction:</b> {dir_emoji} <b>{direction_str} ({setup['mode']} 3-Spike Exhaustion)</b>\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-        f"🎯 <b>ENTRY PRICE:</b> <code>{setup['entry']:.2f}</code> (Market — 5M exhaustion close)\n"
+        f"📊 <b>MULTI-TIMEFRAME CONFLUENCE:</b>\n"
+        f"  • <b>4H Macro Trend:</b> <code>{setup['htf4h_trend'].upper()} (Aligned)</code>\n"
+        f"  • <b>1H Intermediate:</b> <code>{setup['htf1h_trend'].upper()} (Clearance > 0.08%)</code>\n"
+        f"  • <b>5M Execution:</b> <code>3 Consecutive Spikes + Reversal Close</code>\n"
+        f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+        f"🎯 <b>ENTRY PRICE:</b> <code>{setup['entry']:.2f}</code> (Market — 5M Close)\n"
         f"🛡️ <b>STOP LOSS (SL):</b> <code>{setup['sl']:.2f}</code> ({ref_label} {setup['spike_ref']:.2f} + {ATR_SL_MULT}x ATR)\n"
         f"🏆 <b>TAKE PROFIT (TP):</b> <code>{setup['tp']:.2f}</code> (1:{REWARD_RATIO} R:R Target)\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
         f"💰 <b>Position Sizing ($100 Account):</b>\n"
         f"  • Recommended Lot: <code>{lot_size} Lots</code>\n"
-        f"  • Max Loss (SL Hit): <code>-${RISK_AMOUNT_USD:.2f} USD (-1.0R / 3.0%)</code>\n"
-        f"  • Target Win (TP Hit): <code>+${RISK_AMOUNT_USD * REWARD_RATIO:.2f} USD (+{REWARD_RATIO}R / +4.2%)</code>\n"
+        f"  • Max Risk (SL Hit): <code>-${RISK_AMOUNT_USD:.2f} USD (-1.0R / 3.0%)</code>\n"
+        f"  • Target Profit (TP Hit): <code>+${RISK_AMOUNT_USD * REWARD_RATIO:.2f} USD (+{REWARD_RATIO}R / +3.9%)</code>\n"
+        f"  • Circuit Breaker: <code>Active (45m/2.5h Tiered Pause)</code>\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-        f"🚀 <b>EXIT STRATEGY:</b> <code>Hold to TP (+1.4R) or SL (-1.0R) — NO time stop</code>\n"
-        f"<b>Candle Time:</b> <code>{setup['candle_time_str']}</code>\n"
-        f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-        f"<i>Enter MARKET {direction_str} on MT5. Hold strictly until TP or SL is hit.</i>"
+        f"🚀 <b>EXECUTION:</b> <code>Enter MARKET {direction_str} on MT5. Hold strictly to TP or SL.</code>"
     )
 
 # ── Telegram Outcome Alert Builder ───────────────────────────────────────────
 def build_outcome_alert(signal: dict, outcome: str, exit_price: float, pnl_usd: float, pnl_r: float) -> str:
-    direction_emoji = "🟢 BUY" if signal['mode'] == "CRASH" else "🔴 SELL"
-
     if outcome == "WIN":
         header = "🏆 <b>[MYTRADA SPIKE EXHAUSTION OUTCOME: DIRECT TP HIT]</b>"
-        outcome_str = f"🟢 <b>OUTCOME: TAKE PROFIT HIT!</b>\n<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n💰 <b>TOTAL REALIZED PROFIT:</b> <code>+${pnl_usd:.2f} USD (+{pnl_r:.2f}R)</code>"
-    elif outcome == "LOSS":
+        outcome_str = f"🟢 <b>OUTCOME: TAKE PROFIT HIT! (+{REWARD_RATIO}R)</b>\n<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n💰 <b>TOTAL REALIZED PROFIT:</b> <code>+${pnl_usd:.2f} USD (+{pnl_r:.2f}R)</code>"
+    else:
         header = "🛡️ <b>[MYTRADA SPIKE EXHAUSTION OUTCOME: STOP LOSS HIT]</b>"
-        outcome_str = f"🔴 <b>OUTCOME: STOP LOSS HIT</b>\n<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n💸 <b>TOTAL REALIZED LOSS:</b> <code>-${abs(pnl_usd):.2f} USD ({pnl_r:.2f}R)</code>"
-    else:  # TIME_EXIT
-        header = "⏰ <b>[MYTRADA SPIKE EXHAUSTION OUTCOME: TIME EXIT]</b>"
-        pnl_sign = "+" if pnl_usd >= 0 else "-"
-        outcome_str = f"🟡 <b>OUTCOME: MAX HOLD TIME EXPIRED (5 CANDLES)</b>\n<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n📊 <b>REALIZED PnL AT EXIT:</b> <code>{pnl_sign}${abs(pnl_usd):.2f} USD ({pnl_r:+.2f}R)</code>"
+        outcome_str = f"🔴 <b>OUTCOME: STOP LOSS HIT (-1.0R)</b>\n<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n💸 <b>TOTAL REALIZED LOSS:</b> <code>-${abs(pnl_usd):.2f} USD ({pnl_r:.2f}R)</code>"
 
     return (
         f"{header}\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
         f"<b>Asset:</b> <code>{signal['symbol']}</code>\n"
-        f"<b>Direction:</b> {direction_emoji}\n"
+        f"<b>Direction:</b> {'🔴 SELL' if signal['mode'] == 'BOOM' else '🟢 BUY'}\n"
         f"{outcome_str}\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
         f"🔥 <b>Entry Price:</b> <code>{signal['entry']:.2f}</code>\n"
         f"🛡️ <b>Stop Loss (SL):</b> <code>{signal['sl']:.2f}</code>\n"
         f"🏆 <b>Take Profit (TP):</b> <code>{signal['tp']:.2f}</code>\n"
-        f"🏁 <b>Exit Price:</b> <code>{exit_price:.2f}</code>\n"
         f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-        f"<i>ℹ️ Check your Metatrader 5 terminal balance sheet!</i>"
+        f"ℹ️ <i>Check your Metatrader 5 terminal balance sheet!</i>"
     )
 
-# ── Outcome Monitoring Engine ────────────────────────────────────────────────
+# ── Monitor Active Trades ─────────────────────────────────────────────────────
 def check_active_signal_outcomes(state: dict):
     active_signals = state.get("active_signals", [])
     if not active_signals:
@@ -393,61 +368,37 @@ def check_active_signal_outcomes(state: dict):
     for sig in active_signals:
         symbol = sig['symbol']
         mode   = sig['mode']
+        entry  = sig['entry']
+        sl     = sig['sl']
+        tp     = sig['tp']
 
-        ltf_df = get_candles(symbol, mt5.TIMEFRAME_M5, 30)
-        if ltf_df is None or len(ltf_df) == 0:
+        tick = mt5.symbol_info_tick(symbol)
+        if tick is None:
             remaining_signals.append(sig)
             continue
 
-        # Filter completed candles since signal candle timestamp
-        signal_time = pd.to_datetime(sig['candle_epoch'], unit='s')
-        post_candles = ltf_df[ltf_df['time'] > signal_time].iloc[:-1]  # Exclude current forming candle
-
-        if len(post_candles) == 0:
-            remaining_signals.append(sig)
-            continue
-
+        curr_price = tick.bid if mode == "BOOM" else tick.ask
         hit_tp = False
         hit_sl = False
-        time_exit = False
-        exit_price = 0.0
-        pnl_usd = 0.0
-        pnl_r = 0.0
 
-        for idx, (_, candle) in enumerate(post_candles.iterrows(), start=1):
-            if mode == "BOOM":
-                # SELL: SL is hit if high >= sl, TP is hit if low <= tp
-                if candle['high'] >= sig['sl']:
-                    hit_sl = True
-                    exit_price = sig['sl']
-                    pnl_usd = -RISK_AMOUNT_USD
-                    pnl_r = -1.0
-                    break
-                elif candle['low'] <= sig['tp']:
-                    hit_tp = True
-                    exit_price = sig['tp']
-                    pnl_usd = RISK_AMOUNT_USD * REWARD_RATIO
-                    pnl_r = REWARD_RATIO
-                    break
-            else:
-                # BUY: SL is hit if low <= sl, TP is hit if high >= tp
-                if candle['low'] <= sig['sl']:
-                    hit_sl = True
-                    exit_price = sig['sl']
-                    pnl_usd = -RISK_AMOUNT_USD
-                    pnl_r = -1.0
-                    break
-                elif candle['high'] >= sig['tp']:
-                    hit_tp = True
-                    exit_price = sig['tp']
-                    pnl_usd = RISK_AMOUNT_USD * REWARD_RATIO
-                    pnl_r = REWARD_RATIO
-                    break
-
-            # Only TP or SL exits - no time stop
+        if mode == "BOOM":
+            if curr_price <= tp:
+                hit_tp = True
+            elif curr_price >= sl:
+                hit_sl = True
+        else:
+            if curr_price >= tp:
+                hit_tp = True
+            elif curr_price <= sl:
+                hit_sl = True
 
         if hit_tp or hit_sl:
             outcome_type = "WIN" if hit_tp else "LOSS"
+            exit_price = tp if hit_tp else sl
+            pnl_usd = (RISK_AMOUNT_USD * REWARD_RATIO) if hit_tp else -RISK_AMOUNT_USD
+            pnl_r = REWARD_RATIO if hit_tp else -1.0
+
+            record_trade_outcome(symbol, outcome_type)
             alert_html = build_outcome_alert(sig, outcome_type, exit_price, pnl_usd, pnl_r)
             send_telegram(alert_html)
             print(f"  [OUTCOME ALERT] {symbol} | Result: {outcome_type} | PnL: ${pnl_usd:+.2f} USD")
@@ -461,90 +412,64 @@ def check_active_signal_outcomes(state: dict):
 
 # ── Main Bot Loop ─────────────────────────────────────────────────────────────
 def run_bot():
-    print("=" * 75)
-    print(" MYTRADA - INSTITUTIONAL SPIKE EXHAUSTION TELEGRAM BOT (SIGNAL ONLY)")
-    print(" Strategy: BOOM SELL | CRASH BUY | 1:1.3 R:R | Price-Based Exit (TP or SL)")
-    print("=" * 75)
+    print("=" * 80)
+    print(" MYTRADA - STRATEGY 5 ENHANCED TELEGRAM ALERT BOT")
+    print(" Top 7 Elite Pairs | Multi-TF (4H+1H) | 3 Spikes | 1:1.3 R:R | Circuit Breakers")
+    print("=" * 80)
 
     if not mt5.initialize():
         print(f"[ERROR] MT5 failed to initialize: {mt5.last_error()}")
-        print("Ensure MetaTrader 5 Desktop is open and logged into your Deriv account.")
         return
 
     acc = mt5.account_info()
     if acc:
         print(f"[MT5 Connected] Account: {acc.login} | Server: {acc.server}")
-        print(f"[MT5 Account]   Balance: ${acc.balance:,.2f} | Equity: ${acc.equity:,.2f}")
-        print(f"[Risk Baseline] ${RISK_AMOUNT_USD:.2f} per trade | 1:{REWARD_RATIO} R:R Target")
-    print("-" * 75)
+        print(f"[MT5 Balance]   ${acc.balance:,.2f} | Equity: ${acc.equity:,.2f}")
 
     state = load_state()
     alerted_keys = set(state.get("alerted_keys", []))
 
-    send_telegram(
-        f"<b>[MYTRADA BOT STARTED]</b>\n"
-        f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
-        f"Account: <code>{acc.login if acc else 'N/A'}</code>\n"
-        f"Balance: <code>${acc.balance:,.2f} USD</code>\n"
-        f"Strategy: Spike Exhaustion (BOOM SELL | CRASH BUY)\n"
-        f"Risk: <code>${RISK_AMOUNT_USD}/trade | 1:{REWARD_RATIO} R:R | Price-Based Exit (TP or SL)</code>\n"
-        f"Mode: <code>SIGNAL ONLY (Zero Duplicates / MT5 Chart Alignment)</code>\n"
-        f"<i>Bot is now live and scanning MT5 charts 24/7.</i>"
-    )
-
     try:
         while True:
             now_str = datetime.datetime.now().strftime("%H:%M:%S")
-            print(f"\n[{now_str}] Scanning {len(SYMBOLS)} pairs for Spike Exhaustion setups...")
+            print(f"\n[{now_str}] Scanning {len(SYMBOLS)} pairs for Strategy 5 Enhanced setups...")
 
-            # 1. Monitor active signal outcomes first
             check_active_signal_outcomes(state)
-
-            # Count current active signals by group for exposure cap
-            active_booms = sum(1 for s in state.get("active_signals", []) if s['mode'] == "BOOM")
-            active_crashes = sum(1 for s in state.get("active_signals", []) if s['mode'] == "CRASH")
 
             for symbol, meta in SYMBOLS.items():
                 try:
                     mode = meta['mode']
 
-                    # Per-symbol guard: skip if this symbol already has an active trade signal running
-                    if any(s['symbol'] == symbol for s in state.get("active_signals", [])):
-                        print(f"  [{mode}] {symbol:<22} | Active signal running — skipping new setup search")
+                    cb_in_cooldown, cb_reason = is_symbol_in_cooldown(symbol)
+                    if cb_in_cooldown:
+                        print(f"  [{mode}] {symbol:<20} | 🛡️ COOLDOWN: {cb_reason}")
                         continue
 
-                    # Group exposure cap guard
-                    if mode == "BOOM" and active_booms >= MAX_CORRELATED_EXPOSURE:
-                        print(f"  [{mode}] {symbol:<22} | Max BOOM exposure ({MAX_CORRELATED_EXPOSURE}) reached — skipping")
-                        continue
-                    if mode == "CRASH" and active_crashes >= MAX_CORRELATED_EXPOSURE:
-                        print(f"  [{mode}] {symbol:<22} | Max CRASH exposure ({MAX_CORRELATED_EXPOSURE}) reached — skipping")
+                    if any(s['symbol'] == symbol for s in state.get("active_signals", [])):
+                        print(f"  [{mode}] {symbol:<20} | Active trade open — skipping")
                         continue
 
                     if not mt5.symbol_select(symbol, True):
                         continue
 
-                    ltf_df = get_candles(symbol, mt5.TIMEFRAME_M5, 50)
-                    htf_df = get_candles(symbol, mt5.TIMEFRAME_H1, 100)
-                    if ltf_df is None or htf_df is None:
+                    ltf_df   = get_candles(symbol, mt5.TIMEFRAME_M5, 50)
+                    htf1h_df = get_candles(symbol, mt5.TIMEFRAME_H1, 100)
+                    htf4h_df = get_candles(symbol, mt5.TIMEFRAME_H4, 100)
+                    if ltf_df is None or htf1h_df is None:
                         continue
 
-                    curr_price = ltf_df['close'].iloc[-1]
-                    setup = detect_spike_exhaustion(ltf_df, htf_df, mode)
+                    setup = detect_spike_exhaustion(ltf_df, htf1h_df, htf4h_df, mode)
 
                     if setup:
-                        # De-duplicate strictly by symbol + mode + exact completed candle timestamp
                         alert_key = f"{symbol}_{mode}_{setup['candle_epoch']}"
 
                         if alert_key not in alerted_keys:
                             alerted_keys.add(alert_key)
                             lot_size = get_dynamic_lot_size(symbol, setup['entry'], setup['sl'])
 
-                            # Send Telegram signal alert
                             alert_html = build_signal_alert(symbol, setup, lot_size)
                             send_telegram(alert_html)
 
-                            # Save active signal state for outcome tracking
                             new_signal_record = {
                                 "setup_id":     alert_key,
                                 "symbol":       symbol,
@@ -558,32 +483,23 @@ def run_bot():
                                 "candle_epoch": setup['candle_epoch']
                             }
                             state["active_signals"].append(new_signal_record)
-                            # Keep alerted_keys capped at last 500 to prevent state file bloat
                             state["alerted_keys"] = list(alerted_keys)[-500:]
                             save_state(state)
 
-                            if mode == "BOOM":
-                                active_booms += 1
-                            else:
-                                active_crashes += 1
-
-                            print(f"  [{mode}] {symbol:<22} | Price: {curr_price:.2f} | 📢 SIGNAL SENT ({setup['candle_time_str']})")
+                            print(f"  [{mode}] {symbol:<20} | 📢 SIGNAL SENT ({setup['candle_time_str']})")
                         else:
-                            print(f"  [{mode}] {symbol:<22} | Price: {curr_price:.2f} | Setup already alerted for candle {setup['candle_time_str']}")
+                            print(f"  [{mode}] {symbol:<20} | Setup already alerted")
                     else:
-                        htf_trend = 'bearish' if mode == 'BOOM' else 'bullish'
-                        print(f"  [{mode}] {symbol:<22} | Price: {curr_price:.2f} | Waiting for spike exhaustion...")
+                        print(f"  [{mode}] {symbol:<20} | Waiting for 3-spike exhaustion...")
 
                 except Exception as e:
                     print(f"  [ERROR] {symbol}: {e}")
                     continue
 
-            print(f"\n  Next scan in {SCAN_INTERVAL_SECS}s...")
             time.sleep(SCAN_INTERVAL_SECS)
 
     except KeyboardInterrupt:
         print("\n[MYTRADA] Bot stopped by user.")
-        send_telegram("<b>[MYTRADA BOT STOPPED]</b>\n<i>Bot was manually stopped. Restart with: python mt5_runner.py</i>")
     finally:
         mt5.shutdown()
 
