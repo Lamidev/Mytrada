@@ -266,7 +266,7 @@ function formatReportTelegramHTML(report) {
   const lines = [
     `👑 ${emojiHeader} <b>[MYTRADA ${periodTitle}]</b>`,
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-    `<b>Strategy:</b> <code>Strategy 5 Enhanced (Multi-TF + 3 Spikes)</code>`,
+    `<b>Strategy:</b> <code>Strategy 6 Institutional Supply-Sweep Model</code>`,
     `<b>Signals Generated:</b> <code>${report.signalsCount || report.closedCount}</code>`,
     `<b>Positions Closed:</b> <code>${report.closedCount}</code>`,
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
