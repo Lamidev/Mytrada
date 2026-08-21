@@ -598,87 +598,112 @@ async function monitorMarket() {
 
       const htf4hCandles = await getCandles(symbol, config.MACRO_HTF || '4h', 100, true);
       const htf1hCandles = await getCandles(symbol, config.INTERMEDIATE_HTF || '1h', 100, true);
-      const ltfCandles   = await getCandles(symbol, config.DEFAULT_LTF || '5m', 50, true);
+      // Fetch 150 5M candles (~12.5 hours) so we can check the last 5 closed candles
+      // and catch signals that closed between 30-second scan intervals
+      const ltfCandles   = await getCandles(symbol, config.DEFAULT_LTF || '5m', 150, true);
       if (!htf1hCandles || !ltfCandles) continue;
 
       const latestPrice = ltfCandles[ltfCandles.length - 1].close;
-      const setup = detectStrategy6Setup(ltfCandles, htf1hCandles, htf4hCandles, mode, minSpikes);
 
-      if (setup) {
+      // ── MULTI-CANDLE LOOKBACK (Last 5 closed 5M candles) ──
+      // Scans candles at offsets 0,1,2,3,4 so signals that closed between scan
+      // intervals are caught. Each unique candleEpoch is only ever alerted once.
+      const LOOKBACK_BARS = 5;
+      let signalFiredThisScan = false;
+
+      for (let offset = 0; offset < LOOKBACK_BARS; offset++) {
+        if (ltfCandles.length < offset + 25) break;
+
+        // Slice so the target candle appears as the last element
+        const ltfSlice = ltfCandles.slice(0, ltfCandles.length - offset);
+        const setup = detectStrategy6Setup(ltfSlice, htf1hCandles, htf4hCandles, mode, minSpikes);
+        if (!setup) continue;
+
         const setupId = `${symbol}_${setup.direction}_${setup.candleEpoch}`;
         const existingActive = loadActiveTrades();
         const symbolAlreadyActive = existingActive.some(t => t.symbol === symbol);
 
-        // Strict duplicate prevention
-        if (!alertedSetups.has(setupId) && !symbolAlreadyActive) {
-          saveAlertedSetup(setupId);
-
-          const lotSize = calculateLotSize(symbol, setup.entry, setup.sl);
-          const dirEmoji = setup.direction === 'SELL' ? '🔴' : '🟢';
-          const zoneDesc = setup.direction === 'SELL' ? `${setup.retracePct.toFixed(1)}% Deep Premium Supply Retest` : `${setup.retracePct.toFixed(1)}% Deep Discount Demand Retest`;
-          const riskUSD = config.RISK_AMOUNT_USD || 3.0;
-
-          // Request Gemini AI Shadow Audit
-          const aiAuditText = await auditWithGemini(symbol, setup.direction, setup.retracePct, setup.h1ClearancePct, setup.bodyRatio);
-
-          const alertHtml = [
-            `👑 ${dirEmoji} <b>[MYTRADA STRATEGY 6 SIGNAL]</b>`,
-            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `<b>Asset:</b> <code>${symbol}</code> (${symConfig.name})`,
-            `<b>Direction:</b> ${dirEmoji} <b>${setup.direction} (Supply-Sweep Sniper)</b>`,
-            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `📊 <b>MULTI-TIMEFRAME CONFLUENCE:</b>`,
-            `  • <b>Macro 4H + 1H:</b> <code>${setup.htf1hTrend.toUpperCase()} (Aligned)</code>`,
-            `  • <b>Location:</b> <code>${zoneDesc}</code>`,
-            `  • <b>5M Execution:</b> <code>M5 Exhaustion Close (Body: ${(setup.bodyRatio * 100).toFixed(0)}%)</code>`,
-            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `🎯 <b>ENTRY PRICE:</b> <code>${setup.entry.toFixed(2)}</code> (Market — 5M Close)`,
-            `🛡️ <b>STOP LOSS (SL):</b> <code>${setup.sl.toFixed(2)}</code> (Peak + 1.5x ATR)\n`,
-            `🏆 <b>TARGET PROFIT:</b>`,
-            `  • 🎯 <b>TP1 (1:1.3 R:R):</b> <code>${setup.tp1.toFixed(2)}</code> (Move SL to Breakeven)`,
-            `  • 🏆 <b>TP2 (1:1.5 R:R):</b> <code>${setup.tp2.toFixed(2)}</code> (Full Target)`,
-            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `💰 <b>Position Sizing ($100 Account):</b>`,
-            `  • Recommended Lot: <code>${lotSize} Lots</code>`,
-            `  • Max Risk: <code>-$${riskUSD.toFixed(2)} USD (3.0%)</code>`,
-            `🤖 <b>GEMINI AI AUDIT:</b> ${aiAuditText}`,
-            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `🚀 <b>EXECUTION:</b> <code>Enter MARKET ${setup.direction} on MT5. Monitor for TP1/TP2 updates.</code>`
-          ].join('\n');
-
-          await sendTelegramMessage(alertHtml);
-          console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 6 SIGNAL: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP1: ${setup.tp1.toFixed(2)} | TP2: ${setup.tp2.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
-
-          // Track active trade
-          const activeTrades = loadActiveTrades();
-          activeTrades.push({
-            setupId,
-            symbol,
-            type: setup.type,
-            entryPrice: setup.entry,
-            stopLoss: setup.sl,
-            tp1: setup.tp1,
-            tp2: setup.tp2,
-            tp1Hit: false,
-            triggeredTime: Date.now()
-          });
-          saveActiveTrades(activeTrades);
-
-          recordSignal({
-            setupId,
-            symbol,
-            type: setup.type,
-            entryPrice: setup.entry,
-            stopLoss: setup.sl,
-            takeProfit: setup.tp2,
-            confluenceScore: 10
-          });
-          recordTrigger(setupId);
-
-        } else if (alertedSetups.has(setupId)) {
-          console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | Setup active (already alerted)`);
+        // Already alerted or a trade is open on this symbol — skip
+        if (alertedSetups.has(setupId) || symbolAlreadyActive) {
+          if (alertedSetups.has(setupId)) {
+            console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | Setup active (already alerted)`);
+          }
+          break; // No point checking older candles either
         }
-      } else {
+
+        // ── NEW SIGNAL — FIRE ALERT ──
+        saveAlertedSetup(setupId);
+        signalFiredThisScan = true;
+
+        const lotSize = calculateLotSize(symbol, setup.entry, setup.sl);
+        const dirEmoji = setup.direction === 'SELL' ? '🔴' : '🟢';
+        const zoneDesc = setup.direction === 'SELL'
+          ? `${setup.retracePct.toFixed(1)}% Deep Premium Supply Retest`
+          : `${setup.retracePct.toFixed(1)}% Deep Discount Demand Retest`;
+        const riskUSD = config.RISK_AMOUNT_USD || 3.0;
+        const candleAgeLabel = offset === 0 ? '5M Close' : `5M Close (${offset * 5}m ago)`;
+
+        // Request Gemini AI Shadow Audit
+        const aiAuditText = await auditWithGemini(symbol, setup.direction, setup.retracePct, setup.h1ClearancePct, setup.bodyRatio);
+
+        const alertHtml = [
+          `👑 ${dirEmoji} <b>[MYTRADA STRATEGY 6 SIGNAL]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `<b>Asset:</b> <code>${symbol}</code> (${symConfig.name})`,
+          `<b>Direction:</b> ${dirEmoji} <b>${setup.direction} (Supply-Sweep Sniper)</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `📊 <b>MULTI-TIMEFRAME CONFLUENCE:</b>`,
+          `  • <b>Macro 4H + 1H:</b> <code>${setup.htf1hTrend.toUpperCase()} (Aligned)</code>`,
+          `  • <b>Location:</b> <code>${zoneDesc}</code>`,
+          `  • <b>5M Execution:</b> <code>M5 Exhaustion Close (Body: ${(setup.bodyRatio * 100).toFixed(0)}%)</code>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `🎯 <b>ENTRY PRICE:</b> <code>${setup.entry.toFixed(2)}</code> (Market — ${candleAgeLabel})`,
+          `🛡️ <b>STOP LOSS (SL):</b> <code>${setup.sl.toFixed(2)}</code> (Peak + 1.5x ATR)\n`,
+          `🏆 <b>TARGET PROFIT:</b>`,
+          `  • 🎯 <b>TP1 (1:1.3 R:R):</b> <code>${setup.tp1.toFixed(2)}</code> (Move SL to Breakeven)`,
+          `  • 🏆 <b>TP2 (1:1.5 R:R):</b> <code>${setup.tp2.toFixed(2)}</code> (Full Target)`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `💰 <b>Position Sizing ($100 Account):</b>`,
+          `  • Recommended Lot: <code>${lotSize} Lots</code>`,
+          `  • Max Risk: <code>-$${riskUSD.toFixed(2)} USD (3.0%)</code>`,
+          `🤖 <b>GEMINI AI AUDIT:</b> ${aiAuditText}`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `🚀 <b>EXECUTION:</b> <code>Enter MARKET ${setup.direction} on MT5. Monitor for TP1/TP2 updates.</code>`
+        ].join('\n');
+
+        await sendTelegramMessage(alertHtml);
+        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 6 SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP1: ${setup.tp1.toFixed(2)} | TP2: ${setup.tp2.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
+
+        // Track active trade
+        const activeTrades = loadActiveTrades();
+        activeTrades.push({
+          setupId,
+          symbol,
+          type: setup.type,
+          entryPrice: setup.entry,
+          stopLoss: setup.sl,
+          tp1: setup.tp1,
+          tp2: setup.tp2,
+          tp1Hit: false,
+          triggeredTime: Date.now()
+        });
+        saveActiveTrades(activeTrades);
+
+        recordSignal({
+          setupId,
+          symbol,
+          type: setup.type,
+          entryPrice: setup.entry,
+          stopLoss: setup.sl,
+          takeProfit: setup.tp2,
+          confluenceScore: 10
+        });
+        recordTrigger(setupId);
+
+        break; // Only fire one signal per symbol per scan cycle
+      }
+
+      if (!signalFiredThisScan) {
         console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | Waiting for Strategy 6 Deep Retracement setup...`);
         await checkActiveTradesForSymbol(symbol, ltfCandles);
       }
