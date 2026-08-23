@@ -1,15 +1,14 @@
 // runner.js
 /**
- * Mytrada - Institutional Supply-Sweep & Liquidity Exhaustion Alert Bot (Strategy 6)
- * 
- * Rules:
- *  1. Macro Trend: 4H 50 EMA must agree with trade direction
- *  2. Intermediate Trend: 1H 50 EMA must agree + have >0.08% separation (Chop Filter)
- *  3. Dealing Range: Retracement must reach Deep Premium (>=61.8% for Short) or Deep Discount (<=38.2% for Long)
- *  4. Spike/Pullback Surge: Minimum 2-3 consecutive spike candles into the zone
- *  5. Execution: 5M candle close reversal (body >= 50% range)
- *  6. Dual Targets: TP1 (1:1.3 R:R) -> Move SL to Breakeven | TP2 (1:1.5 R:R) -> Full Target
- *  7. Gemini AI Gatekeeper: Shadow AI audit attached to every Telegram signal
+ * Mytrada - High-Frequency Institutional Momentum & Spike Exhaustion Bot (Strategy 5B)
+ *
+ * Execution Core:
+ *  - 13 Elite Boom & Crash Portfolio (Daily + 4H + 1H 50 EMA Trend Alignment)
+ *  - 2-Spike Cluster Exhaustion Trigger (5M Body >= 50%)
+ *  - Fixed 1:1.3 R:R Sniper Target with Dynamic Lot Sizing ($3.00 Max Risk)
+ *  - Responsive Tiered Circuit Breakers (30m / 60m / Daily Lockout)
+ *  - Automated 12:00 AM Midnight Daily Performance Report with Pair-by-Pair Breakdown
+ *  - Real-Time Telegram Dispatcher & Gemini AI Gatekeeper Audits
  */
 
 const https = require('https');
@@ -17,86 +16,99 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { getCandles } = require('./dataFetcher');
-const { placeTrade } = require('./tradeExecutor');
-const {
-  recordSignal,
-  recordTrigger,
-  recordClose,
-  generateDailyReport,
+const { 
+  recordSignal, 
+  recordTrigger, 
+  recordClose, 
+  generateDailyReport, 
   generateWeeklyReport,
-  generateMonthlyReport,
-  formatReportTelegramHTML
+  formatReportTelegramHTML 
 } = require('./reportManager');
 
+// ANSI Color Codes
+const RESET  = "\x1b[0m";
+const BOLD   = "\x1b[1m";
+const GREEN  = "\x1b[32m";
+const RED    = "\x1b[31m";
+const YELLOW = "\x1b[33m";
+const CYAN   = "\x1b[36m";
+
 const CACHE_DIR = path.join(__dirname, 'cache');
+const ALERTED_SETUPS_FILE = path.join(CACHE_DIR, 'alerted_setups.json');
+const ACTIVE_TRADES_FILE = path.join(CACHE_DIR, 'active_trades.json');
+const CIRCUIT_BREAKER_FILE = path.join(CACHE_DIR, 'circuit_breaker_state.json');
+const LAST_REPORT_DATE_FILE = path.join(CACHE_DIR, 'last_daily_report_date.json');
+
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
-const ACTIVE_TRADES_FILE = path.join(CACHE_DIR, 'active_trades.json');
-const ALERTED_SETUPS_FILE = path.join(CACHE_DIR, 'alerted_setups.json');
-const CIRCUIT_BREAKER_FILE = path.join(CACHE_DIR, 'circuit_breaker_state.json');
 
-// Terminal Color Codes
-const RESET = "\x1b[0m";
-const BOLD = "\x1b[1m";
-const GREEN = "\x1b[32m";
-const RED = "\x1b[31m";
-const CYAN = "\x1b[36m";
-const YELLOW = "\x1b[33m";
-const MAGENTA = "\x1b[35m";
-
-// ── PERSISTENT SETUPS CACHE (ZERO DUPLICATE SIGNALS) ──
+// ── PERSISTENCE HELPERS ──
 function loadAlertedSetups() {
   if (fs.existsSync(ALERTED_SETUPS_FILE)) {
     try {
       const data = JSON.parse(fs.readFileSync(ALERTED_SETUPS_FILE, 'utf8'));
-      if (Array.isArray(data)) return new Set(data);
+      const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+      const filtered = Object.entries(data).filter(([_, ts]) => ts > oneDayAgo);
+      return new Map(filtered);
     } catch (e) {
-      console.warn("[runner] Warning loading alerted setups cache:", e.message);
+      return new Map();
     }
   }
-  return new Set();
+  return new Map();
 }
 
 function saveAlertedSetup(setupId) {
-  alertedSetups.add(setupId);
-  try {
-    const list = Array.from(alertedSetups).slice(-500);
-    fs.writeFileSync(ALERTED_SETUPS_FILE, JSON.stringify(list, null, 2), 'utf8');
-  } catch (e) {
-    console.warn("[runner] Warning saving alerted setup cache:", e.message);
-  }
+  alertedSetups.set(setupId, Date.now());
+  const obj = Object.fromEntries(alertedSetups);
+  fs.writeFileSync(ALERTED_SETUPS_FILE, JSON.stringify(obj, null, 2), 'utf8');
 }
 
 const alertedSetups = loadAlertedSetups();
 
-// ── ACTIVE TRADES CACHE ──
 function loadActiveTrades() {
   if (fs.existsSync(ACTIVE_TRADES_FILE)) {
     try {
-      return JSON.parse(fs.readFileSync(ACTIVE_TRADES_FILE, 'utf8')) || [];
+      return JSON.parse(fs.readFileSync(ACTIVE_TRADES_FILE, 'utf8'));
     } catch (e) {
-      console.warn("[runner] Warning loading active trades cache:", e.message);
+      return [];
     }
   }
   return [];
 }
 
 function saveActiveTrades(trades) {
-  try {
-    fs.writeFileSync(ACTIVE_TRADES_FILE, JSON.stringify(trades, null, 2), 'utf8');
-  } catch (e) {
-    console.warn("[runner] Warning saving active trades cache:", e.message);
+  fs.writeFileSync(ACTIVE_TRADES_FILE, JSON.stringify(trades, null, 2), 'utf8');
+}
+
+function getLastReportedDate() {
+  if (fs.existsSync(LAST_REPORT_DATE_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(LAST_REPORT_DATE_FILE, 'utf8'));
+      return data.lastDate || "";
+    } catch (e) {
+      return "";
+    }
   }
+  return "";
+}
+
+function saveLastReportedDate(dateStr) {
+  try {
+    fs.writeFileSync(LAST_REPORT_DATE_FILE, JSON.stringify({ lastDate: dateStr }, null, 2), 'utf8');
+  } catch (e) {}
 }
 
 // ── CIRCUIT BREAKER STATE MANAGER ──
 function loadCircuitBreakerState() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toISOString().slice(0, 10);
   if (fs.existsSync(CIRCUIT_BREAKER_FILE)) {
     try {
       const state = JSON.parse(fs.readFileSync(CIRCUIT_BREAKER_FILE, 'utf8'));
-      if (state.date === today) return state;
+      if (state.date !== today) {
+        return { date: today, symbols: {} };
+      }
+      return state;
     } catch (e) {
       console.warn("[runner] Warning loading circuit breaker state:", e.message);
     }
@@ -146,8 +158,19 @@ function recordSymbolTradeOutcome(symbol, outcome) {
   } else if (outcome === 'LOSS') {
     rec.consecutiveLosses = (rec.consecutiveLosses || 0) + 1;
     rec.dailyLosses = (rec.dailyLosses || 0) + 1;
-    const pauseMins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 30;
-    rec.pauseUntil = now + (pauseMins * 60 * 1000);
+
+    // Responsive Tiered Circuit Breakers:
+    if (rec.dailyLosses >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 3)) {
+      const endOfDay = new Date();
+      endOfDay.setUTCHours(23, 59, 59, 999);
+      rec.pauseUntil = endOfDay.getTime();
+    } else if (rec.consecutiveLosses >= 2) {
+      const tier2Mins = config.CIRCUIT_BREAKER.TIER_2_PAUSE_MINS || 60;
+      rec.pauseUntil = now + (tier2Mins * 60 * 1000);
+    } else {
+      const tier1Mins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 30;
+      rec.pauseUntil = now + (tier1Mins * 60 * 1000);
+    }
   }
 
   saveCircuitBreakerState(circuitBreakerState);
@@ -155,7 +178,7 @@ function recordSymbolTradeOutcome(symbol, outcome) {
 
 // ── TELEGRAM DISPATCHER ──
 function sendTelegramMessage(text) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const botToken = config.TELEGRAM && config.TELEGRAM.BOT_TOKEN;
     const chatId   = config.TELEGRAM && config.TELEGRAM.CHAT_ID;
 
@@ -192,15 +215,76 @@ function sendTelegramMessage(text) {
       });
     });
 
-    req.on('error', (err) => resolve(false));
+    req.on('error', () => resolve(false));
     req.on('timeout', () => { req.destroy(); resolve(false); });
     req.write(payload);
     req.end();
   });
 }
 
+const LAST_WEEKLY_REPORT_FILE = path.join(CACHE_DIR, 'last_weekly_report_week.json');
+
+function getLastReportedWeek() {
+  if (fs.existsSync(LAST_WEEKLY_REPORT_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(LAST_WEEKLY_REPORT_FILE, 'utf8'));
+      return data.lastWeek || "";
+    } catch (e) {
+      return "";
+    }
+  }
+  return "";
+}
+
+function saveLastReportedWeek(weekStr) {
+  try {
+    fs.writeFileSync(LAST_WEEKLY_REPORT_FILE, JSON.stringify({ lastWeek: weekStr }, null, 2), 'utf8');
+  } catch (e) {}
+}
+
+// ── AUTOMATED 12:00 AM MIDNIGHT DAILY REPORT DELIVERY ──
+async function checkAndSendDailyMidnightReport() {
+  const now = new Date();
+  
+  // Calculate yesterday's date string (UTC)
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const yesterdayDateStr = yesterday.toISOString().split('T')[0];
+
+  const lastReported = getLastReportedDate();
+
+  // Trigger if yesterday's report has not been delivered yet
+  if (lastReported !== yesterdayDateStr) {
+    console.log(`\n📅 [12:00 AM MIDNIGHT REPORT] Compiling Daily Performance Report for ${yesterdayDateStr}...`);
+    const report = generateDailyReport(yesterdayDateStr);
+    const reportHtml = formatReportTelegramHTML(report);
+
+    await sendTelegramMessage(reportHtml);
+    saveLastReportedDate(yesterdayDateStr);
+    console.log(`✅ [12:00 AM MIDNIGHT REPORT] Daily Report for ${yesterdayDateStr} dispatched to Telegram successfully!\n`);
+  }
+}
+
+// ── AUTOMATED WEEKLY PERFORMANCE REPORT DELIVERY (SUNDAY MIDNIGHT) ──
+async function checkAndSendWeeklyReport() {
+  const now = new Date();
+  // Check if today is Sunday (day 0) at 12:00 AM+
+  if (now.getUTCDay() === 0) {
+    const weekYear = `${now.getUTCFullYear()}-W${Math.ceil((now.getUTCDate() + 6) / 7)}`;
+    const lastWeek = getLastReportedWeek();
+    if (lastWeek !== weekYear) {
+      console.log(`\n📊 [WEEKLY REPORT] Compiling Weekly Performance Report...`);
+      const report = generateWeeklyReport();
+      const reportHtml = formatReportTelegramHTML(report);
+
+      await sendTelegramMessage(reportHtml);
+      saveLastReportedWeek(weekYear);
+      console.log(`✅ [WEEKLY REPORT] Weekly Performance Report dispatched to Telegram successfully!\n`);
+    }
+  }
+}
+
 // ── GEMINI AI GATEKEEPER AUDIT ──
-function auditWithGemini(symbol, direction, retracePct, h1Clearance, bodyRatio) {
+function auditWithGemini(symbol, direction, h1Clearance, bodyRatio) {
   return new Promise((resolve) => {
     const apiKey = config.GEMINI_API_KEY;
     if (!apiKey) return resolve("🟢 85% Confidence (Approved — Mathematical Checkpoints Validated)");
@@ -208,12 +292,13 @@ function auditWithGemini(symbol, direction, retracePct, h1Clearance, bodyRatio) 
     const model = config.GEMINI_MODEL || "gemini-2.5-flash";
     const promptText = `
 You are the Senior Quantitative Risk Officer at Mytrada Algorithmic Fund.
-Audit this proposed Strategy 6 setup on Deriv Synthetic Index:
+Audit this proposed Strategy 5B setup on Deriv Synthetic Index:
 - Symbol: ${symbol}
 - Direction: ${direction}
-- Retracement Depth: ${retracePct.toFixed(1)}% into 24H dealing range (Must be >= 61.8%)
-- H1 50 EMA Clearance: ${h1Clearance.toFixed(2)}%
+- 1H 50 EMA Clearance: ${h1Clearance.toFixed(2)}% (Must be > 0.08%)
 - M5 Candle Body Ratio: ${bodyRatio.toFixed(2)} (Must be >= 0.50)
+- Trend Confluence: Daily + 4H + 1H 50 EMA Aligned
+- Spike Cluster: 2 Consecutive Counter-Trend Spikes Completed
 
 Respond strictly in JSON format:
 {
@@ -252,170 +337,141 @@ Respond strictly in JSON format:
             const conf = resJson.confidence_score || 85;
             const allow = resJson.allow_trade !== false;
             const reason = resJson.reasoning || "Strong structural alignment.";
-            const textBadge = (allow && conf >= 70) ? `🟢 <b>${conf}% Confidence</b> (Approved — ${reason})` : `🟡 <b>${conf}% Caution</b> (${reason})`;
-            return resolve(textBadge);
+            if (allow && conf >= 70) {
+              return resolve(`🟢 ${conf}% Confidence (Approved — ${reason})`);
+            } else {
+              return resolve(`🟡 ${conf}% Caution (${reason})`);
+            }
           }
         } catch (e) {}
-        resolve("🟢 <b>85% Confidence</b> (Approved — Mathematical Checkpoints Validated)");
+        resolve("🟢 85% Confidence (Approved — Mathematical Checkpoints Validated)");
       });
     });
 
-    req.on('error', () => resolve("🟢 <b>85% Confidence</b> (Approved — Mathematical Checkpoints Validated)"));
-    req.on('timeout', () => { req.destroy(); resolve("🟢 <b>85% Confidence</b> (Approved — Mathematical Checkpoints Validated)"); });
+    req.on('error', () => resolve("🟢 85% Confidence (Approved — Mathematical Checkpoints Validated)"));
+    req.on('timeout', () => { req.destroy(); resolve("🟢 85% Confidence (Approved — Mathematical Checkpoints Validated)"); });
     req.write(body);
     req.end();
   });
 }
 
 // ── TECHNICAL INDICATORS ──
-function calculateEMA(prices, period) {
+function calculateEMA(values, period) {
+  if (values.length < period) return [];
   const k = 2 / (period + 1);
-  let ema = prices[0];
-  const emaArray = [ema];
-  for (let i = 1; i < prices.length; i++) {
-    ema = (prices[i] * k) + (ema * (1 - k));
-    emaArray.push(ema);
+  const emaArray = [];
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += values[i];
+  let prevEma = sum / period;
+  emaArray.push(prevEma);
+
+  for (let i = period; i < values.length; i++) {
+    const currentEma = (values[i] * k) + (prevEma * (1 - k));
+    emaArray.push(currentEma);
+    prevEma = currentEma;
   }
   return emaArray;
 }
 
 function calculateATR(candles, period = 14) {
-  if (candles.length < period + 1) return null;
-  let trList = [];
+  if (candles.length < period + 1) return 0;
+  const trs = [];
   for (let i = 1; i < candles.length; i++) {
-    const high = candles[i].high;
-    const low = candles[i].low;
-    const prevClose = candles[i - 1].close;
-    const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
-    trList.push(tr);
+    const current = candles[i];
+    const prev = candles[i - 1];
+    const tr = Math.max(
+      current.high - current.low,
+      Math.abs(current.high - prev.close),
+      Math.abs(current.low - prev.close)
+    );
+    trs.push(tr);
   }
-  const recentTR = trList.slice(-period);
-  return recentTR.reduce((sum, val) => sum + val, 0) / period;
+  let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < trs.length; i++) {
+    atr = (atr * (period - 1) + trs[i]) / period;
+  }
+  return atr;
 }
 
-function calculateLotSize(symbol, entryPrice, stopLossPrice) {
+function calculateLotSize(symbol, entry, sl) {
   const riskAmount = config.RISK_AMOUNT_USD || 3.0;
-  const slDistance = Math.abs(entryPrice - stopLossPrice);
+  const slDistance = Math.abs(entry - sl);
   if (slDistance <= 0) return 0.20;
 
-  let baseLot = (riskAmount / slDistance).toFixed(2);
-  let lot = parseFloat(baseLot);
+  const minLots = {
+    'BOOM300N': 0.50, 'CRASH300N': 0.50,
+    'BOOM500': 0.20,  'CRASH500': 0.20,
+    'BOOM1000': 0.20, 'CRASH1000': 0.20,
+    'BOOM600': 0.20,  'CRASH600': 0.20,
+    'BOOM900': 0.20,  'CRASH900': 0.20,
+    'BOOM100': 0.20,  'CRASH50': 0.20,
+    'CRASH200': 0.20
+  };
 
-  if (symbol.includes("BOOM300") || symbol.includes("CRASH300")) lot = Math.max(0.50, lot);
-  else if (symbol.includes("BOOM") || symbol.includes("CRASH")) lot = Math.max(0.20, lot);
-  else if (symbol.includes("R_100") || symbol.includes("R_50")) lot = Math.max(0.50, lot);
-  return lot;
+  const minLot = minLots[symbol] || 0.20;
+  const rawLot = riskAmount / slDistance;
+  return Math.max(minLot, parseFloat(rawLot.toFixed(2)));
 }
 
-// ── ACTIVE TRADES MONITOR (TP1 / TP2 / REVERSAL / SL) ──
-async function checkActiveTradesForSymbol(symbol, candles) {
-  const activeTrades = loadActiveTrades();
-  const symbolTrades = activeTrades.filter(t => t.symbol === symbol);
-  if (symbolTrades.length === 0) return;
+// ── ACTIVE TRADE LIFECYCLE MANAGEMENT (1:1.3 R:R) ──
+async function checkActiveTradesForSymbol(symbol, ltfCandles) {
+  if (!ltfCandles || ltfCandles.length === 0) return;
 
+  const activeTrades = loadActiveTrades();
+  const tradesForSymbol = activeTrades.filter(t => t.symbol === symbol);
+  if (tradesForSymbol.length === 0) return;
+
+  const latest = ltfCandles[ltfCandles.length - 1];
   let updatedTrades = [...activeTrades];
   let changed = false;
 
-  for (const trade of symbolTrades) {
-    const postTriggerCandles = candles.filter(c => c.time >= trade.triggeredTime);
-    if (postTriggerCandles.length === 0) continue;
+  for (const trade of tradesForSymbol) {
+    const isBullish = trade.type === 'bullish';
+    const hitTP = isBullish ? latest.high >= trade.takeProfit : latest.low <= trade.takeProfit;
+    const hitSL = isBullish ? latest.low <= trade.stopLoss : latest.high >= trade.stopLoss;
 
-    let hitTP2 = false;
-    let hitTP1 = false;
-    let hitSL = false;
-
-    for (const candle of postTriggerCandles) {
-      if (trade.type === 'bearish') {
-        if (candle.low <= trade.tp2) { hitTP2 = true; break; }
-        if (candle.low <= trade.tp1 && !trade.tp1Hit) { hitTP1 = true; }
-        if (candle.high >= trade.stopLoss) { hitSL = true; break; }
-      } else { // bullish
-        if (candle.high >= trade.tp2) { hitTP2 = true; break; }
-        if (candle.high >= trade.tp1 && !trade.tp1Hit) { hitTP1 = true; }
-        if (candle.low <= trade.stopLoss) { hitSL = true; break; }
-      }
-    }
-
-    // 1. Full TP2 Hit
-    if (hitTP2) {
-      const pnlUsd = (config.RISK_AMOUNT_USD || 3.0) * (config.TP2_RR || 1.5);
-      const tp2Alert = [
-        `🏆 🟢 <b>[MYTRADA TP2 HIT — FULL TARGET (1:1.5 R:R)]</b>`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    if (hitTP) {
+      const pnlUsd = (config.RISK_AMOUNT_USD || 3.0) * (config.REWARD_RATIO || 1.3);
+      const tpAlert = [
+        `🏆 🟢 <b>[MYTRADA TP HIT — FULL TARGET (1:1.3 R:R)]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-        `<b>Direction:</b> ${trade.type === 'bullish' ? '🟢 BUY' : '🔴 SELL'}`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `💰 <b>PROFIT CAPTURED:</b> <code>+$${pnlUsd.toFixed(2)} USD (+1.5R / +4.5%)</code>`,
+        `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `💰 <b>PROFIT CAPTURED:</b> <code>+$${pnlUsd.toFixed(2)} USD (+1.3R / +3.9%)</code>`,
         `🎯 <b>Entry Price:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
-        `🏆 <b>TP2 Hit:</b> <code>${trade.tp2.toFixed(2)}</code>`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🏆 <b>TP Hit:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `✅ <i>Trade fully completed in maximum profit!</i>`
       ].join('\n');
 
-      await sendTelegramMessage(tp2Alert);
+      await sendTelegramMessage(tpAlert);
       recordSymbolTradeOutcome(symbol, 'WIN');
-      recordClose(trade.setupId, 'WIN', trade.tp2, pnlUsd, 1.5);
+      recordClose(trade.setupId, 'WIN', trade.takeProfit, pnlUsd, 1.3);
 
       updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
       changed = true;
       continue;
     }
 
-    // 2. TP1 Hit for the first time
-    if (hitTP1 && !trade.tp1Hit) {
-      trade.tp1Hit = true;
-      const tp1PnlUsd = (config.RISK_AMOUNT_USD || 3.0) * (config.TP1_RR || 1.3);
-      const tp1Alert = [
-        `🎯 🟢 <b>[MYTRADA TP1 HIT (1:1.3 R:R) / MOVE SL TO BREAKEVEN]</b>`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    if (hitSL) {
+      const riskUSD = config.RISK_AMOUNT_USD || 3.0;
+      const pauseMins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 30;
+      const slAlert = [
+        `🔴 🛡️ <b>[MYTRADA STOP LOSS HIT (-1.0R)]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-        `<b>Direction:</b> ${trade.type === 'bullish' ? '🟢 BUY' : '🔴 SELL'}`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `🎯 <b>TP1 Reached:</b> <code>${trade.tp1.toFixed(2)}</code> (+1.3R / +$${tp1PnlUsd.toFixed(2)})`,
-        `🎯 <b>Entry Price:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
-        `🏆 <b>Target TP2:</b> <code>${trade.tp2.toFixed(2)}</code> (+1.5R)`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `💡 <b>ACTION:</b> <code>Secure partial profit or move SL to Entry (${trade.entryPrice.toFixed(2)}) for a RISK-FREE run to TP2!</code>`
+        `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `💸 <b>LOSS:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R / -3.0%)</code>`,
+        `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> | 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `🛡️ <i>Single-pair cooldown active (${pauseMins}m).</i>`
       ].join('\n');
 
-      await sendTelegramMessage(tp1Alert);
-      changed = true;
-    }
-
-    // 3. Stop Loss Hit
-    if (hitSL) {
-      if (trade.tp1Hit) {
-        const revAlert = [
-          `🔄 🟡 <b>[MYTRADA REVERSED AFTER TP1 — PROTECTED]</b>`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-          `<b>Direction:</b> ${trade.type === 'bullish' ? '🟢 BUY' : '🔴 SELL'}`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `Price touched TP1 (+1.3R) before reversing into Stop Loss area.`,
-          `🛡️ <b>Outcome:</b> <code>Breakeven / Partial Profit Secured. Zero Loss.</code>`
-        ].join('\n');
-
-        await sendTelegramMessage(revAlert);
-        recordSymbolTradeOutcome(symbol, 'WIN');
-        recordClose(trade.setupId, 'BREAKEVEN', trade.entryPrice, 0, 0);
-      } else {
-        const riskUSD = config.RISK_AMOUNT_USD || 3.0;
-        const slAlert = [
-          `🔴 🛡️ <b>[MYTRADA STOP LOSS HIT (-1.0R)]</b>`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-          `<b>Direction:</b> ${trade.type === 'bullish' ? '🟢 BUY' : '🔴 SELL'}`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `💸 <b>LOSS:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R / -3.0%)</code>`,
-          `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> | 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🛡️ <i>Single-pair cooldown active (30m).</i>`
-        ].join('\n');
-
-        await sendTelegramMessage(slAlert);
-        recordSymbolTradeOutcome(symbol, 'LOSS');
-        recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0);
-      }
+      await sendTelegramMessage(slAlert);
+      recordSymbolTradeOutcome(symbol, 'LOSS');
+      recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0);
 
       updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
       changed = true;
@@ -427,8 +483,8 @@ async function checkActiveTradesForSymbol(symbol, candles) {
   }
 }
 
-// ── STRATEGY 6 SIGNAL DETECTION ENGINE ──
-function detectStrategy6Setup(ltfCandles, htf1hCandles, htf4hCandles, mode, minSpikesRequired) {
+// ── STRATEGY 5B SIGNAL DETECTION ENGINE ──
+function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired) {
   if (!ltfCandles || !htf1hCandles || ltfCandles.length < 25 || htf1hCandles.length < 55) return null;
 
   // 1. 1H 50 EMA Intermediate Trend
@@ -452,30 +508,30 @@ function detectStrategy6Setup(ltfCandles, htf1hCandles, htf4hCandles, mode, minS
     htf4hTrend        = last4hClose > last4hEma ? 'bullish' : 'bearish';
   }
 
-  // 3. 24-Hour 1H Dealing Range
-  const last24H1 = htf1hCandles.slice(-24);
-  const h1SwingHigh = Math.max(...last24H1.map(c => c.high));
-  const h1SwingLow  = Math.min(...last24H1.map(c => c.low));
-  const h1Range     = h1SwingHigh - h1SwingLow;
-  if (h1Range <= 0) return null;
+  // 3. Daily 50 EMA Macro Trend
+  let dailyTrend = 'N/A';
+  if (dailyCandles && dailyCandles.length >= 30) {
+    const dailyCloses = dailyCandles.map(c => c.close);
+    const dailyEMA    = calculateEMA(dailyCloses, Math.min(50, dailyCloses.length - 1));
+    if (dailyEMA.length > 0) {
+      const lastDailyClose = dailyCloses[dailyCloses.length - 1];
+      const lastDailyEma   = dailyEMA[dailyEMA.length - 1];
+      dailyTrend           = lastDailyClose > lastDailyEma ? 'bullish' : 'bearish';
+    }
+  }
 
   const c0 = ltfCandles[ltfCandles.length - 1];
   const c0Range = c0.high - c0.low;
   const c0Body  = Math.abs(c0.close - c0.open);
   const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
   const minSpikes = minSpikesRequired || config.MIN_SPIKES || 2;
-  const premiumFibMin = config.PREMIUM_FIB_MIN || 0.618;
 
-  // ── CASE 1: SELL (BOOM / BEARISH VOLATILITY) ──
-  if (mode === 'BOOM' || (mode === 'VOLATILITY' && htf1hTrend === 'bearish')) {
+  // ── CASE 1: SELL (BOOM) ──
+  if (mode === 'BOOM') {
     if (htf1hTrend !== 'bearish') return null;
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
+    if (dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
 
-    // Location: Deep Premium (>= 61.8% of 24H Dealing Range)
-    const retracePct = (c0.high - h1SwingLow) / h1Range;
-    if (retracePct < premiumFibMin) return null;
-
-    // Preceding Spikes / Pullback Candles
     let hasSpikes = true;
     const spikeCandles = [];
     for (let s = 1; s <= minSpikes; s++) {
@@ -496,8 +552,7 @@ function detectStrategy6Setup(ltfCandles, htf1hCandles, htf4hCandles, mode, minS
     const slDist = sl - entry;
     if (slDist <= 0) return null;
 
-    const tp1 = entry - (slDist * (config.TP1_RR || 1.3));
-    const tp2 = entry - (slDist * (config.TP2_RR || 1.5));
+    const tp = entry - (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
     return {
@@ -505,30 +560,25 @@ function detectStrategy6Setup(ltfCandles, htf1hCandles, htf4hCandles, mode, minS
       type: 'bearish',
       htf4hTrend,
       htf1hTrend,
+      dailyTrend,
       entry,
       sl,
-      tp1,
-      tp2,
+      tp,
       slDist,
       atr,
       refPrice: spikePeak,
-      retracePct: retracePct * 100,
       h1ClearancePct,
       bodyRatio,
       candleEpoch
     };
   }
 
-  // ── CASE 2: BUY (CRASH / BULLISH VOLATILITY) ──
-  if (mode === 'CRASH' || (mode === 'VOLATILITY' && htf1hTrend === 'bullish')) {
+  // ── CASE 2: BUY (CRASH) ──
+  if (mode === 'CRASH') {
     if (htf1hTrend !== 'bullish') return null;
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
+    if (dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
 
-    // Location: Deep Discount (<= 38.2% from swing low -> retrace from high >= 61.8%)
-    const retracePct = (h1SwingHigh - c0.low) / h1Range;
-    if (retracePct < premiumFibMin) return null;
-
-    // Preceding Crash / Pullback Candles
     let hasCrashes = true;
     const crashCandles = [];
     for (let s = 1; s <= minSpikes; s++) {
@@ -549,8 +599,7 @@ function detectStrategy6Setup(ltfCandles, htf1hCandles, htf4hCandles, mode, minS
     const slDist = entry - sl;
     if (slDist <= 0) return null;
 
-    const tp1 = entry + (slDist * (config.TP1_RR || 1.3));
-    const tp2 = entry + (slDist * (config.TP2_RR || 1.5));
+    const tp = entry + (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
     return {
@@ -558,14 +607,13 @@ function detectStrategy6Setup(ltfCandles, htf1hCandles, htf4hCandles, mode, minS
       type: 'bullish',
       htf4hTrend,
       htf1hTrend,
+      dailyTrend,
       entry,
       sl,
-      tp1,
-      tp2,
+      tp,
       slDist,
       atr,
       refPrice: crashTrough,
-      retracePct: retracePct * 100,
       h1ClearancePct,
       bodyRatio,
       candleEpoch
@@ -578,7 +626,14 @@ function detectStrategy6Setup(ltfCandles, htf1hCandles, htf4hCandles, mode, minS
 // ── MAIN MONITOR CYCLE ──
 async function monitorMarket() {
   const now = new Date();
-  console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Pairs for Strategy 6 setups...${RESET}`);
+  
+  // 1. Automated Check for 12:00 AM Midnight Daily Performance Report
+  await checkAndSendDailyMidnightReport();
+
+  // 2. Automated Check for Sunday Midnight Weekly Performance Report
+  await checkAndSendWeeklyReport();
+
+  console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for Strategy 5B setups...${RESET}`);
   console.log(`-------------------------------------------------------------------------------------------------`);
 
   const symbols = Object.keys(config.SYMBOLS);
@@ -596,39 +651,33 @@ async function monitorMarket() {
         continue;
       }
 
+      const dailyCandles = await getCandles(symbol, config.MACRO_DAILY || '1d', 60, true);
       const htf4hCandles = await getCandles(symbol, config.MACRO_HTF || '4h', 100, true);
       const htf1hCandles = await getCandles(symbol, config.INTERMEDIATE_HTF || '1h', 100, true);
-      // Fetch 150 5M candles (~12.5 hours) so we can check the last 5 closed candles
-      // and catch signals that closed between 30-second scan intervals
       const ltfCandles   = await getCandles(symbol, config.DEFAULT_LTF || '5m', 150, true);
       if (!htf1hCandles || !ltfCandles) continue;
 
       const latestPrice = ltfCandles[ltfCandles.length - 1].close;
 
-      // ── MULTI-CANDLE LOOKBACK (Last 5 closed 5M candles) ──
-      // Scans candles at offsets 0,1,2,3,4 so signals that closed between scan
-      // intervals are caught. Each unique candleEpoch is only ever alerted once.
       const LOOKBACK_BARS = 5;
       let signalFiredThisScan = false;
 
       for (let offset = 0; offset < LOOKBACK_BARS; offset++) {
         if (ltfCandles.length < offset + 25) break;
 
-        // Slice so the target candle appears as the last element
         const ltfSlice = ltfCandles.slice(0, ltfCandles.length - offset);
-        const setup = detectStrategy6Setup(ltfSlice, htf1hCandles, htf4hCandles, mode, minSpikes);
+        const setup = detectStrategy5BSetup(ltfSlice, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikes);
         if (!setup) continue;
 
         const setupId = `${symbol}_${setup.direction}_${setup.candleEpoch}`;
         const existingActive = loadActiveTrades();
         const symbolAlreadyActive = existingActive.some(t => t.symbol === symbol);
 
-        // Already alerted or a trade is open on this symbol — skip
         if (alertedSetups.has(setupId) || symbolAlreadyActive) {
           if (alertedSetups.has(setupId)) {
             console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | Setup active (already alerted)`);
           }
-          break; // No point checking older candles either
+          break;
         }
 
         // ── NEW SIGNAL — FIRE ALERT ──
@@ -637,44 +686,39 @@ async function monitorMarket() {
 
         const lotSize = calculateLotSize(symbol, setup.entry, setup.sl);
         const dirEmoji = setup.direction === 'SELL' ? '🔴' : '🟢';
-        const zoneDesc = setup.direction === 'SELL'
-          ? `${setup.retracePct.toFixed(1)}% Deep Premium Supply Retest`
-          : `${setup.retracePct.toFixed(1)}% Deep Discount Demand Retest`;
         const riskUSD = config.RISK_AMOUNT_USD || 3.0;
+        const rewardUSD = (riskUSD * (config.REWARD_RATIO || 1.3)).toFixed(2);
         const candleAgeLabel = offset === 0 ? '5M Close' : `5M Close (${offset * 5}m ago)`;
 
-        // Request Gemini AI Shadow Audit
-        const aiAuditText = await auditWithGemini(symbol, setup.direction, setup.retracePct, setup.h1ClearancePct, setup.bodyRatio);
+        // Request Gemini AI Gatekeeper Audit
+        const aiAuditText = await auditWithGemini(symbol, setup.direction, setup.h1ClearancePct, setup.bodyRatio);
 
         const alertHtml = [
-          `👑 ${dirEmoji} <b>[MYTRADA STRATEGY 6 SIGNAL]</b>`,
+          `👑 ${dirEmoji} <b>[MYTRADA STRATEGY 5B SIGNAL]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${symConfig.name})`,
-          `<b>Direction:</b> ${dirEmoji} <b>${setup.direction} (Supply-Sweep Sniper)</b>`,
+          `<b>Direction:</b> ${dirEmoji} <b>${setup.direction} (Momentum Exhaustion Sniper)</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `📊 <b>MULTI-TIMEFRAME CONFLUENCE:</b>`,
-          `  • <b>Macro 4H + 1H:</b> <code>${setup.htf1hTrend.toUpperCase()} (Aligned)</code>`,
-          `  • <b>Location:</b> <code>${zoneDesc}</code>`,
+          `  • <b>Macro Trend:</b> <code>Daily + 4H + 1H 50 EMA (${setup.htf1hTrend.toUpperCase()} Aligned)</code>`,
+          `  • <b>Cluster:</b> <code>${minSpikes} Consecutive Counter-Trend Spikes</code>`,
           `  • <b>5M Execution:</b> <code>M5 Exhaustion Close (Body: ${(setup.bodyRatio * 100).toFixed(0)}%)</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `🎯 <b>ENTRY PRICE:</b> <code>${setup.entry.toFixed(2)}</code> (Market — ${candleAgeLabel})`,
-          `🛡️ <b>STOP LOSS (SL):</b> <code>${setup.sl.toFixed(2)}</code> (Peak + 1.5x ATR)\n`,
-          `🏆 <b>TARGET PROFIT:</b>`,
-          `  • 🎯 <b>TP1 (1:1.3 R:R):</b> <code>${setup.tp1.toFixed(2)}</code> (Move SL to Breakeven)`,
-          `  • 🏆 <b>TP2 (1:1.5 R:R):</b> <code>${setup.tp2.toFixed(2)}</code> (Full Target)`,
+          `🛡️ <b>STOP LOSS (SL):</b> <code>${setup.sl.toFixed(2)}</code> (Peak + 1.5x ATR)`,
+          `🏆 <b>TARGET (1:1.3 R:R):</b> <code>${setup.tp.toFixed(2)}</code> (+$${rewardUSD} USD)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💰 <b>Position Sizing ($100 Account):</b>`,
           `  • Recommended Lot: <code>${lotSize} Lots</code>`,
           `  • Max Risk: <code>-$${riskUSD.toFixed(2)} USD (3.0%)</code>`,
           `🤖 <b>GEMINI AI AUDIT:</b> ${aiAuditText}`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `🚀 <b>EXECUTION:</b> <code>Enter MARKET ${setup.direction} on MT5. Monitor for TP1/TP2 updates.</code>`
+          `🚀 <b>EXECUTION:</b> <code>Enter MARKET ${setup.direction} on MT5. Target 1:1.3 R:R.</code>`
         ].join('\n');
 
         await sendTelegramMessage(alertHtml);
-        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 6 SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP1: ${setup.tp1.toFixed(2)} | TP2: ${setup.tp2.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
+        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 5B SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
 
-        // Track active trade
         const activeTrades = loadActiveTrades();
         activeTrades.push({
           setupId,
@@ -682,9 +726,7 @@ async function monitorMarket() {
           type: setup.type,
           entryPrice: setup.entry,
           stopLoss: setup.sl,
-          tp1: setup.tp1,
-          tp2: setup.tp2,
-          tp1Hit: false,
+          takeProfit: setup.tp,
           triggeredTime: Date.now()
         });
         saveActiveTrades(activeTrades);
@@ -695,16 +737,16 @@ async function monitorMarket() {
           type: setup.type,
           entryPrice: setup.entry,
           stopLoss: setup.sl,
-          takeProfit: setup.tp2,
+          takeProfit: setup.tp,
           confluenceScore: 10
         });
         recordTrigger(setupId);
 
-        break; // Only fire one signal per symbol per scan cycle
+        break;
       }
 
       if (!signalFiredThisScan) {
-        console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | Waiting for Strategy 6 Deep Retracement setup...`);
+        console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | Monitoring for 2-Spike Pullback Exhaustion...`);
         await checkActiveTradesForSymbol(symbol, ltfCandles);
       }
     } catch (err) {
@@ -720,19 +762,31 @@ async function monitorMarket() {
 async function main() {
   const args = process.argv.slice(2);
   const isTest = args.includes('--test');
+  const isReport = args.includes('--report');
 
   if (isTest) {
     console.log("\n🧪 Dispatching Test Telegram Alert...");
-    const testMsg = "🚀 <b>[MYTRADA STRATEGY 6 TEST]</b>\nTelegram Signal Dispatcher connected successfully!";
+    const testMsg = "🚀 <b>[MYTRADA STRATEGY 5B TEST]</b>\nTelegram Signal Dispatcher connected successfully!";
     await sendTelegramMessage(testMsg);
     console.log(`${GREEN}✅ SUCCESS: Test alert sent to Telegram!${RESET}`);
     process.exit(0);
   }
 
-  console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Strategy 6 LIVE)${RESET}`);
-  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Pairs with Dual TP1/TP2 and Gemini AI Audits...\n`);
+  if (isReport) {
+    console.log("\n📊 Dispatching Manual Daily Report Test to Telegram...");
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const report = generateDailyReport(yesterdayStr);
+    const reportHtml = formatReportTelegramHTML(report);
+    await sendTelegramMessage(reportHtml);
+    console.log(`${GREEN}✅ SUCCESS: Daily Performance Report dispatched to Telegram!${RESET}`);
+    process.exit(0);
+  }
 
-  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 6 LIVE]</b> Signal Runner started across the 10 Elite Universe with Dual TP1/TP2 and Gemini AI Audits!`);
+  console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Strategy 5B Flagship LIVE)${RESET}`);
+  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Pairs (1:1.3 R:R + 30m/60m Circuit Breakers)...\n`);
+
+  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active across 13 Elite Boom & Crash Portfolio with 1:1.3 R:R and 30m/60m Circuit Breakers!`);
 
   await monitorMarket();
   setInterval(monitorMarket, 30000);
