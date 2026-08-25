@@ -106,7 +106,9 @@ function loadCircuitBreakerState() {
     try {
       const state = JSON.parse(fs.readFileSync(CIRCUIT_BREAKER_FILE, 'utf8'));
       if (state.date !== today) {
-        return { date: today, symbols: {} };
+        const freshState = { date: today, symbols: {} };
+        saveCircuitBreakerState(freshState);
+        return freshState;
       }
       return state;
     } catch (e) {
@@ -128,6 +130,13 @@ let circuitBreakerState = loadCircuitBreakerState();
 
 function isSymbolInCooldown(symbol) {
   if (!config.CIRCUIT_BREAKER || !config.CIRCUIT_BREAKER.ENABLED) return { inCooldown: false };
+  
+  // Refresh state if date has rolled over to a new day
+  const today = new Date().toISOString().slice(0, 10);
+  if (!circuitBreakerState || circuitBreakerState.date !== today) {
+    circuitBreakerState = loadCircuitBreakerState();
+  }
+
   const rec = circuitBreakerState.symbols && circuitBreakerState.symbols[symbol];
   if (!rec) return { inCooldown: false };
 
@@ -145,6 +154,11 @@ function isSymbolInCooldown(symbol) {
 }
 
 function recordSymbolTradeOutcome(symbol, outcome) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (!circuitBreakerState || circuitBreakerState.date !== today) {
+    circuitBreakerState = loadCircuitBreakerState();
+  }
+
   if (!circuitBreakerState.symbols) circuitBreakerState.symbols = {};
   if (!circuitBreakerState.symbols[symbol]) {
     circuitBreakerState.symbols[symbol] = { consecutiveLosses: 0, dailyLosses: 0, pauseUntil: 0 };
@@ -413,6 +427,29 @@ function calculateLotSize(symbol, entry, sl) {
   return Math.max(minLot, parseFloat(rawLot.toFixed(2)));
 }
 
+// ── HTF CANDLE CACHE (Reduces WebSocket load by 75%) ──
+const htfMemoryCache = new Map();
+
+async function getCachedHtfCandles(symbol, tf, count, ttlMs = 5 * 60 * 1000) {
+  const key = `${symbol}_${tf}_${count}`;
+  const now = Date.now();
+  const cached = htfMemoryCache.get(key);
+  if (cached && (now - cached.timestamp < ttlMs)) {
+    return cached.data;
+  }
+  try {
+    const fresh = await getCandles(symbol, tf, count, true);
+    if (fresh && fresh.length > 0) {
+      htfMemoryCache.set(key, { timestamp: now, data: fresh });
+      return fresh;
+    }
+  } catch (e) {
+    if (cached) return cached.data;
+    throw e;
+  }
+  return [];
+}
+
 // ── ACTIVE TRADE LIFECYCLE MANAGEMENT (1:1.3 R:R) ──
 async function checkActiveTradesForSymbol(symbol, ltfCandles) {
   if (!ltfCandles || ltfCandles.length === 0) return;
@@ -421,14 +458,17 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
   const tradesForSymbol = activeTrades.filter(t => t.symbol === symbol);
   if (tradesForSymbol.length === 0) return;
 
-  const latest = ltfCandles[ltfCandles.length - 1];
+  const recentCandles = ltfCandles.slice(-12);
+  const maxHigh = Math.max(...recentCandles.map(c => c.high));
+  const minLow  = Math.min(...recentCandles.map(c => c.low));
+
   let updatedTrades = [...activeTrades];
   let changed = false;
 
   for (const trade of tradesForSymbol) {
     const isBullish = trade.type === 'bullish';
-    const hitTP = isBullish ? latest.high >= trade.takeProfit : latest.low <= trade.takeProfit;
-    const hitSL = isBullish ? latest.low <= trade.stopLoss : latest.high >= trade.stopLoss;
+    const hitTP = isBullish ? maxHigh >= trade.takeProfit : minLow <= trade.takeProfit;
+    const hitSL = isBullish ? minLow <= trade.stopLoss : maxHigh >= trade.stopLoss;
 
     if (hitTP) {
       const pnlUsd = (config.RISK_AMOUNT_USD || 3.0) * (config.REWARD_RATIO || 1.3);
@@ -651,22 +691,24 @@ async function monitorMarket() {
         continue;
       }
 
-      const dailyCandles = await getCandles(symbol, config.MACRO_DAILY || '1d', 60, true);
-      const htf4hCandles = await getCandles(symbol, config.MACRO_HTF || '4h', 100, true);
-      const htf1hCandles = await getCandles(symbol, config.INTERMEDIATE_HTF || '1h', 100, true);
+      // Use cached HTF candles (TTL: 1D = 1hr, 4H = 15m, 1H = 5m) to prevent WS socket overload
+      const dailyCandles = await getCachedHtfCandles(symbol, config.MACRO_DAILY || '1d', 60, 60 * 60 * 1000);
+      const htf4hCandles = await getCachedHtfCandles(symbol, config.MACRO_HTF || '4h', 100, 15 * 60 * 1000);
+      const htf1hCandles = await getCachedHtfCandles(symbol, config.INTERMEDIATE_HTF || '1h', 100, 5 * 60 * 1000);
       const ltfCandles   = await getCandles(symbol, config.DEFAULT_LTF || '5m', 150, true);
       if (!htf1hCandles || !ltfCandles) continue;
 
       const latestPrice = ltfCandles[ltfCandles.length - 1].close;
 
-      const LOOKBACK_BARS = 5;
+      const LOOKBACK_BARS = 4;
       let signalFiredThisScan = false;
 
-      for (let offset = 0; offset < LOOKBACK_BARS; offset++) {
+      // Start at offset = 1 (most recently closed completed 5M candle) to avoid fluctuating in-progress bars
+      for (let offset = 1; offset <= LOOKBACK_BARS; offset++) {
         if (ltfCandles.length < offset + 25) break;
 
-        const ltfSlice = ltfCandles.slice(0, ltfCandles.length - offset);
-        const setup = detectStrategy5BSetup(ltfSlice, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikes);
+        const completedSlice = ltfCandles.slice(0, ltfCandles.length - (offset - 1) - 1);
+        const setup = detectStrategy5BSetup(completedSlice, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikes);
         if (!setup) continue;
 
         const setupId = `${symbol}_${setup.direction}_${setup.candleEpoch}`;
@@ -688,7 +730,7 @@ async function monitorMarket() {
         const dirEmoji = setup.direction === 'SELL' ? '🔴' : '🟢';
         const riskUSD = config.RISK_AMOUNT_USD || 3.0;
         const rewardUSD = (riskUSD * (config.REWARD_RATIO || 1.3)).toFixed(2);
-        const candleAgeLabel = offset === 0 ? '5M Close' : `5M Close (${offset * 5}m ago)`;
+        const candleAgeLabel = offset === 1 ? '5M Close' : `5M Close (${(offset - 1) * 5}m ago)`;
 
         // Request Gemini AI Gatekeeper Audit
         const aiAuditText = await auditWithGemini(symbol, setup.direction, setup.h1ClearancePct, setup.bodyRatio);
