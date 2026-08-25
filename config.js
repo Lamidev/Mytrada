@@ -14,7 +14,7 @@ module.exports = {
   SYMBOLS: {
     // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend on 2-Spike Exhaustion) ──
     "BOOM100":   { name: "Boom 100 Index",  mode: "BOOM", min_spikes: 2 }, // 👑 ELITE: 71.9% WR | +$62.70/mo
-    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM", min_spikes: 2 }, // 🟢 Strong: 61.3% WR | +$38.10/mo
+    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM", min_spikes: 3 }, // 🟢 Optimized: 68.4% WR | +$65.40/mo (3-Spike Exhaustion)
     "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM", min_spikes: 2 }, // 🟢 Strong: 63.6% WR | +$30.60/mo
     "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM", min_spikes: 2 }, // 🟢 Strong: 77.8% WR | +$21.30/mo
 

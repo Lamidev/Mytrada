@@ -458,17 +458,29 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
   const tradesForSymbol = activeTrades.filter(t => t.symbol === symbol);
   if (tradesForSymbol.length === 0) return;
 
-  const recentCandles = ltfCandles.slice(-12);
-  const maxHigh = Math.max(...recentCandles.map(c => c.high));
-  const minLow  = Math.min(...recentCandles.map(c => c.low));
-
+  const currentLivePrice = ltfCandles[ltfCandles.length - 1].close;
   let updatedTrades = [...activeTrades];
   let changed = false;
 
   for (const trade of tradesForSymbol) {
+    const entryCandleEpoch = trade.candleEpoch || (trade.triggeredTime ? trade.triggeredTime - 300000 : 0);
+    // ONLY inspect candles that formed strictly AFTER the entry candle was completed
+    const postEntryCandles = ltfCandles.filter(c => (c.time > entryCandleEpoch));
+
+    let hitTP = false;
+    let hitSL = false;
     const isBullish = trade.type === 'bullish';
-    const hitTP = isBullish ? maxHigh >= trade.takeProfit : minLow <= trade.takeProfit;
-    const hitSL = isBullish ? minLow <= trade.stopLoss : maxHigh >= trade.stopLoss;
+
+    if (postEntryCandles.length > 0) {
+      const maxHigh = Math.max(...postEntryCandles.map(c => c.high));
+      const minLow  = Math.min(...postEntryCandles.map(c => c.low));
+      hitTP = isBullish ? maxHigh >= trade.takeProfit : minLow <= trade.takeProfit;
+      hitSL = isBullish ? minLow <= trade.stopLoss : maxHigh >= trade.stopLoss;
+    } else {
+      // If we are still in the very first candle right after entry, only check current live price
+      hitTP = isBullish ? currentLivePrice >= trade.takeProfit : currentLivePrice <= trade.takeProfit;
+      hitSL = isBullish ? currentLivePrice <= trade.stopLoss : currentLivePrice >= trade.stopLoss;
+    }
 
     if (hitTP) {
       const pnlUsd = (config.RISK_AMOUNT_USD || 3.0) * (config.REWARD_RATIO || 1.3);
@@ -769,6 +781,7 @@ async function monitorMarket() {
           entryPrice: setup.entry,
           stopLoss: setup.sl,
           takeProfit: setup.tp,
+          candleEpoch: setup.candleEpoch,
           triggeredTime: Date.now()
         });
         saveActiveTrades(activeTrades);
