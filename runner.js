@@ -828,10 +828,57 @@ async function main() {
   console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Strategy 5B Flagship LIVE)${RESET}`);
   console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Pairs (1:1.3 R:R + 30m/60m Circuit Breakers)...\n`);
 
-  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active across 13 Elite Boom & Crash Portfolio with 1:1.3 R:R and 30m/60m Circuit Breakers!`);
+  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active across ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Portfolio with 1:1.3 R:R and 30m/60m Circuit Breakers!`);
 
   await monitorMarket();
   setInterval(monitorMarket, 30000);
 }
 
-main().catch(err => console.error("[runner fatal]", err));
+// ── PROCESS DISCONNECT & CRASH ALERT HOOKS ──
+let isShuttingDown = false;
+
+async function notifyShutdown(reason) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  const alertMsg = [
+    `⚠️ 🔴 <b>[MYTRADA SERVER ALERT — DISCONNECTED]</b>`,
+    `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+    `<b>Status:</b> Signal Runner stopped or encountered an error.`,
+    `<b>Reason:</b> <code>${reason}</code>`,
+    `<b>Timestamp:</b> <code>${new Date().toUTCString()}</code>`,
+    `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+    `🛠️ <i>PM2 will attempt auto-restart. If this persists, check VPS logs.</i>`
+  ].join('\n');
+
+  try {
+    await sendTelegramMessage(alertMsg);
+  } catch (e) {}
+}
+
+process.on('uncaughtException', async (err) => {
+  console.error('[CRITICAL] Uncaught Exception:', err);
+  await notifyShutdown(`Uncaught Exception: ${err.message}`);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', async (reason) => {
+  console.error('[CRITICAL] Unhandled Rejection:', reason);
+  await notifyShutdown(`Unhandled Rejection: ${reason}`);
+});
+
+process.on('SIGINT', async () => {
+  console.log('[SHUTDOWN] SIGINT received.');
+  await notifyShutdown('Manual stop (SIGINT)');
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('[SHUTDOWN] SIGTERM received.');
+  await notifyShutdown('Process terminated (SIGTERM / PM2 reload)');
+  process.exit(0);
+});
+
+main().catch(async (err) => {
+  console.error("[runner fatal]", err);
+  await notifyShutdown(`Fatal Startup Error: ${err.message}`);
+});
