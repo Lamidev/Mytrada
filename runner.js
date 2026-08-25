@@ -297,78 +297,6 @@ async function checkAndSendWeeklyReport() {
   }
 }
 
-// ── GEMINI AI GATEKEEPER AUDIT ──
-function auditWithGemini(symbol, direction, h1Clearance, bodyRatio) {
-  return new Promise((resolve) => {
-    const apiKey = config.GEMINI_API_KEY;
-    if (!apiKey) return resolve("🟢 85% Confidence (Approved — Mathematical Checkpoints Validated)");
-
-    const model = config.GEMINI_MODEL || "gemini-2.5-flash";
-    const promptText = `
-You are the Senior Quantitative Risk Officer at Mytrada Algorithmic Fund.
-Audit this proposed Strategy 5B setup on Deriv Synthetic Index:
-- Symbol: ${symbol}
-- Direction: ${direction}
-- 1H 50 EMA Clearance: ${h1Clearance.toFixed(2)}% (Must be > 0.08%)
-- M5 Candle Body Ratio: ${bodyRatio.toFixed(2)} (Must be >= 0.50)
-- Trend Confluence: Daily + 4H + 1H 50 EMA Aligned
-- Spike Cluster: 2 Consecutive Counter-Trend Spikes Completed
-
-Respond strictly in JSON format:
-{
-  "allow_trade": true,
-  "confidence_score": 85,
-  "reasoning": "1 short sentence."
-}
-`;
-
-    const body = JSON.stringify({
-      contents: [{ parts: [{ text: promptText }] }],
-      generationConfig: { response_mime_type: "application/json" }
-    });
-
-    const options = {
-      hostname: 'generativelanguage.googleapis.com',
-      port: 443,
-      path: `/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body)
-      },
-      timeout: 8000
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          if (res.statusCode === 200) {
-            const parsed = JSON.parse(data);
-            const text = parsed.candidates[0].content.parts[0].text;
-            const resJson = JSON.parse(text);
-            const conf = resJson.confidence_score || 85;
-            const allow = resJson.allow_trade !== false;
-            const reason = resJson.reasoning || "Strong structural alignment.";
-            if (allow && conf >= 70) {
-              return resolve(`🟢 ${conf}% Confidence (Approved — ${reason})`);
-            } else {
-              return resolve(`🟡 ${conf}% Caution (${reason})`);
-            }
-          }
-        } catch (e) {}
-        resolve("🟢 85% Confidence (Approved — Mathematical Checkpoints Validated)");
-      });
-    });
-
-    req.on('error', () => resolve("🟢 85% Confidence (Approved — Mathematical Checkpoints Validated)"));
-    req.on('timeout', () => { req.destroy(); resolve("🟢 85% Confidence (Approved — Mathematical Checkpoints Validated)"); });
-    req.write(body);
-    req.end();
-  });
-}
-
 // ── TECHNICAL INDICATORS ──
 function calculateEMA(values, period) {
   if (values.length < period) return [];
@@ -744,9 +672,6 @@ async function monitorMarket() {
         const rewardUSD = (riskUSD * (config.REWARD_RATIO || 1.3)).toFixed(2);
         const candleAgeLabel = offset === 1 ? '5M Close' : `5M Close (${(offset - 1) * 5}m ago)`;
 
-        // Request Gemini AI Gatekeeper Audit
-        const aiAuditText = await auditWithGemini(symbol, setup.direction, setup.h1ClearancePct, setup.bodyRatio);
-
         const alertHtml = [
           `👑 ${dirEmoji} <b>[MYTRADA STRATEGY 5B SIGNAL]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -765,7 +690,6 @@ async function monitorMarket() {
           `💰 <b>Position Sizing ($100 Account):</b>`,
           `  • Recommended Lot: <code>${lotSize} Lots</code>`,
           `  • Max Risk: <code>-$${riskUSD.toFixed(2)} USD (3.0%)</code>`,
-          `🤖 <b>GEMINI AI AUDIT:</b> ${aiAuditText}`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `🚀 <b>EXECUTION:</b> <code>Enter MARKET ${setup.direction} on MT5. Target 1:1.3 R:R.</code>`
         ].join('\n');
