@@ -725,7 +725,7 @@ async function monitorMarket() {
       }
 
       if (!signalFiredThisScan) {
-        console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | Monitoring for 2-Spike Pullback Exhaustion...`);
+        console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | Monitoring for ${minSpikes}-Spike Pullback Exhaustion...`);
         await checkActiveTradesForSymbol(symbol, ltfCandles);
       }
     } catch (err) {
