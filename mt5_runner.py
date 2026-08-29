@@ -40,7 +40,7 @@ CIRCUIT_BREAKER_FILE = os.path.join(os.path.dirname(__file__), "cache", "circuit
 # ── 7 Elite Boom & Crash Portfolio (Strategy 5B — 30-Day Optimised) ──────────
 SYMBOLS = {
     # Elite Boom Universe (SELL in Daily + 4H + 1H Bearish Trend on 2-Spike Exhaustion)
-    "Boom 100 Index":  {"mode": "BOOM",  "min_spikes": 2},  # 👑 ELITE: 71.9% WR | +$62.70/mo
+    "Boom 100 Index":  {"mode": "BOOM",  "min_spikes": 3},  # 👑 Upgraded to 3-Spike Exhaustion (High-Quality Sniper)
     "Boom 300 Index":  {"mode": "BOOM",  "min_spikes": 3},  # 🟢 Optimized: 68.4% WR | +$65.40/mo (3-Spike Exhaustion)
     "Boom 600 Index":  {"mode": "BOOM",  "min_spikes": 3},  # 🟢 Optimized: Upgraded to 3-Spike Exhaustion
     "Boom 900 Index":  {"mode": "BOOM",  "min_spikes": 2},  # 🟢 Strong: 77.8% WR | +$21.30/mo
