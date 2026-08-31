@@ -488,6 +488,23 @@ def monitor_active_signals(state: dict):
     state["active_signals"] = remaining_signals
     save_state(state)
 
+def get_dynamic_risk() -> tuple:
+    try:
+        if mt5.initialize():
+            acc = mt5.account_info()
+            if acc is not None and acc.balance > 0:
+                bal = float(acc.balance)
+                risk_usd = max(3.0, round(bal * 0.03, 2))
+                reward_usd = round(risk_usd * REWARD_RATIO, 2)
+                return bal, risk_usd, reward_usd
+    except Exception:
+        pass
+    
+    bal = 249.10
+    risk_usd = 7.47
+    reward_usd = round(risk_usd * REWARD_RATIO, 2)
+    return bal, risk_usd, reward_usd
+
 # ── Main Polling Engine ───────────────────────────────────────────────────────
 def run_scanner():
     print("=" * 70)
@@ -500,8 +517,9 @@ def run_scanner():
 
     print("✅ MetaTrader 5 Terminal connected successfully.")
     state = load_state()
+    bal, cur_risk, _ = get_dynamic_risk()
     
-    send_telegram("🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner started across 13 Elite Boom & Crash Portfolio with 1:1.3 R:R and 30m/60m Circuit Breakers!")
+    send_telegram(f"🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active with Smart Auto-Compounding (${bal:.2f} Balance / ${cur_risk:.2f} Risk per trade)!")
 
     try:
         while True:
@@ -529,10 +547,10 @@ def run_scanner():
                         print(f"[{sym}] Gemini Gatekeeper rejected setup: {audit_text}")
                         continue
                         
+                    bal, risk_usd, reward_usd = get_dynamic_risk()
                     sl_dist = abs(setup['entry'] - setup['sl'])
                     min_lot = cfg.get("min_lot", 0.20)
-                    lot_size = max(min_lot, round(RISK_AMOUNT_USD / sl_dist, 2)) if sl_dist > 0 else min_lot
-                    reward_usd = RISK_AMOUNT_USD * REWARD_RATIO
+                    lot_size = max(min_lot, round(risk_usd / sl_dist, 2)) if sl_dist > 0 else min_lot
                     dir_emoji = "🔴" if setup['direction'] == "SELL" else "🟢"
 
                     msg = f"👑 {dir_emoji} <b>[MYTRADA STRATEGY 5B SIGNAL]</b>\n" \
@@ -549,15 +567,15 @@ def run_scanner():
                           f"🛡️ <b>STOP LOSS (SL):</b> <code>{setup['sl']:.2f}</code> (Peak + 1.5x ATR)\n" \
                           f"🏆 <b>TARGET (1:1.3 R:R):</b> <code>{setup['tp']:.2f}</code> (+${reward_usd:.2f} USD)\n" \
                           f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n" \
-                          f"💰 <b>Position Sizing ($100 Account):</b>\n" \
+                          f"💰 <b>Position Sizing (${bal:.2f} Account):</b>\n" \
                           f"  • Recommended Lot: <code>{lot_size} Lots</code>\n" \
-                          f"  • Max Risk: <code>-${RISK_AMOUNT_USD:.2f} USD (3.0%)</code>\n" \
+                          f"  • Max Risk: <code>-${risk_usd:.2f} USD (3.0%)</code>\n" \
                           f"🤖 <b>GEMINI AI AUDIT:</b> {audit_text}\n" \
                           f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n" \
                           f"🚀 <b>EXECUTION:</b> <code>Enter MARKET {setup['direction']} on MT5. Target 1:1.3 R:R.</code>"
                           
                     send_telegram(msg)
-                    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 🚨 STRATEGY 5B SIGNAL: {setup['direction']} {sym} @ {setup['entry']:.2f}")
+                    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 🚨 STRATEGY 5B SIGNAL: {setup['direction']} {sym} @ {setup['entry']:.2f} | Lot: {lot_size}")
                     
                     state.setdefault("alerted_keys", []).append(sig_key)
                     state.setdefault("active_signals", []).append({
@@ -566,6 +584,8 @@ def run_scanner():
                         "entry": setup['entry'],
                         "sl": setup['sl'],
                         "tp": setup['tp'],
+                        "risk_usd": risk_usd,
+                        "reward_usd": reward_usd,
                         "open_time": time.time()
                     })
                     save_state(state)
