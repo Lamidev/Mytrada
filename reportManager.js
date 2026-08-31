@@ -345,9 +345,10 @@ function formatReportTelegramHTML(report) {
       lines.push(`• <b>${t.symbol}</b>: ${outEmoji} @ ${sigTime}`);
     });
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
-  } else {
-    lines.push(`<i>No trades closed during this session.</i>`);
   }
+
+  return lines.join('\n');
+}
 
 /**
  * Calculates current live account balance based on starting balance + cumulative realized PnL
