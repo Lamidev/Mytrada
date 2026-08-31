@@ -33,6 +33,7 @@ ATR_SL_MULT        = 1.5      # SL = spike peak +- (1.5 x ATR)
 SCAN_INTERVAL_SECS = 15       # Fast scan interval for instant candle-close signals
 MAX_CORRELATED_EXP = 3        # Max 3 active signals per group
 BODY_RATIO_MIN     = 0.50     # 5M exhaustion close body/range >= 50%
+MIN_SPIKE_CLUSTER_ATR_RATIO = 0.50 # 👑 Combined spike cluster range must be >= 0.5x ATR(14)
 
 STATE_FILE_PATH    = os.path.join(os.path.dirname(__file__), "cache", "signal_state.json")
 CIRCUIT_BREAKER_FILE = os.path.join(os.path.dirname(__file__), "cache", "circuit_breaker_state.json")
@@ -40,15 +41,15 @@ CIRCUIT_BREAKER_FILE = os.path.join(os.path.dirname(__file__), "cache", "circuit
 # ── 7 Elite Boom & Crash Portfolio (Strategy 5B — 30-Day Optimised) ──────────
 SYMBOLS = {
     # Elite Boom Universe (SELL in Daily + 4H + 1H Bearish Trend on 2-Spike Exhaustion)
-    "Boom 100 Index":  {"mode": "BOOM",  "min_spikes": 3},  # 👑 Upgraded to 3-Spike Exhaustion (High-Quality Sniper)
-    "Boom 300 Index":  {"mode": "BOOM",  "min_spikes": 3},  # 🟢 Optimized: 68.4% WR | +$65.40/mo (3-Spike Exhaustion)
-    "Boom 600 Index":  {"mode": "BOOM",  "min_spikes": 3},  # 🟢 Optimized: Upgraded to 3-Spike Exhaustion
-    "Boom 900 Index":  {"mode": "BOOM",  "min_spikes": 2},  # 🟢 Strong: 77.8% WR | +$21.30/mo
+    "Boom 100 Index":  {"mode": "BOOM",  "min_spikes": 3, "min_lot": 0.20},  # 👑 Upgraded to 3-Spike Exhaustion (High-Quality Sniper)
+    "Boom 300 Index":  {"mode": "BOOM",  "min_spikes": 3, "min_lot": 0.50},  # 🟢 Optimized: 68.4% WR | +$65.40/mo (3-Spike Exhaustion)
+    "Boom 600 Index":  {"mode": "BOOM",  "min_spikes": 3, "min_lot": 0.20},  # 🟢 Optimized: Upgraded to 3-Spike Exhaustion
+    "Boom 900 Index":  {"mode": "BOOM",  "min_spikes": 2, "min_lot": 0.20},  # 🟢 Strong: 77.8% WR | +$21.30/mo
 
     # Elite Crash Universe (BUY in Daily + 4H + 1H Bullish Trend on 2-Crash Exhaustion)
-    "Crash 1000 Index": {"mode": "CRASH", "min_spikes": 2}, # 🟢 Strong: 65.0% WR | +$29.70/mo
-    "Crash 200 Index":  {"mode": "CRASH", "min_spikes": 2}, # 🔵 OK: 66.7% WR | +$19.20/mo
-    "Crash 500 Index":  {"mode": "CRASH", "min_spikes": 2}, # 🔵 OK: 75.0% WR | +$8.70/mo
+    "Crash 1000 Index": {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 🟢 Strong: 65.0% WR | +$29.70/mo
+    "Crash 200 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 🔵 OK: 66.7% WR | +$19.20/mo
+    "Crash 500 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 🔵 OK: 75.0% WR | +$8.70/mo
 
     # Removed (30-Day Backtest — Low Signal Volume / Below Threshold):
     # Boom 500 Index  — only 2 trades/mo, +$0.90 (noise-level return)
@@ -97,7 +98,7 @@ def save_state(state: dict):
     except Exception as e:
         print(f"[State Error] Failed saving state file: {e}")
 
-# ── Circuit Breakers (30m / 60m / Daily Lockout) ─────────────────────────────
+# ── Circuit Breakers (45m / 60m / Daily Lockout) ─────────────────────────────
 def load_circuit_breaker() -> dict:
     today_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     os.makedirs(os.path.dirname(CIRCUIT_BREAKER_FILE), exist_ok=True)
@@ -157,7 +158,7 @@ def record_trade_outcome(symbol: str, outcome: str):
         elif rec["consecutive_losses"] >= 2:
             rec["pause_until"] = now_ms + (60 * 60 * 1000) # 60m Tier 2 pause
         else:
-            rec["pause_until"] = now_ms + (30 * 60 * 1000) # 30m Tier 1 pause
+            rec["pause_until"] = now_ms + (45 * 60 * 1000) # 45m Tier 1 pause
 
     save_circuit_breaker(cb)
 
@@ -343,8 +344,14 @@ def evaluate_strategy5b(symbol: str, cfg: dict):
             return None
             
         # Check consecutive spike candles
-        spk_count = sum([1 for k in range(2, min_spikes + 2) if df_m5['close'].iloc[-k] > df_m5['open'].iloc[-k]])
+        spike_slice = df_m5.iloc[-(min_spikes+1):-1]
+        spk_count = sum([1 for k in range(len(spike_slice)) if spike_slice['close'].iloc[k] > spike_slice['open'].iloc[k]])
         if spk_count < min_spikes:
+            return None
+
+        # Minimum Spike Cluster Magnitude Filter (>= 0.5x ATR)
+        cluster_range = spike_slice['high'].max() - spike_slice['low'].min()
+        if cluster_range < (MIN_SPIKE_CLUSTER_ATR_RATIO * atr):
             return None
             
         # M5 Exhaustion Close (Bearish body >= 50%)
@@ -382,8 +389,14 @@ def evaluate_strategy5b(symbol: str, cfg: dict):
             return None
             
         # Check consecutive crash candles
-        spk_count = sum([1 for k in range(2, min_spikes + 2) if df_m5['close'].iloc[-k] < df_m5['open'].iloc[-k]])
+        crash_slice = df_m5.iloc[-(min_spikes+1):-1]
+        spk_count = sum([1 for k in range(len(crash_slice)) if crash_slice['close'].iloc[k] < crash_slice['open'].iloc[k]])
         if spk_count < min_spikes:
+            return None
+
+        # Minimum Crash Cluster Magnitude Filter (>= 0.5x ATR)
+        cluster_range = crash_slice['high'].max() - crash_slice['low'].min()
+        if cluster_range < (MIN_SPIKE_CLUSTER_ATR_RATIO * atr):
             return None
             
         # M5 Exhaustion Close (Bullish body >= 50%)
@@ -517,7 +530,8 @@ def run_scanner():
                         continue
                         
                     sl_dist = abs(setup['entry'] - setup['sl'])
-                    lot_size = max(0.20, round(RISK_AMOUNT_USD / sl_dist, 2)) if sl_dist > 0 else 0.20
+                    min_lot = cfg.get("min_lot", 0.20)
+                    lot_size = max(min_lot, round(RISK_AMOUNT_USD / sl_dist, 2)) if sl_dist > 0 else min_lot
                     reward_usd = RISK_AMOUNT_USD * REWARD_RATIO
                     dir_emoji = "🔴" if setup['direction'] == "SELL" else "🟢"
 
