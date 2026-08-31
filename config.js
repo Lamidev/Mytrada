@@ -38,15 +38,18 @@ module.exports = {
   INTERMEDIATE_HTF: "1h", // 1-Hour Intermediate Trend (50 EMA)
   DEFAULT_LTF: "5m",      // 5-Minute Entry Trigger Timeframe
 
-  // Risk & Position Management Settings ($100 Real Account)
-  STARTING_BALANCE: 100.0,   // Account size in USD ($100 Account)
-  RISK_PERCENT: 3.0,         // Risk exactly 3% of equity per trade ($3.00)
-  RISK_AMOUNT_USD: 3.0,      // Risk $3.00 per trade
+  // Risk & Position Management Settings ($100 Real Account / Auto-Compounding)
+  STARTING_BALANCE: 100.0,              // Baseline account size in USD
+  RISK_PERCENT: 3.0,                    // Risk exactly 3.0% of equity per trade
+  RISK_AMOUNT_USD: 3.0,                 // Baseline fallback trade risk ($3.00)
+  MIN_RISK_AMOUNT_USD: 3.0,             // Safety floor: risk never drops below $3.00
+  DYNAMIC_RISK_COMPOUNDING: true,       // 👑 Auto-adjust risk and lot sizes weekly based on account equity
   
   // Strategy 5B Execution Parameters
-  REWARD_RATIO: 1.3,         // 1:1.3 R:R Fixed Sniper Target
-  USE_HTF_CHOP_FILTER: true, // Filter out flat 1H 50 EMA chop (>0.08% clearance required)
-  MIN_SPIKES: 2,             // 2-Spike High-Frequency Mode (Strategy 5B)
+  REWARD_RATIO: 1.3,                    // 1:1.3 R:R Fixed Sniper Target
+  USE_HTF_CHOP_FILTER: true,            // Filter out flat 1H 50 EMA chop (>0.08% clearance required)
+  MIN_SPIKES: 2,                        // 2-Spike High-Frequency Mode (Strategy 5B)
+  MIN_SPIKE_CLUSTER_ATR_RATIO: 0.50,    // 👑 Institutional filter: spike cluster range must be >= 0.5x ATR(14) (filters micro-duds)
 
   // Institutional Responsive Tiered Circuit Breakers
   CIRCUIT_BREAKER: {

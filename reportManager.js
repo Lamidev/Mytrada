@@ -349,7 +349,48 @@ function formatReportTelegramHTML(report) {
     lines.push(`<i>No trades closed during this session.</i>`);
   }
 
-  return lines.join('\n');
+/**
+ * Calculates current live account balance based on starting balance + cumulative realized PnL
+ */
+function getCurrentAccountBalance() {
+  const history = loadTradeHistory();
+  let cumulativePnL = 0;
+  history.forEach(t => {
+    if (t.status === 'CLOSED') {
+      cumulativePnL += (t.pnlUSD || 0);
+    }
+  });
+  return (config.STARTING_BALANCE || 100.0) + cumulativePnL;
+}
+
+/**
+ * Returns active weekly compounded trade risk, reward target, and account balance
+ */
+function getWeeklyCompoundedRisk() {
+  const currentBalance = getCurrentAccountBalance();
+  const riskPercent = config.RISK_PERCENT || 3.0;
+  
+  if (!config.DYNAMIC_RISK_COMPOUNDING) {
+    const fallbackRisk = config.RISK_AMOUNT_USD || 3.0;
+    return {
+      balance: parseFloat(currentBalance.toFixed(2)),
+      riskUSD: fallbackRisk,
+      rewardUSD: parseFloat((fallbackRisk * (config.REWARD_RATIO || 1.3)).toFixed(2)),
+      riskPercent
+    };
+  }
+
+  const rawRisk = currentBalance * (riskPercent / 100);
+  const minRiskFloor = config.MIN_RISK_AMOUNT_USD || 3.0;
+  const riskUSD = parseFloat(Math.max(minRiskFloor, rawRisk).toFixed(2));
+  const rewardUSD = parseFloat((riskUSD * (config.REWARD_RATIO || 1.3)).toFixed(2));
+
+  return {
+    balance: parseFloat(currentBalance.toFixed(2)),
+    riskUSD,
+    rewardUSD,
+    riskPercent
+  };
 }
 
 module.exports = {
@@ -359,5 +400,7 @@ module.exports = {
   generateDailyReport,
   generateWeeklyReport,
   generateMonthlyReport,
-  formatReportTelegramHTML
+  formatReportTelegramHTML,
+  getCurrentAccountBalance,
+  getWeeklyCompoundedRisk
 };

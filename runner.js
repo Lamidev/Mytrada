@@ -22,7 +22,9 @@ const {
   recordClose, 
   generateDailyReport, 
   generateWeeklyReport,
-  formatReportTelegramHTML 
+  formatReportTelegramHTML,
+  getCurrentAccountBalance,
+  getWeeklyCompoundedRisk
 } = require('./reportManager');
 
 // ANSI Color Codes
@@ -335,8 +337,9 @@ function calculateATR(candles, period = 14) {
   return atr;
 }
 
-function calculateLotSize(symbol, entry, sl) {
-  const riskAmount = config.RISK_AMOUNT_USD || 3.0;
+function calculateLotSize(symbol, entry, sl, customRiskUSD = null) {
+  const compRisk = getWeeklyCompoundedRisk();
+  const riskAmount = customRiskUSD !== null ? customRiskUSD : compRisk.riskUSD;
   const slDistance = Math.abs(entry - sl);
   if (slDistance <= 0) return 0.20;
 
@@ -389,6 +392,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
   const currentLivePrice = ltfCandles[ltfCandles.length - 1].close;
   let updatedTrades = [...activeTrades];
   let changed = false;
+  const compRisk = getWeeklyCompoundedRisk();
 
   for (const trade of tradesForSymbol) {
     const entryCandleEpoch = trade.candleEpoch || (trade.triggeredTime ? trade.triggeredTime - 300000 : 0);
@@ -411,14 +415,14 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
     }
 
     if (hitTP) {
-      const pnlUsd = (config.RISK_AMOUNT_USD || 3.0) * (config.REWARD_RATIO || 1.3);
+      const pnlUsd = trade.rewardUSD || compRisk.rewardUSD;
       const tpAlert = [
         `🏆 🟢 <b>[MYTRADA TP HIT — FULL TARGET (1:1.3 R:R)]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
         `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💰 <b>PROFIT CAPTURED:</b> <code>+$${pnlUsd.toFixed(2)} USD (+1.3R / +3.9%)</code>`,
+        `💰 <b>PROFIT CAPTURED:</b> <code>+$${pnlUsd.toFixed(2)} USD (+1.3R / +${(compRisk.riskPercent * (config.REWARD_RATIO || 1.3)).toFixed(1)}%)</code>`,
         `🎯 <b>Entry Price:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
         `🏆 <b>TP Hit:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -435,15 +439,15 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
     }
 
     if (hitSL) {
-      const riskUSD = config.RISK_AMOUNT_USD || 3.0;
-      const pauseMins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 30;
+      const riskUSD = trade.riskUSD || compRisk.riskUSD;
+      const pauseMins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 45;
       const slAlert = [
         `🔴 🛡️ <b>[MYTRADA STOP LOSS HIT (-1.0R)]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
         `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💸 <b>LOSS:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R / -3.0%)</code>`,
+        `💸 <b>LOSS:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R / -${compRisk.riskPercent.toFixed(1)}%)</code>`,
         `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> | 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🛡️ <i>Single-pair cooldown active (${pauseMins}m).</i>`
@@ -526,6 +530,11 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const atr = calculateATR(ltfCandles, 14);
     if (!atr || atr === 0) return null;
 
+    // Minimum Spike Cluster Magnitude Filter (>= 0.5x ATR(14))
+    const minClusterRange = atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 0.50);
+    const spikeClusterRange = Math.max(...spikeCandles.map(c => c.high)) - Math.min(...spikeCandles.map(c => c.low));
+    if (spikeClusterRange < minClusterRange) return null;
+
     const spikePeak = Math.max(c0.high, ...spikeCandles.map(c => c.high));
     const entry = c0.close;
     const sl = spikePeak + (atr * 1.5);
@@ -572,6 +581,11 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
 
     const atr = calculateATR(ltfCandles, 14);
     if (!atr || atr === 0) return null;
+
+    // Minimum Crash Cluster Magnitude Filter (>= 0.5x ATR(14))
+    const minClusterRange = atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 0.50);
+    const crashClusterRange = Math.max(...crashCandles.map(c => c.high)) - Math.min(...crashCandles.map(c => c.low));
+    if (crashClusterRange < minClusterRange) return null;
 
     const crashTrough = Math.min(c0.low, ...crashCandles.map(c => c.low));
     const entry = c0.close;
@@ -666,10 +680,11 @@ async function monitorMarket() {
         saveAlertedSetup(setupId);
         signalFiredThisScan = true;
 
-        const lotSize = calculateLotSize(symbol, setup.entry, setup.sl);
+        const compRisk = getWeeklyCompoundedRisk();
+        const lotSize = calculateLotSize(symbol, setup.entry, setup.sl, compRisk.riskUSD);
         const dirEmoji = setup.direction === 'SELL' ? '🔴' : '🟢';
-        const riskUSD = config.RISK_AMOUNT_USD || 3.0;
-        const rewardUSD = (riskUSD * (config.REWARD_RATIO || 1.3)).toFixed(2);
+        const riskUSD = compRisk.riskUSD;
+        const rewardUSD = compRisk.rewardUSD.toFixed(2);
         const candleAgeLabel = offset === 1 ? '5M Close' : `5M Close (${(offset - 1) * 5}m ago)`;
 
         const alertHtml = [
@@ -687,9 +702,9 @@ async function monitorMarket() {
           `🛡️ <b>STOP LOSS (SL):</b> <code>${setup.sl.toFixed(2)}</code> (Peak + 1.5x ATR)`,
           `🏆 <b>TARGET (1:1.3 R:R):</b> <code>${setup.tp.toFixed(2)}</code> (+$${rewardUSD} USD)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `💰 <b>Position Sizing ($100 Account):</b>`,
+          `💰 <b>Position Sizing ($${compRisk.balance.toFixed(2)} Account):</b>`,
           `  • Recommended Lot: <code>${lotSize} Lots</code>`,
-          `  • Max Risk: <code>-$${riskUSD.toFixed(2)} USD (3.0%)</code>`,
+          `  • Max Risk: <code>-$${riskUSD.toFixed(2)} USD (${compRisk.riskPercent.toFixed(1)}%)</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `🚀 <b>EXECUTION:</b> <code>Enter MARKET ${setup.direction} on MT5. Target 1:1.3 R:R.</code>`
         ].join('\n');
@@ -705,6 +720,8 @@ async function monitorMarket() {
           entryPrice: setup.entry,
           stopLoss: setup.sl,
           takeProfit: setup.tp,
+          riskUSD: compRisk.riskUSD,
+          rewardUSD: compRisk.rewardUSD,
           candleEpoch: setup.candleEpoch,
           triggeredTime: Date.now()
         });

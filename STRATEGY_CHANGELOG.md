@@ -9,6 +9,7 @@
 ## 📑 Changelog Table of Contents
 1. [Active Production Snapshot](#active-production-snapshot)
 2. [Version History & Modification Logs](#version-history--modification-logs)
+   - [v5.3 — August 31, 2026 (Live Compounding & Spike Magnitude Filter)](#v53--august-31-2026)
    - [v5.2 — August 29, 2026](#v52--august-29-2026)
    - [v5.1 — August 28, 2026](#v51--august-28-2026)
    - [v5.0 — August 25, 2026](#v50--august-25-2026)
@@ -24,7 +25,8 @@
 | **Strategy Model** | Strategy 5B (Momentum Exhaustion) | [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js) | Strategy 5B |
 | **Active Portfolio** | 7 Elite Pairs (`BOOM100`, `BOOM300N`, `BOOM600`, `BOOM900`, `CRASH1000`, `CRASH200`, `CRASH500`) | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L14-L25) | 13 Pairs |
 | **Target R:R** | Fixed 1:1.3 R:R | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L47) | 1:1.3 |
-| **Max Risk USD** | $3.00 (3.0% on $100) | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L43-L44) | $3.00 |
+| **Trade Risk Engine** | **Dynamic 3.0% Equity Compounding** (Min $3.00 Floor) | [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js) | Fixed $3.00 |
+| **Spike Magnitude Filter** | **$\ge 0.50\times$ ATR(14)** Spike Cluster Range | [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js) | No Range Filter |
 | **BOOM100 Min Spikes** | **3 Spikes** | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L16) | 2 Spikes |
 | **BOOM300N Min Spikes** | **3 Spikes** | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L17) | 2 Spikes |
 | **BOOM600 Min Spikes** | **3 Spikes** | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L18) | 2 Spikes |
@@ -36,7 +38,16 @@
 
 ## Version History & Modification Logs
 
-### v5.2 — August 29, 2026
+### v5.3 — August 31, 2026
+* **Author/Operator:** Antigravity / Lamidev
+* **Changes Made:**
+  - Added **Spike Cluster Magnitude Filter**: requires the combined range of the counter-trend spikes to be $\ge 0.50\times$ ATR(14) in [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js).
+  - Implemented **Auto-Compounding Sizing Engine**: dynamically calculates $3.0\%$ trade risk based on active account equity with a **$3.00 minimum floor** and automatic scale-down on drawdown/withdrawal in [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js).
+* **Rationale / Hypothesis:**
+  - Prevents triggering on microscopic 1–2 pip dud candles.
+  - Scales lot sizes proportionally with account growth ($100 \rightarrow \$249+$) without over-leveraging.
+* **Rollback Switch:**
+  - Set `DYNAMIC_RISK_COMPOUNDING: false` and `MIN_SPIKE_CLUSTER_ATR_RATIO: 0.0` in [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js).
 * **Commit:** `62d6a8e`
 * **Author/Operator:** Antigravity / Lamidev
 * **Changes Made:**
