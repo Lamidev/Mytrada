@@ -38,10 +38,10 @@ module.exports = {
   INTERMEDIATE_HTF: "1h", // 1-Hour Intermediate Trend (50 EMA)
   DEFAULT_LTF: "5m",      // 5-Minute Entry Trigger Timeframe
 
-  // Risk & Position Management Settings ($249.10 Current Live Balance / Auto-Compounding)
-  STARTING_BALANCE: 249.10,             // Active live account balance in USD
+  // Risk & Position Management Settings ($100 Original Deposit Baseline / Auto-Compounding)
+  STARTING_BALANCE: 100.0,              // Original deposit baseline in USD (PnL automatically compounds on top)
   RISK_PERCENT: 3.0,                    // Risk exactly 3.0% of equity per trade
-  RISK_AMOUNT_USD: 7.47,                // Compounded trade risk ($7.47 on $249.10)
+  RISK_AMOUNT_USD: 3.0,                 // Fallback baseline trade risk ($3.00)
   MIN_RISK_AMOUNT_USD: 3.0,             // Safety floor: risk never drops below $3.00
   DYNAMIC_RISK_COMPOUNDING: true,       // 👑 Auto-adjust risk and lot sizes weekly based on account equity
   

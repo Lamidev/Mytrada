@@ -500,15 +500,15 @@ def get_dynamic_risk() -> tuple:
     except Exception:
         pass
     
-    bal = 249.10
-    risk_usd = 7.47
+    bal = 304.22
+    risk_usd = 9.13
     reward_usd = round(risk_usd * REWARD_RATIO, 2)
     return bal, risk_usd, reward_usd
 
 # ── Main Polling Engine ───────────────────────────────────────────────────────
 def run_scanner():
     print("=" * 70)
-    print("MYTRADA STRATEGY 5B INSTITUTIONAL SIGNAL RUNNER (13 ELITE BOOM & CRASH)")
+    print("MYTRADA STRATEGY 5B INSTITUTIONAL SIGNAL RUNNER (7 ELITE BOOM & CRASH)")
     print("=" * 70)
     
     if not mt5.initialize():
@@ -519,7 +519,7 @@ def run_scanner():
     state = load_state()
     bal, cur_risk, _ = get_dynamic_risk()
     
-    send_telegram(f"🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active with Smart Auto-Compounding (${bal:.2f} Balance / ${cur_risk:.2f} Risk per trade)!")
+    send_telegram(f"🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active across {len(SYMBOLS)} Elite Boom & Crash Portfolio with 1:1.3 R:R, 45m/60m Circuit Breakers, and Daily Smart Auto-Compounding (${bal:.2f} Balance / ${cur_risk:.2f} Risk per trade)!")
 
     try:
         while True:

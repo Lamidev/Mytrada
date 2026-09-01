@@ -336,6 +336,25 @@ function formatReportTelegramHTML(report) {
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
   }
 
+  // ── DAILY COMPOUNDING RE-ANCHOR ──
+  if (report.period === 'DAILY') {
+    const riskPercent = config.RISK_PERCENT || 3.0;
+    const newDayRisk = Math.max(config.MIN_RISK_AMOUNT_USD || 3.0, (report.newBalance * (riskPercent / 100)));
+    const newDayTP = newDayRisk * (config.REWARD_RATIO || 1.3);
+    const growthSign = report.newBalance >= report.startingBalance ? '📈' : '🛡️';
+    const growthLabel = report.newBalance >= report.startingBalance ? 'SCALED UP' : 'SCALED DOWN (PROTECTION)';
+    
+    lines.push(`👑 ${growthSign} <b>[MYTRADA DAILY COMPOUNDING RE-ANCHOR]</b>`);
+    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+    lines.push(`💵 <b>Yesterday's Start Balance:</b> <code>$${report.startingBalance.toFixed(2)} USD</code>`);
+    lines.push(`💰 <b>Today's New Balance:</b> <code>$${report.newBalance.toFixed(2)} USD</code>`);
+    lines.push(`🎯 <b>Today's Trade Risk (3.0%):</b> <code>$${newDayRisk.toFixed(2)} USD / trade (${growthLabel})</code>`);
+    lines.push(`🏆 <b>Today's Target TP (1.3R):</b> <code>+$${newDayTP.toFixed(2)} USD / win</code>`);
+    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+    lines.push(`🚀 <i>Position sizes auto-calibrated for today's trading session!</i>`);
+    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+  }
+
   // ── TRADE LIFECYCLE BREAKDOWN ──
   if (report.closedTrades && report.closedTrades.length > 0) {
     lines.push(`📋 <b>TRADE LIFECYCLE LOG:</b>`);
@@ -365,9 +384,9 @@ function getCurrentAccountBalance() {
 }
 
 /**
- * Returns active weekly compounded trade risk, reward target, and account balance
+ * Returns active daily compounded trade risk, reward target, and account balance
  */
-function getWeeklyCompoundedRisk() {
+function getDailyCompoundedRisk() {
   const currentBalance = getCurrentAccountBalance();
   const riskPercent = config.RISK_PERCENT || 3.0;
   
@@ -403,5 +422,6 @@ module.exports = {
   generateMonthlyReport,
   formatReportTelegramHTML,
   getCurrentAccountBalance,
-  getWeeklyCompoundedRisk
+  getDailyCompoundedRisk,
+  getWeeklyCompoundedRisk: getDailyCompoundedRisk
 };

@@ -9,6 +9,7 @@
 ## 📑 Changelog Table of Contents
 1. [Active Production Snapshot](#active-production-snapshot)
 2. [Version History & Modification Logs](#version-history--modification-logs)
+   - [v5.4 — September 1, 2026 (Daily EOD Compounding & 45m Cooldown Startup Sync)](#v54--september-1-2026)
    - [v5.3 — August 31, 2026 (Live Compounding & Spike Magnitude Filter)](#v53--august-31-2026)
    - [v5.2 — August 29, 2026](#v52--august-29-2026)
    - [v5.1 — August 28, 2026](#v51--august-28-2026)
@@ -24,8 +25,8 @@
 | :--- | :--- | :--- | :--- |
 | **Strategy Model** | Strategy 5B (Momentum Exhaustion) | [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js) | Strategy 5B |
 | **Active Portfolio** | 7 Elite Pairs (`BOOM100`, `BOOM300N`, `BOOM600`, `BOOM900`, `CRASH1000`, `CRASH200`, `CRASH500`) | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L14-L25) | 13 Pairs |
-| **Target R:R** | Fixed 1:1.3 R:R | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L47) | 1:1.3 |
-| **Trade Risk Engine** | **Dynamic 3.0% Equity Compounding** (Min $3.00 Floor) | [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js) | Fixed $3.00 |
+| **Target R:R** | Fixed 1:1.3 R:R | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L49) | 1:1.3 |
+| **Trade Risk Engine** | **Daily EOD 3.0% Equity Compounding** (Min $3.00 Floor) | [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js) | Fixed $3.00 |
 | **Spike Magnitude Filter** | **$\ge 0.50\times$ ATR(14)** Spike Cluster Range | [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js) | No Range Filter |
 | **BOOM100 Min Spikes** | **3 Spikes** | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L16) | 2 Spikes |
 | **BOOM300N Min Spikes** | **3 Spikes** | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L17) | 2 Spikes |
@@ -38,7 +39,16 @@
 
 ## Version History & Modification Logs
 
-### v5.3 — August 31, 2026
+### v5.4 — September 1, 2026
+* **Author/Operator:** Antigravity / Lamidev
+* **Changes Made:**
+  - Upgraded Auto-Compounding to **Daily End-of-Day (EOD) Re-anchoring**: recalibrates $3.0\%$ trade risk every midnight at 12:00 AM UTC based on that day's closing equity in [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js).
+  - Added dedicated **Daily Compounding Re-Anchor Card** to Midnight Telegram reports.
+  - Synchronized startup banner messages in [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js) and [`mt5_runner.py`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/mt5_runner.py) to explicitly reflect active 45m/60m circuit breakers and daily auto-compounding.
+* **Rationale / Hypothesis:**
+  - Accelerates capital growth through daily rather than weekly re-investment, while keeping 24-hour sizing completely consistent throughout each session.
+* **Rollback Switch:**
+  - Set `DYNAMIC_RISK_COMPOUNDING: false` in [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js).
 * **Author/Operator:** Antigravity / Lamidev
 * **Changes Made:**
   - Added **Spike Cluster Magnitude Filter**: requires the combined range of the counter-trend spikes to be $\ge 0.50\times$ ATR(14) in [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js).

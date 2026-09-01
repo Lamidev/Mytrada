@@ -780,9 +780,9 @@ async function main() {
   }
 
   console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Strategy 5B Flagship LIVE)${RESET}`);
-  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Pairs (1:1.3 R:R + 30m/60m Circuit Breakers)...\n`);
+  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Pairs (1:1.3 R:R + 45m/60m Circuit Breakers + Daily Smart Auto-Compounding)...\n`);
 
-  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active across ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Portfolio with 1:1.3 R:R and 30m/60m Circuit Breakers!`);
+  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active across ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Portfolio with 1:1.3 R:R, 45m/60m Circuit Breakers, and Daily Smart Auto-Compounding!`);
 
   await monitorMarket();
   setInterval(monitorMarket, 30000);
