@@ -189,8 +189,37 @@ function generateDailyReport(targetDateStr) {
   };
 }
 
+const WEEKLY_ANCHOR_FILE = path.join(CACHE_DIR, 'weekly_anchor_balance.json');
+
+function getWeeklyAnchorBalance() {
+  if (fs.existsSync(WEEKLY_ANCHOR_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(WEEKLY_ANCHOR_FILE, 'utf8'));
+      if (data && typeof data.anchorBalance === 'number' && data.anchorBalance > 0) {
+        return data.anchorBalance;
+      }
+    } catch (e) {
+      console.warn("[reportManager] Error reading weekly anchor balance:", e.message);
+    }
+  }
+  const currentBalance = getCurrentAccountBalance();
+  saveWeeklyAnchorBalance(currentBalance);
+  return currentBalance;
+}
+
+function saveWeeklyAnchorBalance(balance) {
+  try {
+    fs.writeFileSync(WEEKLY_ANCHOR_FILE, JSON.stringify({
+      anchorBalance: parseFloat(balance.toFixed(2)),
+      updatedAt: new Date().toISOString()
+    }, null, 2), 'utf8');
+  } catch (e) {
+    console.warn("[reportManager] Error saving weekly anchor balance:", e.message);
+  }
+}
+
 /**
- * Generate End of Week (EOW) Report
+ * Generate End of Week (EOW) Report with Weekly Compounding Re-Anchor
  */
 function generateWeeklyReport() {
   const history = loadTradeHistory();
@@ -228,8 +257,27 @@ function generateWeeklyReport() {
   const totalClosed = closedThisWeek.length;
   const winRate = totalClosed > 0 ? ((wins / totalClosed) * 100).toFixed(1) : "0.0";
 
+  const previousAnchorBalance = getWeeklyAnchorBalance();
+  const newAccountBalance = getCurrentAccountBalance();
+
+  let mvpSymbol = "None";
+  let mvpPnL = -Infinity;
+  let mvpStats = "";
+  Object.keys(perSymbol).forEach(s => {
+    if (perSymbol[s].pnlUSD > mvpPnL) {
+      mvpPnL = perSymbol[s].pnlUSD;
+      mvpSymbol = s;
+      mvpStats = `${perSymbol[s].wins}W / ${perSymbol[s].losses}L (+$${perSymbol[s].pnlUSD.toFixed(2)})`;
+    }
+  });
+
+  // Re-anchor weekly balance for upcoming week
+  saveWeeklyAnchorBalance(newAccountBalance);
+
   return {
     period: 'WEEKLY',
+    startingBalance: previousAnchorBalance,
+    newBalance: newAccountBalance,
     closedCount: totalClosed,
     wins,
     losses,
@@ -238,6 +286,7 @@ function generateWeeklyReport() {
     netUSD,
     netR,
     perSymbol,
+    mvpSymbol: mvpPnL > 0 ? `${mvpSymbol} [${mvpStats}]` : "Balanced",
     closedTrades: closedThisWeek
   };
 }
@@ -301,21 +350,22 @@ function formatReportTelegramHTML(report) {
   const emojiHeader = report.period === 'DAILY' ? '📅' : (report.period === 'WEEKLY' ? '📊' : '🏛️');
   const periodTitle = report.period === 'DAILY' 
     ? `DAILY PERFORMANCE REPORT (${report.date})`
-    : (report.period === 'WEEKLY' ? `END-OF-WEEK PERFORMANCE REPORT` : `END-OF-MONTH REPORT (${report.yearMonth})`);
+    : (report.period === 'WEEKLY' ? `WEEKLY PERFORMANCE REPORT` : `END-OF-MONTH REPORT (${report.yearMonth})`);
+
+  const startBalLabel = report.period === 'WEEKLY' ? "Previous Week Start Balance:" : "Yesterday's Start Balance:";
 
   const lines = [
     `👑 ${emojiHeader} <b>[MYTRADA ${periodTitle}]</b>`,
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
     `<b>Strategy:</b> <code>Strategy 5B High-Frequency Momentum Model</code>`,
-    `<b>Signals Generated:</b> <code>${report.signalsCount || report.closedCount}</code>`,
     `<b>Positions Closed:</b> <code>${report.closedCount}</code>`,
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
     `🟢 <b>Winning Trades:</b> <code>${report.wins} Wins</code>`,
     `🔴 <b>Losing Trades:</b> <code>${report.losses} Losses</code>`,
-    `📊 <b>Daily Win Rate:</b> <code>${report.winRate}%</code>`,
+    `📊 <b>Win Rate:</b> <code>${report.winRate}%</code>`,
     `🏆 <b>Top Winning Pair (MVP):</b> <code>${report.mvpSymbol || 'N/A'}</code>`,
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-    `💵 <b>Yesterday's Start Balance:</b> <code>$${(report.startingBalance || 100.0).toFixed(2)} USD</code>`,
+    `💵 <b>${startBalLabel}</b> <code>$${(report.startingBalance || 100.0).toFixed(2)} USD</code>`,
     `💰 <b>New Account Balance:</b> <code>$${(report.newBalance || 100.0).toFixed(2)} USD</code>`,
     `📈 <b>Net Realized PnL:</b> <code>${isPositive ? '+' : '-'}$${Math.abs(report.netUSD).toFixed(2)} USD (${isPositive ? '+' : ''}${report.netR.toFixed(1)}R)</code>`,
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
@@ -336,22 +386,22 @@ function formatReportTelegramHTML(report) {
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
   }
 
-  // ── DAILY COMPOUNDING RE-ANCHOR ──
-  if (report.period === 'DAILY') {
+  // ── WEEKLY COMPOUNDING RE-ANCHOR (SUNDAY END-OF-WEEK ONLY) ──
+  if (report.period === 'WEEKLY') {
     const riskPercent = config.RISK_PERCENT || 3.0;
-    const newDayRisk = Math.max(config.MIN_RISK_AMOUNT_USD || 3.0, (report.newBalance * (riskPercent / 100)));
-    const newDayTP = newDayRisk * (config.REWARD_RATIO || 1.3);
+    const newWeekRisk = Math.max(config.MIN_RISK_AMOUNT_USD || 3.0, (report.newBalance * (riskPercent / 100)));
+    const newWeekTP = newWeekRisk * (config.REWARD_RATIO || 1.3);
     const growthSign = report.newBalance >= report.startingBalance ? '📈' : '🛡️';
     const growthLabel = report.newBalance >= report.startingBalance ? 'SCALED UP' : 'SCALED DOWN (PROTECTION)';
     
-    lines.push(`👑 ${growthSign} <b>[MYTRADA DAILY COMPOUNDING RE-ANCHOR]</b>`);
+    lines.push(`👑 ${growthSign} <b>[MYTRADA WEEKLY COMPOUNDING RE-ANCHOR]</b>`);
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
-    lines.push(`💵 <b>Yesterday's Start Balance:</b> <code>$${report.startingBalance.toFixed(2)} USD</code>`);
-    lines.push(`💰 <b>Today's New Balance:</b> <code>$${report.newBalance.toFixed(2)} USD</code>`);
-    lines.push(`🎯 <b>Today's Trade Risk (3.0%):</b> <code>$${newDayRisk.toFixed(2)} USD / trade (${growthLabel})</code>`);
-    lines.push(`🏆 <b>Today's Target TP (1.3R):</b> <code>+$${newDayTP.toFixed(2)} USD / win</code>`);
+    lines.push(`💵 <b>Previous Week Start Balance:</b> <code>$${report.startingBalance.toFixed(2)} USD</code>`);
+    lines.push(`💰 <b>New Week Account Balance:</b> <code>$${report.newBalance.toFixed(2)} USD</code>`);
+    lines.push(`🎯 <b>This Week's Fixed Trade Risk (3.0%):</b> <code>$${newWeekRisk.toFixed(2)} USD / trade (${growthLabel})</code>`);
+    lines.push(`🏆 <b>This Week's Target TP (1.3R):</b> <code>+$${newWeekTP.toFixed(2)} USD / win</code>`);
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
-    lines.push(`🚀 <i>Position sizes auto-calibrated for today's trading session!</i>`);
+    lines.push(`🚀 <i>Position sizes locked for the upcoming week's trading sessions!</i>`);
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
   }
 
@@ -384,29 +434,33 @@ function getCurrentAccountBalance() {
 }
 
 /**
- * Returns active daily compounded trade risk, reward target, and account balance
+ * Returns active weekly compounded trade risk, reward target, and account balance.
+ * Trade risk is fixed based on the Weekly Anchor Balance set at the start of each week.
  */
-function getDailyCompoundedRisk() {
-  const currentBalance = getCurrentAccountBalance();
+function getWeeklyCompoundedRisk() {
+  const anchorBalance = getWeeklyAnchorBalance();
+  const liveBalance = getCurrentAccountBalance();
   const riskPercent = config.RISK_PERCENT || 3.0;
   
   if (!config.DYNAMIC_RISK_COMPOUNDING) {
     const fallbackRisk = config.RISK_AMOUNT_USD || 3.0;
     return {
-      balance: parseFloat(currentBalance.toFixed(2)),
+      balance: parseFloat(anchorBalance.toFixed(2)),
+      liveBalance: parseFloat(liveBalance.toFixed(2)),
       riskUSD: fallbackRisk,
       rewardUSD: parseFloat((fallbackRisk * (config.REWARD_RATIO || 1.3)).toFixed(2)),
       riskPercent
     };
   }
 
-  const rawRisk = currentBalance * (riskPercent / 100);
+  const rawRisk = anchorBalance * (riskPercent / 100);
   const minRiskFloor = config.MIN_RISK_AMOUNT_USD || 3.0;
   const riskUSD = parseFloat(Math.max(minRiskFloor, rawRisk).toFixed(2));
   const rewardUSD = parseFloat((riskUSD * (config.REWARD_RATIO || 1.3)).toFixed(2));
 
   return {
-    balance: parseFloat(currentBalance.toFixed(2)),
+    balance: parseFloat(anchorBalance.toFixed(2)),
+    liveBalance: parseFloat(liveBalance.toFixed(2)),
     riskUSD,
     rewardUSD,
     riskPercent
@@ -422,6 +476,8 @@ module.exports = {
   generateMonthlyReport,
   formatReportTelegramHTML,
   getCurrentAccountBalance,
-  getDailyCompoundedRisk,
-  getWeeklyCompoundedRisk: getDailyCompoundedRisk
+  getWeeklyAnchorBalance,
+  saveWeeklyAnchorBalance,
+  getWeeklyCompoundedRisk,
+  getDailyCompoundedRisk: getWeeklyCompoundedRisk
 };

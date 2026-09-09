@@ -9,6 +9,7 @@
 ## 📑 Changelog Table of Contents
 1. [Active Production Snapshot](#active-production-snapshot)
 2. [Version History & Modification Logs](#version-history--modification-logs)
+   - [v5.5 — September 9, 2026 (Weekly EOW Compounding & 10-Pair Hybrid Universe)](#v55--september-9-2026)
    - [v5.4 — September 1, 2026 (Daily EOD Compounding & 45m Cooldown Startup Sync)](#v54--september-1-2026)
    - [v5.3 — August 31, 2026 (Live Compounding & Spike Magnitude Filter)](#v53--august-31-2026)
    - [v5.2 — August 29, 2026](#v52--august-29-2026)
@@ -23,14 +24,13 @@
 
 | Parameter | Current Live Setting | File Location | Baseline Default |
 | :--- | :--- | :--- | :--- |
-| **Strategy Model** | Strategy 5B (Momentum Exhaustion) | [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js) | Strategy 5B |
-| **Active Portfolio** | 7 Elite Pairs (`BOOM100`, `BOOM300N`, `BOOM600`, `BOOM900`, `CRASH1000`, `CRASH200`, `CRASH500`) | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L14-L25) | 13 Pairs |
+| **Strategy Model** | Strategy 5B Hybrid Multi-Spike Model | [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js) | Strategy 5B |
+| **Active Portfolio** | 10 Elite Pairs (`BOOM500`, `BOOM300N`, `BOOM200`, `BOOM100`, `CRASH500`, `CRASH600`, `CRASH900`, `CRASH300N`, `CRASH1000`, `CRASH99`) | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L14-L26) | 13 Pairs |
 | **Target R:R** | Fixed 1:1.3 R:R | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L49) | 1:1.3 |
-| **Trade Risk Engine** | **Daily EOD 3.0% Equity Compounding** (Min $3.00 Floor) | [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js) | Fixed $3.00 |
+| **Trade Risk Engine** | **Weekly End-of-Week (EOW) 3.0% Equity Compounding** (Sunday Midnight Anchor) | [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js) | Fixed $3.00 |
 | **Spike Magnitude Filter** | **$\ge 0.50\times$ ATR(14)** Spike Cluster Range | [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js) | No Range Filter |
-| **BOOM100 Min Spikes** | **3 Spikes** | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L16) | 2 Spikes |
-| **BOOM300N Min Spikes** | **3 Spikes** | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L17) | 2 Spikes |
-| **BOOM600 Min Spikes** | **3 Spikes** | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L18) | 2 Spikes |
+| **2-Spike Pairs** | `BOOM500`, `CRASH500`, `CRASH600`, `CRASH900`, `CRASH300N`, `CRASH1000` | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js) | 2 Spikes |
+| **3-Spike Snipers** | `BOOM300N`, `BOOM200`, `BOOM100`, `CRASH99` | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js) | 2 Spikes |
 | **Tier 1 Cooldown** | **45 Minutes** (9x M5 bars) | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L54) | 30 Minutes |
 | **Tier 2 Cooldown** | **60 Minutes** (12x M5 bars) | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L55) | 60 Minutes |
 | **Daily Symbol Loss Cap** | **3 Losses** (End-of-day Lockout) | [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js#L56) | 3 Losses |
@@ -39,10 +39,14 @@
 
 ## Version History & Modification Logs
 
-### v5.4 — September 1, 2026
+### v5.5 — September 9, 2026
 * **Author/Operator:** Antigravity / Lamidev
 * **Changes Made:**
-  - Upgraded Auto-Compounding to **Daily End-of-Day (EOD) Re-anchoring**: recalibrates $3.0\%$ trade risk every midnight at 12:00 AM UTC based on that day's closing equity in [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js).
+  - **Weekly End-of-Week (EOW) Compounding Re-Anchor**: Replaces daily compounding re-anchoring with weekly re-anchoring every Sunday at 12:00 AM UTC in [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js). Trade risk ($) and TP target ($) remain fixed throughout the entire trading week, preventing intraday volatility and emotional sizing friction.
+  - **10-Pair Hybrid Portfolio Activation**: Integrated the 30-day top performers into [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js):
+    - Added `BOOM500` (2-Spike: 59.6% WR, +56.0R / +$168.00), `CRASH600` (2-Spike: 54.9% WR, +32.1R), `CRASH900` (2-Spike: 58.7% WR, +22.1R), `CRASH300N` (2-Spike: 54.7% WR), `BOOM200` (3-Spike: 64.3% WR), and `CRASH99` (3-Spike: 65.4% WR).
+    - Removed low-frequency/drag assets (`BOOM900`, `BOOM600`, `CRASH200`).
+  - Added dedicated **Weekly Compounding Re-Anchor Card** to Sunday Midnight Telegram Reports.
   - Added dedicated **Daily Compounding Re-Anchor Card** to Midnight Telegram reports.
   - Synchronized startup banner messages in [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js) and [`mt5_runner.py`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/mt5_runner.py) to explicitly reflect active 45m/60m circuit breakers and daily auto-compounding.
 * **Rationale / Hypothesis:**

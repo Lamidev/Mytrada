@@ -759,6 +759,7 @@ async function main() {
   const args = process.argv.slice(2);
   const isTest = args.includes('--test');
   const isReport = args.includes('--report');
+  const isScanOnly = args.includes('--scan') || args.includes('--once');
 
   if (isTest) {
     console.log("\n🧪 Dispatching Test Telegram Alert...");
@@ -779,10 +780,17 @@ async function main() {
     process.exit(0);
   }
 
-  console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Strategy 5B Flagship LIVE)${RESET}`);
-  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Pairs (1:1.3 R:R + 45m/60m Circuit Breakers + Daily Smart Auto-Compounding)...\n`);
+  if (isScanOnly) {
+    console.log(`\n👑 ${BOLD}${CYAN}Mytrada Real-Time Market Scan (10 Elite Pairs)${RESET}`);
+    await monitorMarket();
+    console.log(`\n${GREEN}✅ Real-time scan completed successfully.${RESET}`);
+    process.exit(0);
+  }
 
-  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active across ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Portfolio with 1:1.3 R:R, 45m/60m Circuit Breakers, and Daily Smart Auto-Compounding!`);
+  console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Strategy 5B Flagship LIVE)${RESET}`);
+  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Pairs (1:1.3 R:R + 45m/60m Circuit Breakers + Weekly Smart Auto-Compounding)...\n`);
+
+  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active across ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Portfolio with 1:1.3 R:R, 45m/60m Circuit Breakers, and Weekly Smart Auto-Compounding!`);
 
   await monitorMarket();
   setInterval(monitorMarket, 30000);

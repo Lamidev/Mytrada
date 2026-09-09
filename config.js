@@ -10,27 +10,22 @@ module.exports = {
   DERIV_APP_ID: 1089, // Public sandbox app_id
   DERIV_WS_URL: "wss://ws.derivws.com/websockets/v3?app_id=1089",
 
-  // Top 7 Elite Boom & Crash Portfolio (Strategy 5B — 30-Day Optimised)
+  // Top 10 Optimized Elite Boom & Crash Hybrid Portfolio (Strategy 5B Hybrid)
   SYMBOLS: {
-    // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend on 2-Spike Exhaustion) ──
-    "BOOM100":   { name: "Boom 100 Index",  mode: "BOOM", min_spikes: 3 }, // 👑 Upgraded to 3-Spike Exhaustion (High-Quality Sniper)
-    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM", min_spikes: 3 }, // 🟢 Optimized: 68.4% WR | +$65.40/mo (3-Spike Exhaustion)
-    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM", min_spikes: 3 }, // 🟢 Optimized: Upgraded to 3-Spike Exhaustion
-    "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM", min_spikes: 2 }, // 🟢 Strong: 77.8% WR | +$21.30/mo
+    // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend) ──
+    "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 #1 Performer: 59.6% WR | +56.0R (+$168.00/mo)
+    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 3 }, // 👑 Live MVP: 73.1% WR | +36.7R (+$110.10/mo)
+    "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM",  min_spikes: 3 }, // 🛡️ Deep Sniper: 64.3% WR | +13.4R (+$40.20/mo)
+    "BOOM100":   { name: "Boom 100 Index",  mode: "BOOM",  min_spikes: 3 }, // 🛡️ Steady: 51.6% WR | +5.8R (+$17.40/mo)
 
-    // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend on 2-Crash Exhaustion) ──
-    "CRASH1000": { name: "Crash 1000 Index", mode: "CRASH", min_spikes: 2 }, // 🟢 Strong: 65.0% WR | +$29.70/mo
-    "CRASH200":  { name: "Crash 200 Index",  mode: "CRASH", min_spikes: 2 }, // 🔵 OK: 66.7% WR | +$19.20/mo
-    "CRASH500":  { name: "Crash 500 Index",  mode: "CRASH", min_spikes: 2 }, // 🔵 OK: 75.0% WR | +$8.70/mo
+    // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend) ──
+    "CRASH500":  { name: "Crash 500 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Core Crash: 58.9% WR | +39.8R (+$119.40/mo)
+    "CRASH600":  { name: "Crash 600 Index", mode: "CRASH", min_spikes: 2 }, // 👑 High Volume: 54.9% WR | +32.1R (+$96.30/mo)
+    "CRASH900":  { name: "Crash 900 Index", mode: "CRASH", min_spikes: 2 }, // 👑 High Precision: 58.7% WR | +22.1R (+$66.30/mo)
+    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 2 }, // 🟢 Solid Runner: 54.7% WR | +19.3R (+$57.90/mo)
+    "CRASH1000": { name: "Crash 1000 Index",mode: "CRASH", min_spikes: 2 }, // 🟢 Trend Follower: 54.8% WR | +10.9R (+$32.70/mo)
+    "CRASH99":   { name: "Crash 99 Index",  mode: "CRASH", min_spikes: 3 }, // 🛡️ Deep Sniper: 65.4% WR | +13.1R (+$39.30/mo)
   },
-
-  // Removed (30-Day Backtest — Low Signal Volume / Below Threshold):
-  // BOOM500   — only 2 trades/mo, +$0.90 (noise-level return)
-  // CRASH50   — only 4 trades/mo, +$1.80, Max DD $6.00 (poor risk-adjusted)
-  // BOOM1000  — 0 trades / no trend alignment in 30 days
-  // CRASH900  — 0 trades / no trend alignment in 30 days
-  // CRASH300N — 0 trades / no trend alignment in 30 days
-  // CRASH600  — 41.7% WR / below breakeven / -$1.50 loss
 
   // Multi-Timeframe Confluence Engine
   MACRO_DAILY: "1d",      // Daily Macro Trend (50 EMA)
@@ -38,12 +33,13 @@ module.exports = {
   INTERMEDIATE_HTF: "1h", // 1-Hour Intermediate Trend (50 EMA)
   DEFAULT_LTF: "5m",      // 5-Minute Entry Trigger Timeframe
 
-  // Risk & Position Management Settings ($100 Original Deposit Baseline / Auto-Compounding)
-  STARTING_BALANCE: 100.0,              // Original deposit baseline in USD (PnL automatically compounds on top)
+  // Risk & Position Management Settings (Weekly Auto-Compounding)
+  STARTING_BALANCE: 100.0,              // Original deposit baseline in USD
   RISK_PERCENT: 3.0,                    // Risk exactly 3.0% of equity per trade
   RISK_AMOUNT_USD: 3.0,                 // Fallback baseline trade risk ($3.00)
   MIN_RISK_AMOUNT_USD: 3.0,             // Safety floor: risk never drops below $3.00
   DYNAMIC_RISK_COMPOUNDING: true,       // 👑 Auto-adjust risk and lot sizes weekly based on account equity
+  COMPOUNDING_FREQUENCY: "WEEKLY",      // 👑 Weekly End-of-Week (Sunday Midnight) Re-anchoring
   
   // Strategy 5B Execution Parameters
   REWARD_RATIO: 1.3,                    // 1:1.3 R:R Fixed Sniper Target

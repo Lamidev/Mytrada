@@ -38,26 +38,21 @@ MIN_SPIKE_CLUSTER_ATR_RATIO = 0.50 # 👑 Combined spike cluster range must be >
 STATE_FILE_PATH    = os.path.join(os.path.dirname(__file__), "cache", "signal_state.json")
 CIRCUIT_BREAKER_FILE = os.path.join(os.path.dirname(__file__), "cache", "circuit_breaker_state.json")
 
-# ── 7 Elite Boom & Crash Portfolio (Strategy 5B — 30-Day Optimised) ──────────
+# ── 10 Elite Boom & Crash Hybrid Portfolio (Strategy 5B Hybrid) ──────────
 SYMBOLS = {
-    # Elite Boom Universe (SELL in Daily + 4H + 1H Bearish Trend on 2-Spike Exhaustion)
-    "Boom 100 Index":  {"mode": "BOOM",  "min_spikes": 3, "min_lot": 0.20},  # 👑 Upgraded to 3-Spike Exhaustion (High-Quality Sniper)
-    "Boom 300 Index":  {"mode": "BOOM",  "min_spikes": 3, "min_lot": 0.50},  # 🟢 Optimized: 68.4% WR | +$65.40/mo (3-Spike Exhaustion)
-    "Boom 600 Index":  {"mode": "BOOM",  "min_spikes": 3, "min_lot": 0.20},  # 🟢 Optimized: Upgraded to 3-Spike Exhaustion
-    "Boom 900 Index":  {"mode": "BOOM",  "min_spikes": 2, "min_lot": 0.20},  # 🟢 Strong: 77.8% WR | +$21.30/mo
+    # Elite Boom Universe (SELL in Daily + 4H + 1H Bearish Trend)
+    "Boom 500 Index":  {"mode": "BOOM",  "min_spikes": 2, "min_lot": 0.20},  # 👑 #1 Performer: 59.6% WR | +56.0R (+$168.00/mo)
+    "Boom 300 Index":  {"mode": "BOOM",  "min_spikes": 3, "min_lot": 0.50},  # 👑 Live MVP: 73.1% WR | +36.7R (+$110.10/mo)
+    "Boom 200 Index":  {"mode": "BOOM",  "min_spikes": 3, "min_lot": 0.20},  # 🛡️ Deep Sniper: 64.3% WR | +13.4R (+$40.20/mo)
+    "Boom 100 Index":  {"mode": "BOOM",  "min_spikes": 3, "min_lot": 0.20},  # 🛡️ Steady: 51.6% WR | +5.8R (+$17.40/mo)
 
-    # Elite Crash Universe (BUY in Daily + 4H + 1H Bullish Trend on 2-Crash Exhaustion)
-    "Crash 1000 Index": {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 🟢 Strong: 65.0% WR | +$29.70/mo
-    "Crash 200 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 🔵 OK: 66.7% WR | +$19.20/mo
-    "Crash 500 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 🔵 OK: 75.0% WR | +$8.70/mo
-
-    # Removed (30-Day Backtest — Low Signal Volume / Below Threshold):
-    # Boom 500 Index  — only 2 trades/mo, +$0.90 (noise-level return)
-    # Crash 50 Index  — only 4 trades/mo, +$1.80, Max DD $6.00 (poor risk-adjusted)
-    # Boom 1000 Index — 0 trades / no trend alignment in 30 days
-    # Crash 900 Index — 0 trades / no trend alignment in 30 days
-    # Crash 300 Index — 0 trades / no trend alignment in 30 days
-    # Crash 600 Index — 41.7% WR / below breakeven / -$1.50 loss
+    # Elite Crash Universe (BUY in Daily + 4H + 1H Bullish Trend)
+    "Crash 500 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 👑 Core Crash: 58.9% WR | +39.8R (+$119.40/mo)
+    "Crash 600 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 👑 High Volume: 54.9% WR | +32.1R (+$96.30/mo)
+    "Crash 900 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 👑 High Precision: 58.7% WR | +22.1R (+$66.30/mo)
+    "Crash 300 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 🟢 Solid Runner: 54.7% WR | +19.3R (+$57.90/mo)
+    "Crash 1000 Index": {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 🟢 Trend Follower: 54.8% WR | +10.9R (+$32.70/mo)
+    "Crash 99 Index":   {"mode": "CRASH", "min_spikes": 3, "min_lot": 0.20}, # 🛡️ Deep Sniper: 65.4% WR | +13.1R (+$39.30/mo)
 }
 
 # ── Telegram Helper ──────────────────────────────────────────────────────────
@@ -519,7 +514,7 @@ def run_scanner():
     state = load_state()
     bal, cur_risk, _ = get_dynamic_risk()
     
-    send_telegram(f"🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active across {len(SYMBOLS)} Elite Boom & Crash Portfolio with 1:1.3 R:R, 45m/60m Circuit Breakers, and Daily Smart Auto-Compounding (${bal:.2f} Balance / ${cur_risk:.2f} Risk per trade)!")
+    send_telegram(f"🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active across {len(SYMBOLS)} Elite Boom & Crash Portfolio with 1:1.3 R:R, 45m/60m Circuit Breakers, and Weekly Smart Auto-Compounding (${bal:.2f} Balance / ${cur_risk:.2f} Risk per trade)!")
 
     try:
         while True:
