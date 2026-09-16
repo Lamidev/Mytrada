@@ -516,6 +516,11 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
     if (dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
 
+    // 👑 Strategy 5C: Active 1H Candle Momentum Guard
+    // Reject if current active 1H candle is actively bullish (green candle Close > Open)
+    const last1hCandle = htf1hCandles[htf1hCandles.length - 1];
+    if (last1hClose > last1hCandle.open) return null;
+
     let hasSpikes = true;
     const spikeCandles = [];
     for (let s = 1; s <= minSpikes; s++) {
@@ -567,6 +572,11 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf1hTrend !== 'bullish') return null;
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
     if (dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
+
+    // 👑 Strategy 5C: Active 1H Candle Momentum Guard
+    // Reject if current active 1H candle is actively bearish (red candle Close < Open)
+    const last1hCandle = htf1hCandles[htf1hCandles.length - 1];
+    if (last1hClose < last1hCandle.open) return null;
 
     let hasCrashes = true;
     const crashCandles = [];
@@ -627,7 +637,7 @@ async function monitorMarket() {
   // 2. Automated Check for Sunday Midnight Weekly Performance Report
   await checkAndSendWeeklyReport();
 
-  console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for Strategy 5B setups...${RESET}`);
+  console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for Strategy 5C setups...${RESET}`);
   console.log(`-------------------------------------------------------------------------------------------------`);
 
   const symbols = Object.keys(config.SYMBOLS);
@@ -688,13 +698,14 @@ async function monitorMarket() {
         const candleAgeLabel = offset === 1 ? '5M Close' : `5M Close (${(offset - 1) * 5}m ago)`;
 
         const alertHtml = [
-          `👑 ${dirEmoji} <b>[MYTRADA STRATEGY 5B SIGNAL]</b>`,
+          `👑 ${dirEmoji} <b>[MYTRADA STRATEGY 5C SIGNAL]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${symConfig.name})`,
           `<b>Direction:</b> ${dirEmoji} <b>${setup.direction} (Momentum Exhaustion Sniper)</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `📊 <b>MULTI-TIMEFRAME CONFLUENCE:</b>`,
           `  • <b>Macro Trend:</b> <code>Daily + 4H + 1H 50 EMA (${setup.htf1hTrend.toUpperCase()} Aligned)</code>`,
+          `  • <b>1H Momentum Guard:</b> <code>Active Hourly Candle ${setup.direction === 'BUY' ? 'Bullish' : 'Bearish'} Aligned 🛡️</code>`,
           `  • <b>Cluster:</b> <code>${minSpikes} Consecutive Counter-Trend Spikes</code>`,
           `  • <b>5M Execution:</b> <code>M5 Exhaustion Close (Body: ${(setup.bodyRatio * 100).toFixed(0)}%)</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -710,7 +721,7 @@ async function monitorMarket() {
         ].join('\n');
 
         await sendTelegramMessage(alertHtml);
-        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 5B SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
+        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 5C SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
 
         const activeTrades = loadActiveTrades();
         activeTrades.push({
@@ -763,7 +774,7 @@ async function main() {
 
   if (isTest) {
     console.log("\n🧪 Dispatching Test Telegram Alert...");
-    const testMsg = "🚀 <b>[MYTRADA STRATEGY 5B TEST]</b>\nTelegram Signal Dispatcher connected successfully!";
+    const testMsg = "🚀 <b>[MYTRADA STRATEGY 5C TEST]</b>\nTelegram Signal Dispatcher connected successfully!";
     await sendTelegramMessage(testMsg);
     console.log(`${GREEN}✅ SUCCESS: Test alert sent to Telegram!${RESET}`);
     process.exit(0);
@@ -787,10 +798,10 @@ async function main() {
     process.exit(0);
   }
 
-  console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Strategy 5B Flagship LIVE)${RESET}`);
+  console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Strategy 5C Flagship LIVE)${RESET}`);
   console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Pairs (1:1.3 R:R + 45m/60m Circuit Breakers + Weekly Smart Auto-Compounding)...\n`);
 
-  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5B LIVE]</b> Signal Runner active across ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Portfolio with 1:1.3 R:R, 45m/60m Circuit Breakers, and Weekly Smart Auto-Compounding!`);
+  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5C LIVE]</b> Signal Runner active across ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Portfolio with 1:1.3 R:R, 1H Momentum Guard, 45m/60m Circuit Breakers, and Weekly Smart Auto-Compounding!`);
 
   await monitorMarket();
   setInterval(monitorMarket, 30000);

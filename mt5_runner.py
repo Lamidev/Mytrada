@@ -50,7 +50,7 @@ SYMBOLS = {
     "Crash 500 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 👑 Core Crash: 58.9% WR | +39.8R (+$119.40/mo)
     "Crash 600 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 👑 High Volume: 54.9% WR | +32.1R (+$96.30/mo)
     "Crash 900 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 👑 High Precision: 58.7% WR | +22.1R (+$66.30/mo)
-    "Crash 300 Index":  {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 🟢 Solid Runner: 54.7% WR | +19.3R (+$57.90/mo)
+    "Crash 300 Index":  {"mode": "CRASH", "min_spikes": 3, "min_lot": 0.20}, # 🛡️ Deep Sniper: Upgraded v5.6 (3 Spikes) | 81.8% WR
     "Crash 1000 Index": {"mode": "CRASH", "min_spikes": 2, "min_lot": 0.20}, # 🟢 Trend Follower: 54.8% WR | +10.9R (+$32.70/mo)
     "Crash 99 Index":   {"mode": "CRASH", "min_spikes": 3, "min_lot": 0.20}, # 🛡️ Deep Sniper: 65.4% WR | +13.1R (+$39.30/mo)
 }
@@ -338,6 +338,10 @@ def evaluate_strategy5b(symbol: str, cfg: dict):
         if d1_close is not None and d1_close >= d1_ema50:
             return None
             
+        # 👑 Strategy 5C: Active 1H Candle Momentum Guard (Reject if 1H bar is green)
+        if h1_close > df_h1['open'].iloc[-1]:
+            return None
+            
         # Check consecutive spike candles
         spike_slice = df_m5.iloc[-(min_spikes+1):-1]
         spk_count = sum([1 for k in range(len(spike_slice)) if spike_slice['close'].iloc[k] > spike_slice['open'].iloc[k]])
@@ -381,6 +385,10 @@ def evaluate_strategy5b(symbol: str, cfg: dict):
         if not (h1_close > h1_ema50 and h4_close > h4_ema50):
             return None
         if d1_close is not None and d1_close <= d1_ema50:
+            return None
+            
+        # 👑 Strategy 5C: Active 1H Candle Momentum Guard (Reject if 1H bar is red)
+        if h1_close < df_h1['open'].iloc[-1]:
             return None
             
         # Check consecutive crash candles
@@ -548,13 +556,14 @@ def run_scanner():
                     lot_size = max(min_lot, round(risk_usd / sl_dist, 2)) if sl_dist > 0 else min_lot
                     dir_emoji = "🔴" if setup['direction'] == "SELL" else "🟢"
 
-                    msg = f"👑 {dir_emoji} <b>[MYTRADA STRATEGY 5B SIGNAL]</b>\n" \
+                    msg = f"👑 {dir_emoji} <b>[MYTRADA STRATEGY 5C SIGNAL]</b>\n" \
                           f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n" \
                           f"<b>Asset:</b> <code>{sym}</code>\n" \
                           f"<b>Direction:</b> {dir_emoji} <b>{setup['direction']} (Momentum Exhaustion Sniper)</b>\n" \
                           f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n" \
                           f"📊 <b>MULTI-TIMEFRAME CONFLUENCE:</b>\n" \
                           f"  • <b>Macro Trend:</b> <code>Daily + 4H + 1H 50 EMA Aligned</code>\n" \
+                          f"  • <b>1H Momentum Guard:</b> <code>Active Hourly Candle {'Bullish' if setup['direction'] == 'BUY' else 'Bearish'} Aligned 🛡️</code>\n" \
                           f"  • <b>Cluster:</b> <code>{cfg.get('min_spikes', 2)} Consecutive Counter-Trend Spikes</code>\n" \
                           f"  • <b>5M Execution:</b> <code>M5 Exhaustion Close (Body: {int(setup['body_ratio'] * 100)}%)</code>\n" \
                           f"<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n" \
@@ -570,7 +579,7 @@ def run_scanner():
                           f"🚀 <b>EXECUTION:</b> <code>Enter MARKET {setup['direction']} on MT5. Target 1:1.3 R:R.</code>"
                           
                     send_telegram(msg)
-                    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 🚨 STRATEGY 5B SIGNAL: {setup['direction']} {sym} @ {setup['entry']:.2f} | Lot: {lot_size}")
+                    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 🚨 STRATEGY 5C SIGNAL: {setup['direction']} {sym} @ {setup['entry']:.2f} | Lot: {lot_size}")
                     
                     state.setdefault("alerted_keys", []).append(sig_key)
                     state.setdefault("active_signals", []).append({

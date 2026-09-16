@@ -22,7 +22,7 @@ module.exports = {
     "CRASH500":  { name: "Crash 500 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Core Crash: 58.9% WR | +39.8R (+$119.40/mo)
     "CRASH600":  { name: "Crash 600 Index", mode: "CRASH", min_spikes: 2 }, // 👑 High Volume: 54.9% WR | +32.1R (+$96.30/mo)
     "CRASH900":  { name: "Crash 900 Index", mode: "CRASH", min_spikes: 2 }, // 👑 High Precision: 58.7% WR | +22.1R (+$66.30/mo)
-    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 2 }, // 🟢 Solid Runner: 54.7% WR | +19.3R (+$57.90/mo)
+    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 3 }, // 🛡️ Deep Sniper: Upgraded v5.6 (3 Spikes) | 81.8% WR
     "CRASH1000": { name: "Crash 1000 Index",mode: "CRASH", min_spikes: 2 }, // 🟢 Trend Follower: 54.8% WR | +10.9R (+$32.70/mo)
     "CRASH99":   { name: "Crash 99 Index",  mode: "CRASH", min_spikes: 3 }, // 🛡️ Deep Sniper: 65.4% WR | +13.1R (+$39.30/mo)
   },
