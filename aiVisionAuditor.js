@@ -14,15 +14,19 @@ const API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 /**
  * Renders the chart via python and returns Base64 PNG string.
  */
-function renderChartBase64(trade, candles) {
+function renderChartBase64(trade, candles, htfCandles = null) {
   return new Promise((resolve, reject) => {
     const pythonScript = path.join(__dirname, 'chart_auditor.py');
     const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
 
-    const payload = JSON.stringify({
+    const payloadObj = {
       trade,
       candles: candles.slice(-50)
-    });
+    };
+    if (htfCandles && htfCandles.length > 0) {
+      payloadObj.htf_candles = htfCandles.slice(-40);
+    }
+    const payload = JSON.stringify(payloadObj);
 
     let stdoutData = '';
     let stderrData = '';
@@ -61,10 +65,10 @@ function renderChartBase64(trade, candles) {
           if (res.success && res.image_base64) {
             resolve(res.image_base64);
           } else {
-            reject(new Error(res.error || "Unknown render error"));
+            reject(new Error(res.error || "Unknown python render error"));
           }
         } catch (e) {
-          reject(new Error(`Render parse error: ${stdoutData || stderrData}`));
+          reject(new Error(`Failed to parse chart renderer output: ${stdoutData} (code: ${code})`));
         }
       }
     });
@@ -83,9 +87,10 @@ function renderChartBase64(trade, candles) {
  *   - tp: number
  *   - sl: number
  *   - candles: Array<{ open, high, low, close, time }> (Last 30-50 M5 candles)
+ *   - htfCandles: Array<{ open, high, low, close, time }> (Last 30-40 1H candles, optional)
  * @returns {Promise<{ verdict: 'TAKE' | 'LEAVE', confidence: number, reason: string }>}
  */
-async function auditTradeWithVision({ symbol, direction, entry, tp, sl, candles }) {
+async function auditTradeWithVision({ symbol, direction, entry, tp, sl, candles, htfCandles = null }) {
   if (!API_KEY) {
     return {
       verdict: 'TAKE',
@@ -95,11 +100,38 @@ async function auditTradeWithVision({ symbol, direction, entry, tp, sl, candles 
   }
 
   try {
-    // 1. Render chart to base64 via Python
-    const base64Img = await renderChartBase64({ symbol, direction, entry, tp, sl }, candles);
+    // 1. Render chart to base64 via Python (Dual-Panel if htfCandles provided)
+    const base64Img = await renderChartBase64({ symbol, direction, entry, tp, sl }, candles, htfCandles);
 
     // 2. Query Gemini 2.5 Flash Vision via native Node fetch
-    const prompt = `You are the Senior Quantitative Risk Officer and Institutional Chart Auditor for the Mytrada Algo Trading Bot.
+    const hasDualPanel = htfCandles && htfCandles.length > 0;
+    const prompt = hasDualPanel ? `You are the Senior Quantitative Risk Officer and Institutional Chart Auditor for the Mytrada Algo Trading Bot.
+Auditing Trade Setup:
+- Asset: ${symbol}
+- Direction: ${direction} (Momentum Exhaustion Sniper)
+- Entry Price (Blue dashed line): ${entry.toFixed(2)}
+- Target TP (Green solid line): ${tp.toFixed(2)}
+- Stop Loss (Red solid line): ${sl.toFixed(2)}
+
+The image shows a Dual-Timeframe Panel:
+• TOP PANEL: 1-Hour (1H) Macro Market Structure (last ~35 hours). Cyan dotted line shows current price.
+• BOTTOM PANEL: 5-Minute (5M) Execution Runway with Entry (blue), TP Target (green), and SL (red).
+
+CALIBRATED DUAL-TIMEFRAME EVALUATION RULES:
+1. 1H MACRO STRUCTURE (Top Panel):
+   - For BUY: Reject ('LEAVE') if the 1H chart is in a relentless, steep downtrend freefall or pressing directly into a massive multi-day overhead resistance ceiling. If 1H is in a healthy uptrend, ranging, or normal pullback, it PASSES.
+   - For SELL: Reject ('LEAVE') if the 1H chart is in a vertical parabolic pump or resting directly on a massive multi-day support floor. If 1H is in a healthy downtrend, ranging, or normal pullback, it PASSES.
+2. 5M EXECUTION RUNWAY (Bottom Panel):
+   - In an active trend, breaking single minor prior candle highs (for BUY) or minor lows (for SELL) is NORMAL healthy trend continuation (BOS). DO NOT veto normal breakouts.
+   - ONLY VETO ('LEAVE') if price is entering directly into a major, multi-touch horizontal brick wall (double-top ceiling for BUY, or double-bottom floor for SELL) blocking the path to the Green TP line.
+3. If both 1H macro structure and 5M execution runway are viable without immediate brick walls, approve ('TAKE').
+
+Respond strictly in JSON:
+{
+  "verdict": "TAKE" | "LEAVE",
+  "confidence": number,
+  "reason": "1 concise sentence explaining the visual chart rationale covering 1H macro & 5M runway."
+}` : `You are the Senior Quantitative Risk Officer and Institutional Chart Auditor for the Mytrada Algo Trading Bot.
 Auditing Trade Setup:
 - Asset: ${symbol}
 - Direction: ${direction} (Momentum Exhaustion Sniper)
@@ -109,7 +141,7 @@ Auditing Trade Setup:
 
 CALIBRATED EVALUATION RULES:
 1. In an active trend, breaking single minor prior candle highs (for BUY) or minor lows (for SELL) is NORMAL healthy trend continuation (Break of Structure). DO NOT veto healthy breakouts.
-2. ONLY VETO ('LEAVE') if price is entering directly into a major, unmistakable, multi-touch horizontal brick wall (e.g. strong double-top or triple-top ceiling right above Entry for BUY, or major double/triple bottom floor right below Entry for SELL).
+2. ONLY VETO ('LEAVE') if price is entering directly into a major, unmistakable, multi-touch horizontal brick wall (e.g. strong double-top ceiling right above Entry for BUY, or major double-bottom floor right below Entry for SELL).
 3. If the path to Take Profit is open or in an established trend without an immediate multi-touch brick wall, approve ('TAKE').
 
 Respond strictly in JSON:

@@ -15,6 +15,8 @@ module.exports = {
     // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend) ──
     "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 #1 Performer: 59.6% WR | +56.0R (+$168.00/mo)
     "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 3 }, // 👑 Live MVP: 73.1% WR | +36.7R (+$110.10/mo)
+    "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Steady Trend: 58.0% WR | +25.5R (+$76.50/mo)
+    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 High Momentum: 56.5% WR | +15.0R (+$45.00/mo)
     "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM",  min_spikes: 3 }, // 🛡️ Deep Sniper: 64.3% WR | +13.4R (+$40.20/mo)
     "BOOM100":   { name: "Boom 100 Index",  mode: "BOOM",  min_spikes: 3 }, // 🛡️ Steady: 51.6% WR | +5.8R (+$17.40/mo)
 

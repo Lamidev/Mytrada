@@ -715,14 +715,15 @@ async function monitorMarket() {
         const candleAgeLabel = offset === 1 ? '5M Close' : `5M Close (${(offset - 1) * 5}m ago)`;
 
         // ── GEMINI 2.5 FLASH MULTIMODAL AI VISION AUDIT (A/B SHADOW TRACKER) ──
-        console.log(`[runner] Auditing ${symbol} setup with Gemini 2.5 Flash Vision...`);
+        console.log(`[runner] Auditing ${symbol} setup with Gemini 2.5 Flash Dual-Timeframe Vision...`);
         const aiAudit = await auditTradeWithVision({
           symbol,
           direction: setup.direction,
           entry: setup.entry,
           tp: setup.tp,
           sl: setup.sl,
-          candles: ltfCandles
+          candles: ltfCandles,
+          htfCandles: htf1hCandles
         });
         const aiVerdictBadge = aiAudit.verdict === 'TAKE' ? '🟢 <b>TAKE IT (Trade Approved)</b>' : '🔴 <b>LEAVE IT (Avoid Trade)</b>';
 
