@@ -36,9 +36,9 @@ function renderChartBase64(trade, candles, htfCandles = null) {
       if (!isFinished) {
         isFinished = true;
         try { child.kill(); } catch (e) {}
-        reject(new Error("Chart rendering timeout (4s)"));
+        reject(new Error("Chart rendering timeout (12s)"));
       }
-    }, 4000);
+    }, 12000);
 
     const child = spawn(pythonCmd, [pythonScript], {
       cwd: __dirname,
