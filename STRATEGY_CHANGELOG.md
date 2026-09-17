@@ -9,6 +9,7 @@
 ## 📑 Changelog Table of Contents
 1. [Active Production Snapshot](#active-production-snapshot)
 2. [Version History & Modification Logs](#version-history--modification-logs)
+   - [v5.7 — September 17, 2026 (Gemini 2.5 Flash Multimodal Vision A/B Shadow Tracker)](#v57--september-17-2026)
    - [v5.6 — September 16, 2026 (Active 1H Candle Momentum Guard & CRASH300N 3-Spikes)](#v56--september-16-2026)
    - [v5.5 — September 9, 2026 (Weekly EOW Compounding & 10-Pair Hybrid Universe)](#v55--september-9-2026)
    - [v5.4 — September 1, 2026 (Daily EOD Compounding & 45m Cooldown Startup Sync)](#v54--september-1-2026)
@@ -40,6 +41,20 @@
 ---
 
 ## Version History & Modification Logs
+
+### v5.7 — September 17, 2026
+* **Author/Operator:** Antigravity / Lamidev
+* **Changes Made:**
+  - **Gemini 2.5 Flash Multimodal Vision A/B Shadow Tracker Activated**:
+    - Created headless chart renderer [`chart_auditor.py`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/chart_auditor.py) using `matplotlib.use('Agg')` to plot dark-theme M5 candlestick charts with Entry, TP, and SL lines in memory.
+    - Created high-speed interface [`aiVisionAuditor.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/aiVisionAuditor.js) querying Gemini 2.5 Flash Vision via native Node `fetch()`.
+    - Integrated real-time AI visual audits into [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js) signal dispatches (`TAKE IT` vs `LEAVE IT` with visual reasoning).
+    - Integrated exit scoring into Take Profit and Stop Loss alerts (`CORRECT CALL`, `OVER-FILTERED`, `MISSED TRAP`).
+    - Added dedicated **AI Vision A/B Shadow Tracker Card** to midnight Daily Performance Reports in [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js).
+* **Rationale:** Bridges mathematical algorithmic execution with human-grade spatial awareness. Eliminates double-top/triple-bottom traps while allowing safe forward A/B data collection without risking real capital.
+* **Fail-Safe Switch:** To disable AI Vision audits and revert to pure mathematical alerts, simply set `GEMINI_API_KEY=""` in `.env` or set fallback in `aiVisionAuditor.js`.
+
+---
 
 ### v5.6 — September 16, 2026
 * **Author/Operator:** Antigravity / Lamidev

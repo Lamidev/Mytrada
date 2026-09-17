@@ -65,7 +65,10 @@ function recordSignal(signalData) {
     outcome: null,
     exitPrice: null,
     pnlUSD: 0,
-    pnlR: 0
+    pnlR: 0,
+    aiVisionVerdict: signalData.aiVisionVerdict || null,
+    aiVisionReason: signalData.aiVisionReason || null,
+    aiVisionConfidence: signalData.aiVisionConfidence || null
   });
 
   saveTradeHistory(history);
@@ -87,7 +90,7 @@ function recordTrigger(setupId) {
 /**
  * Updates a trade when it hits TP, SL, or Breakeven
  */
-function recordClose(setupId, outcome, exitPrice, pnlUSD, pnlR) {
+function recordClose(setupId, outcome, exitPrice, pnlUSD, pnlR, aiVisionVerdict) {
   const history = loadTradeHistory();
   const trade = history.find(t => t.setupId === setupId);
   if (trade) {
@@ -97,6 +100,7 @@ function recordClose(setupId, outcome, exitPrice, pnlUSD, pnlR) {
     trade.exitPrice = exitPrice;
     trade.pnlUSD = pnlUSD;
     trade.pnlR = pnlR;
+    if (aiVisionVerdict) trade.aiVisionVerdict = aiVisionVerdict;
     saveTradeHistory(history);
   }
 }
@@ -169,6 +173,31 @@ function generateDailyReport(targetDateStr) {
     }
   });
 
+  // ── AI VISION SHADOW AUDIT AGGREGATION ──
+  let aiAudited = 0;
+  let aiTakeWins = 0;
+  let aiTakeLosses = 0;
+  let aiLeaveLossesSaved = 0;
+  let aiLeaveWinsMissed = 0;
+  let aiHypotheticalPnl = 0;
+
+  closedToday.forEach(t => {
+    if (t.aiVisionVerdict) {
+      aiAudited++;
+      if (t.aiVisionVerdict === 'TAKE') {
+        if (t.outcome === 'WIN') aiTakeWins++;
+        if (t.outcome === 'LOSS') aiTakeLosses++;
+        aiHypotheticalPnl += (t.pnlUSD || 0);
+      } else if (t.aiVisionVerdict === 'LEAVE') {
+        if (t.outcome === 'LOSS') aiLeaveLossesSaved++;
+        if (t.outcome === 'WIN') aiLeaveWinsMissed++;
+      }
+    }
+  });
+
+  const aiTakeTotal = aiTakeWins + aiTakeLosses;
+  const aiWinRate = aiTakeTotal > 0 ? ((aiTakeWins / aiTakeTotal) * 100).toFixed(1) : "N/A";
+
   return {
     period: 'DAILY',
     date: targetDateStr,
@@ -185,7 +214,16 @@ function generateDailyReport(targetDateStr) {
     netR,
     perSymbol,
     mvpSymbol: mvpPnL > 0 ? `${mvpSymbol} [${mvpStats}]` : "Balanced",
-    closedTrades: closedToday
+    closedTrades: closedToday,
+    aiStats: {
+      aiAudited,
+      aiTakeWins,
+      aiTakeLosses,
+      aiLeaveLossesSaved,
+      aiLeaveWinsMissed,
+      aiHypotheticalPnl,
+      aiWinRate
+    }
   };
 }
 
@@ -383,6 +421,19 @@ function formatReportTelegramHTML(report) {
       const statusEmoji = s.pnlUSD > 0 ? '🟢' : (s.pnlUSD < 0 ? '🔴' : '⚪');
       lines.push(`${statusEmoji} <b>${sym}:</b> <code>${s.total} Trades (${s.wins}W / ${s.losses}L) • ${wr}% WR • ${pnlSign}$${Math.abs(s.pnlUSD).toFixed(2)} (${pnlSign}${Math.abs(s.pnlR).toFixed(1)}R)</code>`);
     });
+    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+  }
+
+  // ── AI VISION A/B SHADOW TRACKER ──
+  if (report.aiStats && report.aiStats.aiAudited > 0) {
+    const ai = report.aiStats;
+    const diff = ai.aiHypotheticalPnl - report.netUSD;
+    const diffSign = diff >= 0 ? '+' : '-';
+    lines.push(`🧠 <b>AI VISION A/B SHADOW TRACKER:</b>`);
+    lines.push(`• <b>Signals Audited:</b> <code>${ai.aiAudited} Trades</code>`);
+    lines.push(`• <b>When AI said TAKE IT:</b> <code>${ai.aiTakeWins}W / ${ai.aiTakeLosses}L (${ai.aiWinRate}% WR)</code>`);
+    lines.push(`• <b>When AI said LEAVE IT:</b> <code>${ai.aiLeaveLossesSaved} Losses Avoided 🛡️ | ${ai.aiLeaveWinsMissed} Wins Missed ⚠️</code>`);
+    lines.push(`• <b>P/L Following AI:</b> <code>${ai.aiHypotheticalPnl >= 0 ? '+' : '-'}$${Math.abs(ai.aiHypotheticalPnl).toFixed(2)} USD (${diffSign}$${Math.abs(diff).toFixed(2)} vs Actual)</code>`);
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
   }
 

@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { getCandles } = require('./dataFetcher');
+const { auditTradeWithVision } = require('./aiVisionAuditor');
 const { 
   recordSignal, 
   recordTrigger, 
@@ -416,6 +417,13 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
 
     if (hitTP) {
       const pnlUsd = trade.rewardUSD || compRisk.rewardUSD;
+      let aiValidation = '';
+      if (trade.aiVisionVerdict === 'TAKE') {
+        aiValidation = `\n🧠 <b>AI VISION VALIDATION:</b> 🎯 <b>CORRECT CALL!</b> (AI recommended TAKE IT ➔ Full TP Captured)`;
+      } else if (trade.aiVisionVerdict === 'LEAVE') {
+        aiValidation = `\n🧠 <b>AI VISION VALIDATION:</b> ⚠️ <b>OVER-FILTERED!</b> (AI recommended LEAVE IT, but trade pushed through to TP)`;
+      }
+
       const tpAlert = [
         `🏆 🟢 <b>[MYTRADA TP HIT — FULL TARGET (1:1.3 R:R)]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -425,13 +433,14 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         `💰 <b>PROFIT CAPTURED:</b> <code>+$${pnlUsd.toFixed(2)} USD (+1.3R / +${(compRisk.riskPercent * (config.REWARD_RATIO || 1.3)).toFixed(1)}%)</code>`,
         `🎯 <b>Entry Price:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
         `🏆 <b>TP Hit:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
+        aiValidation,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `✅ <i>Trade fully completed in maximum profit!</i>`
-      ].join('\n');
+      ].filter(Boolean).join('\n');
 
       await sendTelegramMessage(tpAlert);
       recordSymbolTradeOutcome(symbol, 'WIN');
-      recordClose(trade.setupId, 'WIN', trade.takeProfit, pnlUsd, 1.3);
+      recordClose(trade.setupId, 'WIN', trade.takeProfit, pnlUsd, 1.3, trade.aiVisionVerdict);
 
       updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
       changed = true;
@@ -441,6 +450,13 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
     if (hitSL) {
       const riskUSD = trade.riskUSD || compRisk.riskUSD;
       const pauseMins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 45;
+      let aiValidation = '';
+      if (trade.aiVisionVerdict === 'LEAVE') {
+        aiValidation = `\n🧠 <b>AI VISION VALIDATION:</b> 🛡️ <b>CORRECT CALL!</b> (AI recommended LEAVE IT ➔ Saved -$${riskUSD.toFixed(2)} USD loss!)`;
+      } else if (trade.aiVisionVerdict === 'TAKE') {
+        aiValidation = `\n🧠 <b>AI VISION VALIDATION:</b> ❌ <b>MISSED TRAP!</b> (AI recommended TAKE IT, but market reversed to SL)`;
+      }
+
       const slAlert = [
         `🔴 🛡️ <b>[MYTRADA STOP LOSS HIT (-1.0R)]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -449,13 +465,14 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `💸 <b>LOSS:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R / -${compRisk.riskPercent.toFixed(1)}%)</code>`,
         `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> | 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
+        aiValidation,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🛡️ <i>Single-pair cooldown active (${pauseMins}m).</i>`
-      ].join('\n');
+      ].filter(Boolean).join('\n');
 
       await sendTelegramMessage(slAlert);
       recordSymbolTradeOutcome(symbol, 'LOSS');
-      recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0);
+      recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0, trade.aiVisionVerdict);
 
       updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
       changed = true;
@@ -697,6 +714,18 @@ async function monitorMarket() {
         const rewardUSD = compRisk.rewardUSD.toFixed(2);
         const candleAgeLabel = offset === 1 ? '5M Close' : `5M Close (${(offset - 1) * 5}m ago)`;
 
+        // ── GEMINI 2.5 FLASH MULTIMODAL AI VISION AUDIT (A/B SHADOW TRACKER) ──
+        console.log(`[runner] Auditing ${symbol} setup with Gemini 2.5 Flash Vision...`);
+        const aiAudit = await auditTradeWithVision({
+          symbol,
+          direction: setup.direction,
+          entry: setup.entry,
+          tp: setup.tp,
+          sl: setup.sl,
+          candles: ltfCandles
+        });
+        const aiVerdictBadge = aiAudit.verdict === 'TAKE' ? '🟢 <b>TAKE IT (Trade Approved)</b>' : '🔴 <b>LEAVE IT (Avoid Trade)</b>';
+
         const alertHtml = [
           `👑 ${dirEmoji} <b>[MYTRADA STRATEGY 5C SIGNAL]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -713,6 +742,11 @@ async function monitorMarket() {
           `🛡️ <b>STOP LOSS (SL):</b> <code>${setup.sl.toFixed(2)}</code> (Peak + 1.5x ATR)`,
           `🏆 <b>TARGET (1:1.3 R:R):</b> <code>${setup.tp.toFixed(2)}</code> (+$${rewardUSD} USD)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `🧠 <b>AI VISION AUDIT VERDICT:</b>`,
+          `  • <b>Recommendation:</b> ${aiVerdictBadge}`,
+          `  • <b>Confidence:</b> <code>${(aiAudit.confidence * 100).toFixed(0)}%</code>`,
+          `  • <b>Visual Rationale:</b> <i>${aiAudit.reason}</i>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💰 <b>Position Sizing ($${compRisk.balance.toFixed(2)} Account):</b>`,
           `  • Recommended Lot: <code>${lotSize} Lots</code>`,
           `  • Max Risk: <code>-$${riskUSD.toFixed(2)} USD (${compRisk.riskPercent.toFixed(1)}%)</code>`,
@@ -721,7 +755,7 @@ async function monitorMarket() {
         ].join('\n');
 
         await sendTelegramMessage(alertHtml);
-        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 5C SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
+        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 5C SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | AI: ${aiAudit.verdict} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
 
         const activeTrades = loadActiveTrades();
         activeTrades.push({
@@ -734,7 +768,10 @@ async function monitorMarket() {
           riskUSD: compRisk.riskUSD,
           rewardUSD: compRisk.rewardUSD,
           candleEpoch: setup.candleEpoch,
-          triggeredTime: Date.now()
+          triggeredTime: Date.now(),
+          aiVisionVerdict: aiAudit.verdict,
+          aiVisionReason: aiAudit.reason,
+          aiVisionConfidence: aiAudit.confidence
         });
         saveActiveTrades(activeTrades);
 
@@ -745,7 +782,10 @@ async function monitorMarket() {
           entryPrice: setup.entry,
           stopLoss: setup.sl,
           takeProfit: setup.tp,
-          confluenceScore: 10
+          confluenceScore: 10,
+          aiVisionVerdict: aiAudit.verdict,
+          aiVisionReason: aiAudit.reason,
+          aiVisionConfidence: aiAudit.confidence
         });
         recordTrigger(setupId);
 
