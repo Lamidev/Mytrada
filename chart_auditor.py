@@ -17,27 +17,26 @@ sys.stdout.reconfigure(encoding='utf-8')
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import pandas as pd
 
 def draw_candles_on_ax(ax, candles):
-    df = pd.DataFrame(candles)
     width = 0.6
     width2 = 0.1
-    up = df[df['close'] >= df['open']]
-    down = df[df['close'] < df['open']]
-
     col_up = '#00ff88'
     col_down = '#ff3366'
 
-    # Up candles
-    ax.bar(up.index, up['close'] - up['open'], width, bottom=up['open'], color=col_up, edgecolor=col_up)
-    ax.bar(up.index, up['high'] - up['close'], width2, bottom=up['close'], color=col_up)
-    ax.bar(up.index, up['low'] - up['open'], width2, bottom=up['open'], color=col_up)
+    for i, c in enumerate(candles):
+        op = float(c['open'])
+        cl = float(c['close'])
+        hi = float(c['high'])
+        lo = float(c['low'])
 
-    # Down candles
-    ax.bar(down.index, down['open'] - down['close'], width, bottom=down['close'], color=col_down, edgecolor=col_down)
-    ax.bar(down.index, down['high'] - down['open'], width2, bottom=down['open'], color=col_down)
-    ax.bar(down.index, down['low'] - down['close'], width2, bottom=down['close'], color=col_down)
+        color = col_up if cl >= op else col_down
+        bottom = min(op, cl)
+        height = max(abs(cl - op), 0.0001)
+
+        ax.bar(i, height, width, bottom=bottom, color=color, edgecolor=color)
+        ax.bar(i, hi - max(op, cl), width2, bottom=max(op, cl), color=color)
+        ax.bar(i, min(op, cl) - lo, width2, bottom=lo, color=color)
 
     ax.set_facecolor('#0f1117')
     ax.grid(True, linestyle=':', alpha=0.25, color='#ffffff')
@@ -113,18 +112,33 @@ def render_chart_image(trade_data, candles, htf_candles=None):
     buf.seek(0)
     return buf.read()
 
-def main():
-    try:
-        input_data = json.loads(sys.stdin.read())
-        trade_data = input_data['trade']
-        candles = input_data['candles']
-        htf_candles = input_data.get('htf_candles')
+def process_payload(input_data):
+    trade_data = input_data['trade']
+    candles = input_data['candles']
+    htf_candles = input_data.get('htf_candles')
+    img_bytes = render_chart_image(trade_data, candles, htf_candles)
+    return base64.b64encode(img_bytes).decode('utf-8')
 
-        img_bytes = render_chart_image(trade_data, candles, htf_candles)
-        b64 = base64.b64encode(img_bytes).decode('utf-8')
-        print(json.dumps({"success": True, "image_base64": b64}))
-    except Exception as err:
-        print(json.dumps({"success": False, "error": str(err)}))
+def main():
+    if '--daemon' in sys.argv:
+        print("WORKER_READY", flush=True)
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                input_data = json.loads(line)
+                b64 = process_payload(input_data)
+                print(json.dumps({"success": True, "image_base64": b64}), flush=True)
+            except Exception as err:
+                print(json.dumps({"success": False, "error": str(err)}), flush=True)
+    else:
+        try:
+            input_data = json.loads(sys.stdin.read())
+            b64 = process_payload(input_data)
+            print(json.dumps({"success": True, "image_base64": b64}))
+        except Exception as err:
+            print(json.dumps({"success": False, "error": str(err)}))
 
 if __name__ == "__main__":
     main()

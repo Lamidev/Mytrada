@@ -424,6 +424,10 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         aiValidation = `\n🧠 <b>AI VISION VALIDATION:</b> ⚠️ <b>OVER-FILTERED!</b> (AI recommended LEAVE IT, but trade pushed through to TP)`;
       }
 
+      recordSymbolTradeOutcome(symbol, 'WIN');
+      recordClose(trade.setupId, 'WIN', trade.takeProfit, pnlUsd, 1.3, trade.aiVisionVerdict);
+      const updatedBalance = getCurrentAccountBalance();
+
       const tpAlert = [
         `🏆 🟢 <b>[MYTRADA TP HIT — FULL TARGET (1:1.3 R:R)]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -431,6 +435,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `💰 <b>PROFIT CAPTURED:</b> <code>+$${pnlUsd.toFixed(2)} USD (+1.3R / +${(compRisk.riskPercent * (config.REWARD_RATIO || 1.3)).toFixed(1)}%)</code>`,
+        `💵 <b>New Account Balance:</b> <code>$${updatedBalance.toFixed(2)} USD</code>`,
         `🎯 <b>Entry Price:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
         `🏆 <b>TP Hit:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
         aiValidation,
@@ -439,8 +444,6 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
       ].filter(Boolean).join('\n');
 
       await sendTelegramMessage(tpAlert);
-      recordSymbolTradeOutcome(symbol, 'WIN');
-      recordClose(trade.setupId, 'WIN', trade.takeProfit, pnlUsd, 1.3, trade.aiVisionVerdict);
 
       updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
       changed = true;
@@ -457,6 +460,10 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         aiValidation = `\n🧠 <b>AI VISION VALIDATION:</b> ❌ <b>MISSED TRAP!</b> (AI recommended TAKE IT, but market reversed to SL)`;
       }
 
+      recordSymbolTradeOutcome(symbol, 'LOSS');
+      recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0, trade.aiVisionVerdict);
+      const updatedBalance = getCurrentAccountBalance();
+
       const slAlert = [
         `🔴 🛡️ <b>[MYTRADA STOP LOSS HIT (-1.0R)]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -464,6 +471,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `💸 <b>LOSS:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R / -${compRisk.riskPercent.toFixed(1)}%)</code>`,
+        `💵 <b>New Account Balance:</b> <code>$${updatedBalance.toFixed(2)} USD</code>`,
         `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> | 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
         aiValidation,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -748,7 +756,9 @@ async function monitorMarket() {
           `  • <b>Confidence:</b> <code>${(aiAudit.confidence * 100).toFixed(0)}%</code>`,
           `  • <b>Visual Rationale:</b> <i>${aiAudit.reason}</i>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `💰 <b>Position Sizing ($${compRisk.balance.toFixed(2)} Account):</b>`,
+          `💰 <b>Account & Position Sizing:</b>`,
+          `  • Live Account Equity: <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
+          `  • Weekly Compounding Base: <code>$${compRisk.balance.toFixed(2)} USD</code>`,
           `  • Recommended Lot: <code>${lotSize} Lots</code>`,
           `  • Max Risk: <code>-$${riskUSD.toFixed(2)} USD (${compRisk.riskPercent.toFixed(1)}%)</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,

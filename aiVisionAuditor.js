@@ -11,70 +11,101 @@ require('dotenv').config();
 
 const API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 
+let chartDaemon = null;
+let daemonStdoutBuffer = '';
+const pendingQueue = [];
+
+function getChartDaemon() {
+  if (chartDaemon && !chartDaemon.killed) {
+    return chartDaemon;
+  }
+
+  const pythonScript = path.join(__dirname, 'chart_auditor.py');
+  const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+
+  chartDaemon = spawn(pythonCmd, [pythonScript, '--daemon'], {
+    cwd: __dirname,
+    env: process.env,
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+
+  daemonStdoutBuffer = '';
+
+  chartDaemon.stdout.on('data', chunk => {
+    daemonStdoutBuffer += chunk.toString();
+    const lines = daemonStdoutBuffer.split('\n');
+    daemonStdoutBuffer = lines.pop();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed === 'WORKER_READY') continue;
+
+      if (pendingQueue.length > 0) {
+        const item = pendingQueue.shift();
+        clearTimeout(item.timer);
+        try {
+          const res = JSON.parse(trimmed);
+          if (res.success && res.image_base64) {
+            item.resolve(res.image_base64);
+          } else {
+            item.reject(new Error(res.error || "Unknown daemon error"));
+          }
+        } catch (e) {
+          item.reject(new Error(`Daemon parse error: ${e.message}`));
+        }
+      }
+    }
+  });
+
+  chartDaemon.stderr.on('data', chunk => {
+    // console.warn('[chartDaemon stderr]:', chunk.toString());
+  });
+
+  chartDaemon.on('exit', () => {
+    chartDaemon = null;
+    while (pendingQueue.length > 0) {
+      const item = pendingQueue.shift();
+      clearTimeout(item.timer);
+      item.reject(new Error("Chart daemon exited prematurely"));
+    }
+  });
+
+  return chartDaemon;
+}
+
+// Pre-warm daemon on process startup
+try {
+  getChartDaemon();
+} catch (e) {}
+
 /**
- * Renders the chart via python and returns Base64 PNG string.
+ * Renders the chart via python daemon and returns Base64 PNG string.
  */
 function renderChartBase64(trade, candles, htfCandles = null) {
   return new Promise((resolve, reject) => {
-    const pythonScript = path.join(__dirname, 'chart_auditor.py');
-    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-
-    const payloadObj = {
-      trade,
-      candles: candles.slice(-50)
-    };
-    if (htfCandles && htfCandles.length > 0) {
-      payloadObj.htf_candles = htfCandles.slice(-40);
-    }
-    const payload = JSON.stringify(payloadObj);
-
-    let stdoutData = '';
-    let stderrData = '';
-    let isFinished = false;
-
-    const timer = setTimeout(() => {
-      if (!isFinished) {
-        isFinished = true;
-        try { child.kill(); } catch (e) {}
-        reject(new Error("Chart rendering timeout (12s)"));
+    try {
+      const daemon = getChartDaemon();
+      const payloadObj = {
+        trade,
+        candles: candles.slice(-50)
+      };
+      if (htfCandles && htfCandles.length > 0) {
+        payloadObj.htf_candles = htfCandles.slice(-40);
       }
-    }, 12000);
 
-    const child = spawn(pythonCmd, [pythonScript], {
-      cwd: __dirname,
-      env: process.env
-    });
-
-    child.stdout.on('data', chunk => { stdoutData += chunk.toString(); });
-    child.stderr.on('data', chunk => { stderrData += chunk.toString(); });
-
-    child.on('error', err => {
-      if (!isFinished) {
-        isFinished = true;
-        clearTimeout(timer);
-        reject(err);
-      }
-    });
-
-    child.on('close', code => {
-      if (!isFinished) {
-        isFinished = true;
-        clearTimeout(timer);
-        try {
-          const res = JSON.parse(stdoutData.trim());
-          if (res.success && res.image_base64) {
-            resolve(res.image_base64);
-          } else {
-            reject(new Error(res.error || "Unknown python render error"));
-          }
-        } catch (e) {
-          reject(new Error(`Failed to parse chart renderer output: ${stdoutData} (code: ${code})`));
+      const timer = setTimeout(() => {
+        const idx = pendingQueue.findIndex(p => p.timer === timer);
+        if (idx !== -1) {
+          pendingQueue.splice(idx, 1);
+          reject(new Error("Chart rendering timeout (12s)"));
         }
-      }
-    });
+      }, 12000);
 
-    child.stdin.write(payload);
-    child.stdin.end();
+      pendingQueue.push({ resolve, reject, timer });
+      daemon.stdin.write(JSON.stringify(payloadObj) + '\n');
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
@@ -208,5 +239,6 @@ Respond strictly in JSON:
 }
 
 module.exports = {
-  auditTradeWithVision
+  auditTradeWithVision,
+  renderChartBase64
 };
