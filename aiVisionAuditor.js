@@ -148,20 +148,21 @@ The image shows a Dual-Timeframe Panel:
 • TOP PANEL: 1-Hour (1H) Macro Market Structure (last ~35 hours). Cyan dotted line shows current price.
 • BOTTOM PANEL: 5-Minute (5M) Execution Runway with Entry (blue), TP Target (green), and SL (red).
 
-CALIBRATED DUAL-TIMEFRAME EVALUATION RULES:
+RIGOROUS INSTITUTIONAL EVALUATION CRITERIA:
 1. 1H MACRO STRUCTURE (Top Panel):
-   - For BUY: Reject ('LEAVE') if the 1H chart is in a relentless, steep downtrend freefall or pressing directly into a massive multi-day overhead resistance ceiling. If 1H is in a healthy uptrend, ranging, or normal pullback, it PASSES.
-   - For SELL: Reject ('LEAVE') if the 1H chart is in a vertical parabolic pump or resting directly on a massive multi-day support floor. If 1H is in a healthy downtrend, ranging, or normal pullback, it PASSES.
-2. 5M EXECUTION RUNWAY (Bottom Panel):
-   - In an active trend, breaking single minor prior candle highs (for BUY) or minor lows (for SELL) is NORMAL healthy trend continuation (BOS). DO NOT veto normal breakouts.
-   - ONLY VETO ('LEAVE') if price is entering directly into a major, multi-touch horizontal brick wall (double-top ceiling for BUY, or double-bottom floor for SELL) blocking the path to the Green TP line.
-3. If both 1H macro structure and 5M execution runway are viable without immediate brick walls, approve ('TAKE').
+   - Reject ('LEAVE') if macro structure is unaligned, in steep counter-trend momentum, or pressing directly into a major multi-hour support floor (for SELL) or resistance ceiling (for BUY).
+   - Reject ('LEAVE') if the market is severely over-extended at the tail-end of a massive multi-hour move where high mean-reversion snapback risk is present.
+2. 5M EXECUTION RUNWAY & MOMENTUM (Bottom Panel):
+   - Reject ('LEAVE') if price is entering directly into an obstacle (e.g. multi-touch horizontal floor for SELL, or ceiling for BUY) blocking or lying at the Green TP line.
+   - Reject ('LEAVE') if counter-trend spikes are expanding in size with strong aggressive momentum (showing that the pullback is still active and NOT yet exhausted).
+   - In a healthy established trend, breaking single minor prior candle highs/lows is normal BOS continuation — do not veto normal trend continuation.
+3. APPROVAL: Approve ('TAKE') ONLY if the 1H structure is aligned and healthy, the counter-trend spikes show genuine exhaustion decay, and the 5M path to the TP line is clear.
 
 Respond strictly in JSON:
 {
   "verdict": "TAKE" | "LEAVE",
   "confidence": number,
-  "reason": "1 concise sentence explaining the visual chart rationale covering 1H macro & 5M runway."
+  "reason": "1 concise sentence explaining the visual chart rationale covering macro trend, exhaustion quality, & runway."
 }` : `You are the Senior Quantitative Risk Officer and Institutional Chart Auditor for the Mytrada Algo Trading Bot.
 Auditing Trade Setup:
 - Asset: ${symbol}
@@ -170,10 +171,10 @@ Auditing Trade Setup:
 - Target TP (Green solid line): ${tp.toFixed(2)}
 - Stop Loss (Red solid line): ${sl.toFixed(2)}
 
-CALIBRATED EVALUATION RULES:
-1. In an active trend, breaking single minor prior candle highs (for BUY) or minor lows (for SELL) is NORMAL healthy trend continuation (Break of Structure). DO NOT veto healthy breakouts.
-2. ONLY VETO ('LEAVE') if price is entering directly into a major, unmistakable, multi-touch horizontal brick wall (e.g. strong double-top ceiling right above Entry for BUY, or major double-bottom floor right below Entry for SELL).
-3. If the path to Take Profit is open or in an established trend without an immediate multi-touch brick wall, approve ('TAKE').
+RIGOROUS EVALUATION CRITERIA:
+1. Reject ('LEAVE') if price is entering directly into a major horizontal brick wall blocking or lying at the Green TP target.
+2. Reject ('LEAVE') if counter-trend spikes show aggressive expanding momentum rather than exhausted deceleration, or if price is severely over-extended at the extreme tail of a trend.
+3. Approve ('TAKE') ONLY if counter-trend spikes show genuine exhaustion and the path to Take Profit is open.
 
 Respond strictly in JSON:
 {
