@@ -52,6 +52,7 @@ module.exports = {
   // Institutional Responsive Tiered Circuit Breakers
   CIRCUIT_BREAKER: {
     ENABLED: true,
+    POST_WIN_PAUSE_MINS: 15,     // 👑 15-minute breathing room after a WIN (prevents immediate tail-end re-entry)
     TIER_1_PAUSE_MINS: 45,       // 45-minute pause on symbol after 1 loss (9x M5 candles)
     TIER_2_PAUSE_MINS: 60,       // 60-minute pause on symbol after 2 consecutive losses (12x M5 candles)
     MAX_DAILY_LOSSES_PER_SYMBOL: 3 // 3 Daily Losses = Halted on symbol for remainder of day

@@ -150,7 +150,10 @@ function isSymbolInCooldown(symbol) {
   const now = Date.now();
   if (rec.pauseUntil && now < rec.pauseUntil) {
     const remMins = Math.ceil((rec.pauseUntil - now) / 60000);
-    return { inCooldown: true, reason: `Cooldown active — ${remMins}m remaining` };
+    const reason = (rec.consecutiveLosses === 0 && rec.dailyLosses < (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 3))
+      ? `Post-Win breathing room (${remMins}m remaining)`
+      : `Cooldown active — ${remMins}m remaining`;
+    return { inCooldown: true, reason };
   }
 
   return { inCooldown: false };
@@ -172,6 +175,9 @@ function recordSymbolTradeOutcome(symbol, outcome) {
 
   if (outcome === 'WIN') {
     rec.consecutiveLosses = 0;
+    // 👑 Institutional Post-Win Breathing Room: pause symbol to prevent immediate tail-end re-entry
+    const postWinMins = config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 15;
+    rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (postWinMins * 60 * 1000));
   } else if (outcome === 'LOSS') {
     rec.consecutiveLosses = (rec.consecutiveLosses || 0) + 1;
     rec.dailyLosses = (rec.dailyLosses || 0) + 1;
@@ -440,6 +446,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         `🏆 <b>TP Hit:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
         aiValidation,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `🛡️ <i>Post-win breathing room active (${config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 15}m).</i>`,
         `✅ <i>Trade fully completed in maximum profit!</i>`
       ].filter(Boolean).join('\n');
 
@@ -689,7 +696,8 @@ async function monitorMarket() {
 
       const latestPrice = ltfCandles[ltfCandles.length - 1].close;
 
-      const LOOKBACK_BARS = 4;
+      // 👑 Fresh execution only: strictly the most recently closed 5M bar (no 10-15m stale entries)
+      const LOOKBACK_BARS = 1;
       let signalFiredThisScan = false;
 
       // Start at offset = 1 (most recently closed completed 5M candle) to avoid fluctuating in-progress bars
