@@ -548,11 +548,6 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
     if (dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
 
-    // 👑 Strategy 5C: Active 1H Candle Momentum Guard
-    // Reject if current active 1H candle is actively bullish (green candle Close > Open)
-    const last1hCandle = htf1hCandles[htf1hCandles.length - 1];
-    if (last1hClose > last1hCandle.open) return null;
-
     let hasSpikes = true;
     const spikeCandles = [];
     for (let s = 1; s <= minSpikes; s++) {
@@ -574,17 +569,20 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
 
     const spikePeak = Math.max(c0.high, ...spikeCandles.map(c => c.high));
 
-    // 👑 Strategy 5C Core Pattern: Dynamic 20/50 EMA Value-Zone Retest
+    // 👑 Strategy 5C Core Pattern: Deep 5M 50 EMA Dynamic Value-Zone Retest
     const ltfCloses = ltfCandles.map(c => c.close);
     const ema20 = calculateEMA(ltfCloses, 20);
     const ema50 = calculateEMA(ltfCloses, 50);
     const lastEma20 = ema20[ema20.length - 1];
     const lastEma50 = ema50[ema50.length - 1];
 
-    const touchedEma20 = spikePeak >= (lastEma20 - atr * 0.2);
+    // 5M Trend Structure: Short-term 20 EMA must be below or equal to 50 EMA for Bearish Alignment
+    if (lastEma20 > lastEma50) return null;
+
+    // Deep Dynamic Value Zone: Spikes must retest the 5M 50 EMA Dynamic Mean
     const touchedEma50 = spikePeak >= (lastEma50 - atr * 0.2);
-    if (!touchedEma20 && !touchedEma50) return null;
-    const valueZoneTouched = touchedEma50 ? '50 EMA' : '20 EMA';
+    if (!touchedEma50) return null;
+    const valueZoneTouched = '50 EMA Dynamic Mean';
 
     const entry = c0.close;
     const sl = spikePeak + (atr * 1.5);
@@ -619,11 +617,6 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
     if (dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
 
-    // 👑 Strategy 5C: Active 1H Candle Momentum Guard
-    // Reject if current active 1H candle is actively bearish (red candle Close < Open)
-    const last1hCandle = htf1hCandles[htf1hCandles.length - 1];
-    if (last1hClose < last1hCandle.open) return null;
-
     let hasCrashes = true;
     const crashCandles = [];
     for (let s = 1; s <= minSpikes; s++) {
@@ -645,17 +638,20 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
 
     const crashTrough = Math.min(c0.low, ...crashCandles.map(c => c.low));
 
-    // 👑 Strategy 5C Core Pattern: Dynamic 20/50 EMA Value-Zone Retest
+    // 👑 Strategy 5C Core Pattern: Deep 5M 50 EMA Dynamic Value-Zone Retest
     const ltfCloses = ltfCandles.map(c => c.close);
     const ema20 = calculateEMA(ltfCloses, 20);
     const ema50 = calculateEMA(ltfCloses, 50);
     const lastEma20 = ema20[ema20.length - 1];
     const lastEma50 = ema50[ema50.length - 1];
 
-    const touchedEma20 = crashTrough <= (lastEma20 + atr * 0.2);
+    // 5M Trend Structure: Short-term 20 EMA must be above or equal to 50 EMA for Bullish Alignment
+    if (lastEma20 < lastEma50) return null;
+
+    // Deep Dynamic Value Zone: Crashes must retest the 5M 50 EMA Dynamic Mean
     const touchedEma50 = crashTrough <= (lastEma50 + atr * 0.2);
-    if (!touchedEma20 && !touchedEma50) return null;
-    const valueZoneTouched = touchedEma50 ? '50 EMA' : '20 EMA';
+    if (!touchedEma50) return null;
+    const valueZoneTouched = '50 EMA Dynamic Mean';
 
     const entry = c0.close;
     const sl = crashTrough - (atr * 1.5);
@@ -724,8 +720,8 @@ async function monitorMarket() {
 
       const latestPrice = ltfCandles[ltfCandles.length - 1].close;
 
-      // 👑 Fresh execution only: strictly the most recently closed 5M bar (no 10-15m stale entries)
-      const LOOKBACK_BARS = 1;
+      // 👑 Execution window: check the 2 most recently closed 5M bars to ensure WS polling latency doesn't miss entries
+      const LOOKBACK_BARS = 2;
       let signalFiredThisScan = false;
 
       // Start at offset = 1 (most recently closed completed 5M candle) to avoid fluctuating in-progress bars
@@ -778,10 +774,10 @@ async function monitorMarket() {
           `<b>Direction:</b> ${dirEmoji} <b>${setup.direction} (Value-Zone Exhaustion Sniper)</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `📊 <b>MULTI-TIMEFRAME CONFLUENCE:</b>`,
-          `  • <b>Macro Trend:</b> <code>Daily + 4H + 1H 50 EMA (${setup.htf1hTrend.toUpperCase()} Aligned)</code>`,
-          `  • <b>1H Momentum Guard:</b> <code>Active Hourly Candle ${setup.direction === 'BUY' ? 'Bullish' : 'Bearish'} Aligned 🛡️</code>`,
+          `  • <b>Macro Trend:</b> <code>Daily + 4H + 1H 50 EMA (${setup.htf1hTrend.toUpperCase()} Aligned) 🛡️</code>`,
+          `  • <b>5M Trend Structure:</b> <code>20 EMA ${setup.direction === 'SELL' ? '≤' : '≥'} 50 EMA Aligned 📊</code>`,
           `  • <b>Spike Cluster:</b> <code>${minSpikes} Consecutive Counter-Trend Spikes</code>`,
-          `  • <b>Dynamic Value Zone:</b> <code>Retested 5M ${setup.valueZoneTouched} Dynamic Mean 🎯</code>`,
+          `  • <b>Dynamic Value Zone:</b> <code>Retested 5M ${setup.valueZoneTouched} 🎯</code>`,
           `  • <b>5M Execution:</b> <code>M5 Exhaustion Close (Body: ${(setup.bodyRatio * 100).toFixed(0)}%)</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `🎯 <b>ENTRY PRICE:</b> <code>${setup.entry.toFixed(2)}</code> (Market — ${candleAgeLabel})`,
@@ -889,7 +885,7 @@ async function main() {
   console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Strategy 5C Value-Zone Sniper LIVE)${RESET}`);
   console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Pairs (81.8% 6-Month Flagship | 1:1.3 R:R | Dynamic Value Zone | 45m/60m Circuit Breakers | Weekly Smart Auto-Compounding)...\n`);
 
-  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5C VALUE-ZONE SNIPER LIVE]</b> Signal Runner active across ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Portfolio with 81.8% 6-Month Win Rate, 5M 20/50 EMA Dynamic Value-Zone Retest, 1:1.3 R:R, 1H Momentum Guard, 45m/60m Circuit Breakers, and Weekly Smart Auto-Compounding!`);
+  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5C VALUE-ZONE SNIPER LIVE]</b> Signal Runner active across ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Portfolio (Universal 2-Spike Sniper, Deep 5M 50 EMA Retest, 1:1.3 R:R, 45m Loss Cooldown, Weekly Auto-Compounding)!`);
 
   await monitorMarket();
   setInterval(monitorMarket, 30000);
