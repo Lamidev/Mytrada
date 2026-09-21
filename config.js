@@ -13,21 +13,21 @@ module.exports = {
 
   // Top 12 Optimized Elite Boom & Crash Hybrid Portfolio (Strategy 5C Institutional Momentum Guard)
   SYMBOLS: {
-    // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend + Deep 5M 50 EMA Retest) ──
+    // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend + Price Action Displacement) ──
     "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 3 }, // 🛡️ Rapid-Fire 3-Spike Sniper
+    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM",  min_spikes: 3 }, // 🛡️ Rapid-Fire 3-Spike Sniper
-    "BOOM100":   { name: "Boom 100 Index",  mode: "BOOM",  min_spikes: 3 }, // 🛡️ Rapid-Fire 3-Spike Sniper
+    "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM100":   { name: "Boom 100 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
 
-    // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend + Deep 5M 50 EMA Retest) ──
+    // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend + Price Action Displacement) ──
     "CRASH500":  { name: "Crash 500 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "CRASH600":  { name: "Crash 600 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "CRASH900":  { name: "Crash 900 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 3 }, // 🛡️ Rapid-Fire 3-Spike Sniper
+    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "CRASH1000": { name: "Crash 1000 Index",mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "CRASH99":   { name: "Crash 99 Index",  mode: "CRASH", min_spikes: 3 }, // 🛡️ Rapid-Fire 3-Spike Sniper
+    "CRASH99":   { name: "Crash 99 Index",  mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
   },
 
   // Multi-Timeframe Confluence Engine
@@ -49,6 +49,7 @@ module.exports = {
   USE_HTF_CHOP_FILTER: true,            // Filter out flat 1H 50 EMA chop (>0.08% clearance required)
   MIN_SPIKES: 2,                        // Universal 2-Spike Model (Strategy 5C)
   MIN_SPIKE_CLUSTER_ATR_RATIO: 0.50,    // 👑 Institutional filter: spike cluster range must be >= 0.5x ATR(14) (filters micro-duds)
+  MIN_CANDLE0_DISPLACEMENT_RATIO: 0.20, // 👑 Price action confirmation: C0 recovery body must be >= 20% of preceding spike
 
   // Institutional Responsive Tiered Circuit Breakers
   CIRCUIT_BREAKER: {

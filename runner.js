@@ -574,25 +574,15 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
 
     const spikePeak = Math.max(c0.high, ...spikeCandles.map(c => c.high));
 
-    // 👑 Strategy 5C Core Pattern: Deep 5M 50 EMA Dynamic Value-Zone Retest
-    const ltfCloses = ltfCandles.map(c => c.close);
-    const ema20 = calculateEMA(ltfCloses, 20);
-    const ema50 = calculateEMA(ltfCloses, 50);
-    const lastEma20 = ema20[ema20.length - 1];
-    const lastEma50 = ema50[ema50.length - 1];
+    // 👑 Strategy 5C Pure Price Action: Candle 0 Displacement Confirmation
+    // Rejects lifeless 1-tick pauses (knife-catches) by ensuring recovery body is >= 20% of preceding spike
+    const lastBoomSpike = spikeCandles[0];
+    const lastSpikeRange = Math.abs(lastBoomSpike.close - lastBoomSpike.open);
+    const c0Body = Math.abs(c0.close - c0.open);
+    const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
+    if (c0Body < (lastSpikeRange * minDisplacementRatio)) return null;
 
-    // 5M Trend Structure: Short-term 20 EMA must be below or equal to 50 EMA for Bearish Alignment
-    if (lastEma20 > lastEma50) return null;
-
-    // Deep Dynamic Value Zone: Spikes must retest the 5M 50 EMA Dynamic Mean
-    const touchedEma50 = spikePeak >= (lastEma50 - atr * 0.2);
-    if (!touchedEma50) return null;
-
-    // 🛡️ Dynamic Mean Defense: Exhaustion candle close must respect 50 EMA resistance (within 0.50x ATR buffer)
-    // Rejects SELL entries if price has violently broken above 50 EMA resistance
-    if (c0.close > (lastEma50 + atr * 0.50)) return null;
-
-    const valueZoneTouched = '50 EMA Dynamic Mean';
+    const valueZoneTouched = 'Price Action Displacement (>=20%)';
 
     const entry = c0.close;
     const sl = spikePeak + (atr * 1.5);
@@ -653,25 +643,15 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
 
     const crashTrough = Math.min(c0.low, ...crashCandles.map(c => c.low));
 
-    // 👑 Strategy 5C Core Pattern: Deep 5M 50 EMA Dynamic Value-Zone Retest
-    const ltfCloses = ltfCandles.map(c => c.close);
-    const ema20 = calculateEMA(ltfCloses, 20);
-    const ema50 = calculateEMA(ltfCloses, 50);
-    const lastEma20 = ema20[ema20.length - 1];
-    const lastEma50 = ema50[ema50.length - 1];
+    // 👑 Strategy 5C Pure Price Action: Candle 0 Displacement Confirmation
+    // Rejects lifeless 1-tick pauses (knife-catches) by ensuring recovery body is >= 20% of preceding spike
+    const lastCrashSpike = crashCandles[0];
+    const lastSpikeRange = Math.abs(lastCrashSpike.close - lastCrashSpike.open);
+    const c0Body = Math.abs(c0.close - c0.open);
+    const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
+    if (c0Body < (lastSpikeRange * minDisplacementRatio)) return null;
 
-    // 5M Trend Structure: Short-term 20 EMA must be above or equal to 50 EMA for Bullish Alignment
-    if (lastEma20 < lastEma50) return null;
-
-    // Deep Dynamic Value Zone: Crashes must retest the 5M 50 EMA Dynamic Mean
-    const touchedEma50 = crashTrough <= (lastEma50 + atr * 0.2);
-    if (!touchedEma50) return null;
-
-    // 🛡️ Dynamic Mean Defense: Exhaustion candle close must respect 50 EMA support (within 0.50x ATR buffer)
-    // Rejects BUY entries if price has violently broken below 50 EMA support (eliminates waterfall knife-catches)
-    if (c0.close < (lastEma50 - atr * 0.50)) return null;
-
-    const valueZoneTouched = '50 EMA Dynamic Mean';
+    const valueZoneTouched = 'Price Action Displacement (>=20%)';
 
     const entry = c0.close;
     const sl = crashTrough - (atr * 1.5);
