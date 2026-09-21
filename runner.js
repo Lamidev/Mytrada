@@ -1,14 +1,14 @@
 // runner.js
 /**
- * Mytrada - High-Frequency Institutional Momentum & Spike Exhaustion Bot (Strategy 5B)
+ * Mytrada - Strategy 5C Value-Zone Sniper (Clean Slate — Locked Production Standard)
  *
  * Execution Core:
- *  - 13 Elite Boom & Crash Portfolio (Daily + 4H + 1H 50 EMA Trend Alignment)
- *  - 2-Spike Cluster Exhaustion Trigger (5M Body >= 50%)
- *  - Fixed 1:1.3 R:R Sniper Target with Dynamic Lot Sizing ($3.00 Max Risk)
- *  - Responsive Tiered Circuit Breakers (30m / 60m / Daily Lockout)
+ *  - 12 Elite Boom & Crash Portfolio (Daily + 4H + 1H 50 EMA Trend Alignment)
+ *  - 2–3 Spike Cluster Exhaustion Trigger (5M Body >= 50%) — Tailored per pair
+ *  - Fixed 1:1.3 R:R Sniper Target with Dynamic Lot Sizing (3% Equity Risk)
+ *  - Responsive Tiered Circuit Breakers (45m Loss Cooldown / Daily Lockout)
  *  - Automated 12:00 AM Midnight Daily Performance Report with Pair-by-Pair Breakdown
- *  - Real-Time Telegram Dispatcher & Gemini AI Gatekeeper Audits
+ *  - Real-Time Telegram Signal Dispatcher
  */
 
 const https = require('https');
@@ -548,6 +548,11 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
     if (dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
 
+    // ✅ Strategy 5C Clean Slate: 1H Candle Color Guard removed.
+    // Macro trend is fully governed by Daily + 4H + 1H 50 EMA alignment above.
+    // Active 1H bar color is irrelevant — counter-trend spikes naturally turn the active
+    // bar against trend during valid 5M pullback entries (proven across 105 historical trades).
+
     let hasSpikes = true;
     const spikeCandles = [];
     for (let s = 1; s <= minSpikes; s++) {
@@ -616,6 +621,11 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf1hTrend !== 'bullish') return null;
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
     if (dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
+
+    // ✅ Strategy 5C Clean Slate: 1H Candle Color Guard removed.
+    // Macro trend is fully governed by Daily + 4H + 1H 50 EMA alignment above.
+    // Active 1H bar color is irrelevant — counter-trend crashes naturally turn the active
+    // bar against trend during valid 5M pullback entries (proven across 105 historical trades).
 
     let hasCrashes = true;
     const crashCandles = [];
@@ -754,20 +764,23 @@ async function monitorMarket() {
         const rewardUSD = compRisk.rewardUSD.toFixed(2);
         const candleAgeLabel = offset === 1 ? '5M Close' : `5M Close (${(offset - 1) * 5}m ago)`;
 
-        // ── GEMINI 2.5 FLASH MULTIMODAL AI VISION AUDIT (A/B SHADOW TRACKER) ──
-        console.log(`[runner] Auditing ${symbol} setup with Gemini 2.5 Flash Dual-Timeframe Vision...`);
-        const aiAudit = await auditTradeWithVision({
-          symbol,
-          direction: setup.direction,
-          entry: setup.entry,
-          tp: setup.tp,
-          sl: setup.sl,
-          candles: ltfCandles,
-          htfCandles: htf1hCandles
-        });
+        // ── OPTIONAL GEMINI 2.5 FLASH MULTIMODAL AI VISION AUDIT ──
+        let aiAudit = { verdict: 'TAKE', reason: 'Pure Quantitative Momentum Guard Execution', confidence: 1.0 };
+        if (config.ENABLE_AI_VISION) {
+          console.log(`[runner] Auditing ${symbol} setup with Gemini 2.5 Flash Dual-Timeframe Vision...`);
+          aiAudit = await auditTradeWithVision({
+            symbol,
+            direction: setup.direction,
+            entry: setup.entry,
+            tp: setup.tp,
+            sl: setup.sl,
+            candles: ltfCandles,
+            htfCandles: htf1hCandles
+          });
+        }
         const aiVerdictBadge = aiAudit.verdict === 'TAKE' ? '🟢 <b>TAKE IT (Trade Approved)</b>' : '🔴 <b>LEAVE IT (Avoid Trade)</b>';
 
-        const alertHtml = [
+        const alertLines = [
           `👑 ${dirEmoji} <b>[MYTRADA STRATEGY 5C VALUE-ZONE SNIPER]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${symConfig.name})`,
@@ -783,12 +796,20 @@ async function monitorMarket() {
           `🎯 <b>ENTRY PRICE:</b> <code>${setup.entry.toFixed(2)}</code> (Market — ${candleAgeLabel})`,
           `🛡️ <b>STOP LOSS (SL):</b> <code>${setup.sl.toFixed(2)}</code> (Peak + 1.5x ATR)`,
           `🏆 <b>TARGET (1:1.3 R:R):</b> <code>${setup.tp.toFixed(2)}</code> (+$${rewardUSD} USD)`,
-          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `🧠 <b>AI VISION AUDIT VERDICT:</b>`,
-          `  • <b>Recommendation:</b> ${aiVerdictBadge}`,
-          `  • <b>Confidence:</b> <code>${(aiAudit.confidence * 100).toFixed(0)}%</code>`,
-          `  • <b>Visual Rationale:</b> <i>${aiAudit.reason}</i>`,
-          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+        ];
+
+        if (config.ENABLE_AI_VISION) {
+          alertLines.push(
+            `🧠 <b>AI VISION AUDIT VERDICT:</b>`,
+            `  • <b>Recommendation:</b> ${aiVerdictBadge}`,
+            `  • <b>Confidence:</b> <code>${(aiAudit.confidence * 100).toFixed(0)}%</code>`,
+            `  • <b>Visual Rationale:</b> <i>${aiAudit.reason}</i>`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+          );
+        }
+
+        alertLines.push(
           `💰 <b>Account & Position Sizing:</b>`,
           `  • Live Account Equity: <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
           `  • Weekly Compounding Base: <code>$${compRisk.balance.toFixed(2)} USD</code>`,
@@ -796,10 +817,12 @@ async function monitorMarket() {
           `  • Max Risk: <code>-$${riskUSD.toFixed(2)} USD (${compRisk.riskPercent.toFixed(1)}%)</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `🚀 <b>EXECUTION:</b> <code>Enter MARKET ${setup.direction} on MT5. Target 1:1.3 R:R.</code>`
-        ].join('\n');
+        );
+
+        const alertHtml = alertLines.join('\n');
 
         await sendTelegramMessage(alertHtml);
-        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 5C SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | AI: ${aiAudit.verdict} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
+        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 5C SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
 
         const activeTrades = loadActiveTrades();
         activeTrades.push({

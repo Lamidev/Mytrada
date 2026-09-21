@@ -1,7 +1,8 @@
 // config.js
 /**
- * Configuration settings for the Algo Market Structure trading bot and backtester.
- * Senior Institutional Quantitative Configuration — Strategy 5B High-Frequency Momentum Model.
+ * Configuration settings for the Mytrada Algo Trading Bot.
+ * 👑 Strategy 5C Value-Zone Sniper — Clean Slate (Locked Production Standard)
+ * Pure price action: Daily + 4H + 1H 50 EMA confluence + 5M spike cluster + dynamic value-zone retest.
  */
 require('dotenv').config();
 
@@ -10,23 +11,23 @@ module.exports = {
   DERIV_APP_ID: 1089, // Public sandbox app_id
   DERIV_WS_URL: "wss://ws.derivws.com/websockets/v3?app_id=1089",
 
-  // Top 10 Optimized Elite Boom & Crash Hybrid Portfolio (Strategy 5B Hybrid)
+  // Top 12 Optimized Elite Boom & Crash Hybrid Portfolio (Strategy 5C Institutional Momentum Guard)
   SYMBOLS: {
     // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend + Deep 5M 50 EMA Retest) ──
-    "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
-    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
-    "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
-    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
-    "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
-    "BOOM100":   { name: "Boom 100 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
+    "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 3 }, // 🛡️ Rapid-Fire 3-Spike Sniper
+    "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM",  min_spikes: 3 }, // 🛡️ Rapid-Fire 3-Spike Sniper
+    "BOOM100":   { name: "Boom 100 Index",  mode: "BOOM",  min_spikes: 3 }, // 🛡️ Rapid-Fire 3-Spike Sniper
 
     // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend + Deep 5M 50 EMA Retest) ──
-    "CRASH500":  { name: "Crash 500 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
-    "CRASH600":  { name: "Crash 600 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
-    "CRASH900":  { name: "Crash 900 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
-    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
-    "CRASH1000": { name: "Crash 1000 Index",mode: "CRASH", min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
-    "CRASH99":   { name: "Crash 99 Index",  mode: "CRASH", min_spikes: 2 }, // 👑 Universal 2-Spike Sniper
+    "CRASH500":  { name: "Crash 500 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "CRASH600":  { name: "Crash 600 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "CRASH900":  { name: "Crash 900 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 3 }, // 🛡️ Rapid-Fire 3-Spike Sniper
+    "CRASH1000": { name: "Crash 1000 Index",mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "CRASH99":   { name: "Crash 99 Index",  mode: "CRASH", min_spikes: 3 }, // 🛡️ Rapid-Fire 3-Spike Sniper
   },
 
   // Multi-Timeframe Confluence Engine
@@ -68,6 +69,7 @@ module.exports = {
   },
 
   // Gemini AI Gatekeeper Settings
+  ENABLE_AI_VISION: false, // Set to true to re-enable Gemini AI Vision shadow audits
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
   GEMINI_MODEL: "gemini-2.5-flash"
 };
