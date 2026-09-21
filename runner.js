@@ -587,6 +587,11 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     // Deep Dynamic Value Zone: Spikes must retest the 5M 50 EMA Dynamic Mean
     const touchedEma50 = spikePeak >= (lastEma50 - atr * 0.2);
     if (!touchedEma50) return null;
+
+    // 🛡️ Dynamic Mean Defense: Exhaustion candle close must respect 50 EMA resistance (within 0.50x ATR buffer)
+    // Rejects SELL entries if price has violently broken above 50 EMA resistance
+    if (c0.close > (lastEma50 + atr * 0.50)) return null;
+
     const valueZoneTouched = '50 EMA Dynamic Mean';
 
     const entry = c0.close;
@@ -661,6 +666,11 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     // Deep Dynamic Value Zone: Crashes must retest the 5M 50 EMA Dynamic Mean
     const touchedEma50 = crashTrough <= (lastEma50 + atr * 0.2);
     if (!touchedEma50) return null;
+
+    // 🛡️ Dynamic Mean Defense: Exhaustion candle close must respect 50 EMA support (within 0.50x ATR buffer)
+    // Rejects BUY entries if price has violently broken below 50 EMA support (eliminates waterfall knife-catches)
+    if (c0.close < (lastEma50 - atr * 0.50)) return null;
+
     const valueZoneTouched = '50 EMA Dynamic Mean';
 
     const entry = c0.close;
