@@ -39,129 +39,43 @@ function timeframeToSeconds(tf) {
   }
 }
 
-/**
- * Fetches historical candles from Deriv WS API or loads from local cache.
- * @param {string} symbol Asset Symbol (e.g., 'R_75')
- * @param {string} timeframe Timeframe (e.g., '15m', '4h')
- * @param {number} count Number of candles to fetch (Max: 5000)
- * @param {boolean} forceRefresh If true, bypasses the cache and fetches new data
- * @returns {Promise<Array>} List of candles
- */
-function getCandles(symbol, timeframe, count = 5000, forceRefresh = false) {
+const WS_OPTIONS = {
+  headers: {
+    'Origin': 'https://app.deriv.com',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  }
+};
+
+const DERIV_ENDPOINTS = [
+  config.DERIV_WS_URL || 'wss://red.derivws.com/websockets/v3?app_id=1089',
+  'wss://red.derivws.com/websockets/v3?app_id=1089',
+  'wss://blue.derivws.com/websockets/v3?app_id=1089',
+  'wss://green.derivws.com/websockets/v3?app_id=1089',
+  'wss://ws.derivws.com/websockets/v3?app_id=1089'
+];
+
+function fetchCandlesFromSingleEndpoint(url, symbol, granularity, count, end = 'latest') {
   return new Promise((resolve, reject) => {
-    const granularity = timeframeToSeconds(timeframe);
-    const cachePath = path.join(CACHE_DIR, `${symbol}_${timeframe}_${count}.json`);
-    
-    // Check cache first
-    if (!forceRefresh && fs.existsSync(cachePath)) {
-      try {
-        const cachedData = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-        // Verify cache integrity
-        if (Array.isArray(cachedData) && cachedData.length > 0) {
-          // console.log(`[Cache] Loaded ${cachedData.length} candles for ${symbol} (${timeframe})`);
-          return resolve(cachedData);
-        }
-      } catch (err) {
-        console.warn(`[Cache Warning] Failed to read cache for ${symbol} (${timeframe}):`, err.message);
-      }
-    }
-    
-    console.log(`[API] Fetching ${count} candles from Deriv WS for ${symbol} (${timeframe})...`);
-    
-    const ws = new WebSocket(config.DERIV_WS_URL);
-    
     let isFinished = false;
+    const ws = new WebSocket(url, WS_OPTIONS);
+
     const timeout = setTimeout(() => {
       if (!isFinished) {
         isFinished = true;
-        ws.terminate();
-        reject(new Error(`Timeout: Deriv WebSocket connection timed out after 15 seconds.`));
+        try { ws.terminate(); } catch(e){}
+        reject(new Error(`Timeout connecting to ${url}`));
       }
-    }, 15000);
-    
-    ws.on('open', () => {
-      const request = {
-        ticks_history: symbol,
-        adjust_start_time: 1,
-        count: count,
-        end: "latest",
-        style: "candles",
-        granularity: granularity
-      };
-      ws.send(JSON.stringify(request));
-    });
-    
-    ws.on('message', (data) => {
-      try {
-        const response = JSON.parse(data.toString());
-        
-        if (response.error) {
-          cleanup();
-          return reject(new Error(`Deriv API Error: ${response.error.message}`));
-        }
-        
-        if (response.msg_type === 'candles') {
-          cleanup();
-          const rawCandles = response.candles || [];
-          
-          // Map candles to standard format
-          const formattedCandles = rawCandles.map(c => ({
-            time: c.epoch * 1000, // Convert to milliseconds for standard JS date manipulation
-            open: parseFloat(c.open),
-            high: parseFloat(c.high),
-            low: parseFloat(c.low),
-            close: parseFloat(c.close),
-            // Deriv candles include close epoch and open epoch, we calculate mid points
-          }));
-          
-          // Save to cache
-          fs.writeFileSync(cachePath, JSON.stringify(formattedCandles, null, 2), 'utf8');
-          console.log(`[API] Successfully saved ${formattedCandles.length} candles to cache for ${symbol} (${timeframe})`);
-          
-          resolve(formattedCandles);
-        }
-      } catch (err) {
-        cleanup();
-        reject(err);
-      }
-    });
-    
-    ws.on('error', (err) => {
-      cleanup();
-      reject(err);
-    });
-    
-    ws.on('close', () => {
-      cleanup();
-      if (!isFinished) {
-        reject(new Error("WebSocket closed prematurely."));
-      }
-    });
-    
-    function cleanup() {
+    }, 10000);
+
+    const cleanup = () => {
       if (isFinished) return;
       isFinished = true;
       clearTimeout(timeout);
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
+        try { ws.close(); } catch(e){}
       }
-    }
-  });
-}
+    };
 
-function fetchCandleChunk(symbol, granularity, count, end) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(config.DERIV_WS_URL);
-    let isFinished = false;
-    
-    const timeout = setTimeout(() => {
-      if (!isFinished) {
-        isFinished = true;
-        ws.terminate();
-        reject(new Error(`Timeout: WebSocket timed out fetching chunk for ${symbol}`));
-      }
-    }, 12000);
-    
     ws.on('open', () => {
       const request = {
         ticks_history: symbol,
@@ -173,53 +87,92 @@ function fetchCandleChunk(symbol, granularity, count, end) {
       };
       ws.send(JSON.stringify(request));
     });
-    
+
     ws.on('message', (data) => {
       try {
         const response = JSON.parse(data.toString());
         if (response.error) {
           cleanup();
-          return reject(new Error(response.error.message));
+          return reject(new Error(`Deriv API Error: ${response.error.message}`));
         }
         if (response.msg_type === 'candles') {
           cleanup();
-          const raw = response.candles || [];
-          const formatted = raw.map(c => ({
+          const rawCandles = response.candles || [];
+          const formattedCandles = rawCandles.map(c => ({
             time: c.epoch * 1000,
             open: parseFloat(c.open),
             high: parseFloat(c.high),
             low: parseFloat(c.low),
             close: parseFloat(c.close)
           }));
-          resolve(formatted);
+          resolve(formattedCandles);
         }
       } catch (err) {
         cleanup();
         reject(err);
       }
     });
-    
+
     ws.on('error', (err) => {
       cleanup();
       reject(err);
     });
-    
+
     ws.on('close', () => {
       cleanup();
       if (!isFinished) {
         reject(new Error("WebSocket closed prematurely."));
       }
     });
-    
-    function cleanup() {
-      if (isFinished) return;
-      isFinished = true;
-      clearTimeout(timeout);
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
-      }
-    }
   });
+}
+
+async function fetchCandlesWithFallback(symbol, granularity, count, end = 'latest') {
+  let lastErr;
+  for (const ep of DERIV_ENDPOINTS) {
+    try {
+      const candles = await fetchCandlesFromSingleEndpoint(ep, symbol, granularity, count, end);
+      if (candles && candles.length > 0) {
+        return candles;
+      }
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error(`All Deriv endpoints failed for ${symbol}`);
+}
+
+/**
+ * Fetches historical candles from Deriv WS API or loads from local cache.
+ * @param {string} symbol Asset Symbol (e.g., 'R_75')
+ * @param {string} timeframe Timeframe (e.g., '15m', '4h')
+ * @param {number} count Number of candles to fetch (Max: 5000)
+ * @param {boolean} forceRefresh If true, bypasses the cache and fetches new data
+ * @returns {Promise<Array>} List of candles
+ */
+async function getCandles(symbol, timeframe, count = 5000, forceRefresh = false) {
+  const granularity = timeframeToSeconds(timeframe);
+  const cachePath = path.join(CACHE_DIR, `${symbol}_${timeframe}_${count}.json`);
+  
+  // Check cache first
+  if (!forceRefresh && fs.existsSync(cachePath)) {
+    try {
+      const cachedData = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+      if (Array.isArray(cachedData) && cachedData.length > 0) {
+        return cachedData;
+      }
+    } catch (err) {
+      console.warn(`[Cache Warning] Failed to read cache for ${symbol} (${timeframe}):`, err.message);
+    }
+  }
+
+  const formattedCandles = await fetchCandlesWithFallback(symbol, granularity, count, 'latest');
+  fs.writeFileSync(cachePath, JSON.stringify(formattedCandles, null, 2), 'utf8');
+  return formattedCandles;
+}
+
+function fetchCandleChunk(symbol, granularity, count, end) {
+  return fetchCandlesWithFallback(symbol, granularity, count, end);
 }
 
 function fetchCandlesInChunks(symbol, granularity, targetCount) {

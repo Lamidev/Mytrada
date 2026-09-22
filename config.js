@@ -9,7 +9,7 @@ require('dotenv').config();
 module.exports = {
   // Deriv Connection Settings
   DERIV_APP_ID: 1089, // Public sandbox app_id
-  DERIV_WS_URL: "wss://ws.derivws.com/websockets/v3?app_id=1089",
+  DERIV_WS_URL: "wss://red.derivws.com/websockets/v3?app_id=1089",
 
   // Top 12 Optimized Elite Boom & Crash Hybrid Portfolio (Strategy 5C Institutional Momentum Guard)
   SYMBOLS: {
