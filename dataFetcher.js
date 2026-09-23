@@ -39,12 +39,18 @@ function timeframeToSeconds(tf) {
   }
 }
 
+const WS_OPTIONS = {
+  headers: {
+    'Origin': 'https://app.deriv.com',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  }
+};
+
 const DERIV_ENDPOINTS = Array.from(new Set([
-  config.DERIV_WS_URL || 'wss://ws.binaryws.com/websockets/v3?app_id=1089',
-  'wss://ws.binaryws.com/websockets/v3?app_id=1089',
-  'wss://frontend.derivws.com/websockets/v3?app_id=1089',
+  config.DERIV_WS_URL || 'wss://blue.derivws.com/websockets/v3?app_id=1089',
   'wss://blue.derivws.com/websockets/v3?app_id=1089',
   'wss://green.derivws.com/websockets/v3?app_id=1089',
+  'wss://red.derivws.com/websockets/v3?app_id=1089',
   'wss://ws.derivws.com/websockets/v3?app_id=1089'
 ]));
 
@@ -85,7 +91,7 @@ class DerivWsClient {
       }, 15000);
 
       try {
-        this.ws = new WebSocket(url);
+        this.ws = new WebSocket(url, WS_OPTIONS);
       } catch (err) {
         clearTimeout(timeout);
         this.rotateEndpoint();
@@ -225,7 +231,7 @@ const globalClient = new DerivWsClient(DERIV_ENDPOINTS);
 function fetchCandlesFromSingleEndpoint(url, symbol, granularity, count, end = 'latest') {
   return new Promise((resolve, reject) => {
     let isFinished = false;
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, WS_OPTIONS);
 
     const timeout = setTimeout(() => {
       if (!isFinished) {
