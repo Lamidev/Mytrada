@@ -1,27 +1,32 @@
+const dns = require('dns');
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 const WebSocket = require('ws');
+const https = require('https');
 
 const configs = [
-  { name: '1. blue.derivws.com (origin app.deriv.com)', url: 'wss://blue.derivws.com/websockets/v3?app_id=1089', origin: 'https://app.deriv.com' },
-  { name: '2. blue.derivws.com (no origin)', url: 'wss://blue.derivws.com/websockets/v3?app_id=1089', origin: null },
-  { name: '3. ws.derivws.com (origin app.deriv.com)', url: 'wss://ws.derivws.com/websockets/v3?app_id=1089', origin: 'https://app.deriv.com' },
-  { name: '4. ws.derivws.com (no origin)', url: 'wss://ws.derivws.com/websockets/v3?app_id=1089', origin: null },
-  { name: '5. ws.derivws.com (app_id 16929)', url: 'wss://ws.derivws.com/websockets/v3?app_id=16929', origin: null },
-  { name: '6. ws.derivws.com (app_id 36300)', url: 'wss://ws.derivws.com/websockets/v3?app_id=36300', origin: null },
-  { name: '7. frontend.derivws.com', url: 'wss://frontend.derivws.com/websockets/v3?app_id=1089', origin: 'https://app.deriv.com' },
-  { name: '8. ws.binaryws.com (origin binary.com)', url: 'wss://ws.binaryws.com/websockets/v3?app_id=1089', origin: 'https://tradingview.binary.com' },
-  { name: '9. ws.binaryws.com (no origin)', url: 'wss://ws.binaryws.com/websockets/v3?app_id=1089', origin: null },
-  { name: '10. red.derivws.com (origin app.deriv.com)', url: 'wss://red.derivws.com/websockets/v3?app_id=1089', origin: 'https://app.deriv.com' }
+  { name: '1. IPv4-Forced blue.derivws.com (with Origin & UA)', url: 'wss://blue.derivws.com/websockets/v3?app_id=1089', family: 4, origin: 'https://app.deriv.com', ua: true },
+  { name: '2. IPv4-Forced ws.derivws.com (with Origin & UA)', url: 'wss://ws.derivws.com/websockets/v3?app_id=1089', family: 4, origin: 'https://app.deriv.com', ua: true },
+  { name: '3. IPv4-Forced red.derivws.com (with Origin & UA)', url: 'wss://red.derivws.com/websockets/v3?app_id=1089', family: 4, origin: 'https://app.deriv.com', ua: true },
+  { name: '4. IPv4-Forced ws.derivws.com (no Origin, with UA)', url: 'wss://ws.derivws.com/websockets/v3?app_id=1089', family: 4, origin: null, ua: true },
+  { name: '5. IPv4-Forced ws.derivws.com (no Origin, no UA)', url: 'wss://ws.derivws.com/websockets/v3?app_id=1089', family: 4, origin: null, ua: false },
+  { name: '6. IPv4-Forced ws.derivws.com (app_id 16929, no Origin)', url: 'wss://ws.derivws.com/websockets/v3?app_id=16929', family: 4, origin: null, ua: false },
+  { name: '7. IPv4-Forced green.derivws.com (with Origin & UA)', url: 'wss://green.derivws.com/websockets/v3?app_id=1089', family: 4, origin: 'https://app.deriv.com', ua: true },
+  { name: '8. IPv4-Forced frontend.derivws.com (with Origin & UA)', url: 'wss://frontend.derivws.com/websockets/v3?app_id=1089', family: 4, origin: 'https://app.deriv.com', ua: true },
 ];
 
 function testConfig(cfg) {
   return new Promise((resolve) => {
     console.log(`\n========================================\nTesting ${cfg.name}...\nURL: ${cfg.url}`);
     const headers = {};
-    if (cfg.origin) {
-      headers['Origin'] = cfg.origin;
-    }
+    if (cfg.origin) headers['Origin'] = cfg.origin;
+    if (cfg.ua) headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-    const ws = new WebSocket(cfg.url, { headers });
+    const wsOptions = { headers };
+    if (cfg.family) wsOptions.family = cfg.family;
+
+    const ws = new WebSocket(cfg.url, wsOptions);
     let resolved = false;
 
     const timer = setTimeout(() => {
@@ -42,9 +47,6 @@ function testConfig(cfg) {
       res.on('end', () => {
         console.log(`❌ Unexpected Response: ${res.statusCode} ${res.statusMessage}`);
         console.log(`   cf-ray: ${res.headers['cf-ray'] || 'none'}`);
-        console.log(`   server: ${res.headers['server'] || 'none'}`);
-        const titleMatch = body.match(/<title>(.*?)<\/title>/i);
-        if (titleMatch) console.log(`   Page title: ${titleMatch[1]}`);
         resolve();
       });
     });
