@@ -435,19 +435,17 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
       const updatedBalance = getCurrentAccountBalance();
 
       const tpAlert = [
-        `🏆 🟢 <b>[MYTRADA TP HIT — FULL TARGET (1:1.3 R:R)]</b>`,
+        `🏆 🟢 <b>[MYTRADA TP HIT (+1.3R)]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
         `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💰 <b>PROFIT CAPTURED:</b> <code>+$${pnlUsd.toFixed(2)} USD (+1.3R / +${(compRisk.riskPercent * (config.REWARD_RATIO || 1.3)).toFixed(1)}%)</code>`,
-        `💵 <b>New Account Balance:</b> <code>$${updatedBalance.toFixed(2)} USD</code>`,
-        `🎯 <b>Entry Price:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
-        `🏆 <b>TP Hit:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
+        `💰 <b>Profit:</b> <code>+$${pnlUsd.toFixed(2)} USD (+1.3R)</code>`,
+        `💵 <b>New Balance:</b> <code>$${updatedBalance.toFixed(2)} USD</code>`,
+        `🎯 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> ➔ 🏆 <b>TP:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
         aiValidation,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `🛡️ <i>Post-win breathing room active (${config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 15}m).</i>`,
-        `✅ <i>Trade fully completed in maximum profit!</i>`
+        `🛡️ <i>Post-win cooldown active (${config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 35}m).</i>`
       ].filter(Boolean).join('\n');
 
       await sendTelegramMessage(tpAlert);
@@ -477,17 +475,15 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
         `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💸 <b>LOSS:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R / -${compRisk.riskPercent.toFixed(1)}%)</code>`,
-        `💵 <b>New Account Balance:</b> <code>$${updatedBalance.toFixed(2)} USD</code>`,
-        `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> | 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
+        `💸 <b>Loss:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R)</code>`,
+        `💵 <b>New Balance:</b> <code>$${updatedBalance.toFixed(2)} USD</code>`,
+        `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> ➔ 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
         aiValidation,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `🛡️ <i>Single-pair cooldown active (${pauseMins}m).</i>`
+        `🛡️ <i>Defensive cooldown active (${pauseMins}m).</i>`
       ].filter(Boolean).join('\n');
 
       await sendTelegramMessage(slAlert);
-      recordSymbolTradeOutcome(symbol, 'LOSS');
-      recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0, trade.aiVisionVerdict);
 
       updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
       changed = true;
@@ -771,43 +767,28 @@ async function monitorMarket() {
         const aiVerdictBadge = aiAudit.verdict === 'TAKE' ? '🟢 <b>TAKE IT (Trade Approved)</b>' : '🔴 <b>LEAVE IT (Avoid Trade)</b>';
 
         const alertLines = [
-          `👑 ${dirEmoji} <b>[MYTRADA STRATEGY 5C VALUE-ZONE SNIPER]</b>`,
+          `👑 ${dirEmoji} <b>[MYTRADA SIGNAL]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${symConfig.name})`,
-          `<b>Direction:</b> ${dirEmoji} <b>${setup.direction} (Value-Zone Exhaustion Sniper)</b>`,
+          `<b>Action:</b> ${dirEmoji} <b>${setup.direction} (Market)</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `📊 <b>MULTI-TIMEFRAME CONFLUENCE:</b>`,
-          `  • <b>Macro Trend:</b> <code>Daily + 4H + 1H 50 EMA (${setup.htf1hTrend.toUpperCase()} Aligned) 🛡️</code>`,
-          `  • <b>5M Trend Structure:</b> <code>20 EMA ${setup.direction === 'SELL' ? '≤' : '≥'} 50 EMA Aligned 📊</code>`,
-          `  • <b>Spike Cluster:</b> <code>${minSpikes} Consecutive Counter-Trend Spikes</code>`,
-          `  • <b>Dynamic Value Zone:</b> <code>Retested 5M ${setup.valueZoneTouched} 🎯</code>`,
-          `  • <b>5M Execution:</b> <code>M5 Exhaustion Close (Body: ${(setup.bodyRatio * 100).toFixed(0)}%)</code>`,
+          `🎯 <b>Entry:</b> <code>${setup.entry.toFixed(2)}</code>`,
+          `🛡️ <b>Stop Loss:</b> <code>${setup.sl.toFixed(2)}</code>`,
+          `🏆 <b>Take Profit:</b> <code>${setup.tp.toFixed(2)}</code> (+$${rewardUSD} USD • 1:1.3 R:R)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `🎯 <b>ENTRY PRICE:</b> <code>${setup.entry.toFixed(2)}</code> (Market — ${candleAgeLabel})`,
-          `🛡️ <b>STOP LOSS (SL):</b> <code>${setup.sl.toFixed(2)}</code> (Peak + 1.5x ATR)`,
-          `🏆 <b>TARGET (1:1.3 R:R):</b> <code>${setup.tp.toFixed(2)}</code> (+$${rewardUSD} USD)`,
-          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+          `💰 <b>Lot Size:</b> <code>${lotSize} Lots</code>`,
+          `🛡️ <b>Risk:</b> <code>-$${riskUSD.toFixed(2)} USD (${compRisk.riskPercent.toFixed(1)}%)</code>`,
+          `💵 <b>Account Equity:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `📊 <i>Trend: ${setup.htf1hTrend.toUpperCase()} | 2 Spikes Exhaustion</i>`
         ];
 
         if (config.ENABLE_AI_VISION) {
           alertLines.push(
-            `🧠 <b>AI VISION AUDIT VERDICT:</b>`,
-            `  • <b>Recommendation:</b> ${aiVerdictBadge}`,
-            `  • <b>Confidence:</b> <code>${(aiAudit.confidence * 100).toFixed(0)}%</code>`,
-            `  • <b>Visual Rationale:</b> <i>${aiAudit.reason}</i>`,
-            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `🧠 <b>AI VISION AUDIT:</b> ${aiVerdictBadge} (Confidence: ${(aiAudit.confidence * 100).toFixed(0)}%)`
           );
         }
-
-        alertLines.push(
-          `💰 <b>Account & Position Sizing:</b>`,
-          `  • Live Account Equity: <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
-          `  • Weekly Compounding Base: <code>$${compRisk.balance.toFixed(2)} USD</code>`,
-          `  • Recommended Lot: <code>${lotSize} Lots</code>`,
-          `  • Max Risk: <code>-$${riskUSD.toFixed(2)} USD (${compRisk.riskPercent.toFixed(1)}%)</code>`,
-          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `🚀 <b>EXECUTION:</b> <code>Enter MARKET ${setup.direction} on MT5. Target 1:1.3 R:R.</code>`
-        );
 
         const alertHtml = alertLines.join('\n');
 
@@ -898,7 +879,7 @@ async function main() {
   console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Strategy 5C Value-Zone Sniper LIVE)${RESET}`);
   console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Pairs (81.8% 6-Month Flagship | 1:1.3 R:R | Dynamic Value Zone | 45m/60m Circuit Breakers | Weekly Smart Auto-Compounding)...\n`);
 
-  await sendTelegramMessage(`🚀 <b>[MYTRADA STRATEGY 5C VALUE-ZONE SNIPER LIVE]</b> Signal Runner active across ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Portfolio (Universal 2-Spike Sniper, Deep 5M 50 EMA Retest, 1:1.3 R:R, 45m Loss Cooldown, Weekly Auto-Compounding)!`);
+  await sendTelegramMessage(`🚀 <b>[MYTRADA SYSTEM ONLINE]</b>\nMonitoring ${Object.keys(config.SYMBOLS).length} Elite Pairs (1:1.3 R:R • 35m/45m Cooldowns active).`);
 
   await monitorMarket();
   setInterval(monitorMarket, 30000);
