@@ -837,6 +837,9 @@ async function monitorMarket() {
     } catch (err) {
       console.warn(`  [WARN] ${symbol}: ${err.message}`);
     }
+
+    // Pacing delay (200ms) between symbols to prevent Cloudflare WS handshake bursting
+    await new Promise(r => setTimeout(r, 200));
   }
 
   console.log(`-------------------------------------------------------------------------------------------------`);

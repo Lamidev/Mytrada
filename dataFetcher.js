@@ -137,6 +137,7 @@ async function fetchCandlesWithFallback(symbol, granularity, count, end = 'lates
       }
     } catch (err) {
       lastErr = err;
+      await new Promise(r => setTimeout(r, 300));
     }
   }
   throw lastErr || new Error(`All Deriv endpoints failed for ${symbol}`);
