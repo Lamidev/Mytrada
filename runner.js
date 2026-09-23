@@ -835,6 +835,7 @@ async function monitorMarket() {
         await checkActiveTradesForSymbol(symbol, ltfCandles);
       }
     } catch (err) {
+      console.log(`  [DATA ERROR] ${symbol}: ${err.message}`);
       console.warn(`  [WARN] ${symbol}: ${err.message}`);
     }
 
@@ -852,6 +853,23 @@ async function main() {
   const isTest = args.includes('--test');
   const isReport = args.includes('--report');
   const isScanOnly = args.includes('--scan') || args.includes('--once');
+  const isTestData = args.includes('--test-data');
+
+  if (isTestData) {
+    console.log(`\n👑 ${BOLD}${CYAN}Testing Deriv Live Data Feed (${Object.keys(config.SYMBOLS).length} Elite Pairs)...${RESET}`);
+    const symbols = Object.keys(config.SYMBOLS);
+    for (const sym of symbols) {
+      try {
+        const c = await getCandles(sym, '5m', 10, true);
+        const latest = c[c.length - 1];
+        console.log(`  ${GREEN}✅ ${sym.padEnd(12)}${RESET} | Latest: ${latest.close.toFixed(2)} | Time: ${new Date(latest.time).toTimeString().slice(0, 8)}`);
+      } catch (err) {
+        console.log(`  ${RED}❌ ${sym.padEnd(12)}${RESET} | ERROR: ${err.message}`);
+      }
+    }
+    console.log(`\n${GREEN}✅ Data connection test complete.${RESET}`);
+    process.exit(0);
+  }
 
   if (isTest) {
     console.log("\n🧪 Dispatching Test Telegram Alert...");
