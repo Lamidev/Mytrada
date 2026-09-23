@@ -40,12 +40,12 @@ function timeframeToSeconds(tf) {
 }
 
 const DERIV_ENDPOINTS = Array.from(new Set([
-  config.DERIV_WS_URL || 'wss://ws.derivws.com/websockets/v3?app_id=16929',
-  'wss://ws.derivws.com/websockets/v3?app_id=16929',
+  config.DERIV_WS_URL || 'wss://ws.binaryws.com/websockets/v3?app_id=1089',
+  'wss://ws.binaryws.com/websockets/v3?app_id=1089',
   'wss://frontend.derivws.com/websockets/v3?app_id=1089',
   'wss://blue.derivws.com/websockets/v3?app_id=1089',
   'wss://green.derivws.com/websockets/v3?app_id=1089',
-  'wss://ws.binaryws.com/websockets/v3?app_id=1089'
+  'wss://ws.derivws.com/websockets/v3?app_id=1089'
 ]));
 
 class DerivWsClient {
@@ -82,10 +82,10 @@ class DerivWsClient {
           this.rotateEndpoint();
           reject(new Error(`Timeout connecting to ${url}`));
         }
-      }, 8000);
+      }, 15000);
 
       try {
-        this.ws = new WebSocket(url, { handshakeTimeout: 6000 });
+        this.ws = new WebSocket(url);
       } catch (err) {
         clearTimeout(timeout);
         this.rotateEndpoint();
@@ -225,7 +225,7 @@ const globalClient = new DerivWsClient(DERIV_ENDPOINTS);
 function fetchCandlesFromSingleEndpoint(url, symbol, granularity, count, end = 'latest') {
   return new Promise((resolve, reject) => {
     let isFinished = false;
-    const ws = new WebSocket(url, { handshakeTimeout: 5000 });
+    const ws = new WebSocket(url);
 
     const timeout = setTimeout(() => {
       if (!isFinished) {
@@ -233,7 +233,7 @@ function fetchCandlesFromSingleEndpoint(url, symbol, granularity, count, end = '
         try { ws.terminate(); } catch(e){}
         reject(new Error(`Timeout connecting to ${url}`));
       }
-    }, 8000);
+    }, 15000);
 
     const cleanup = () => {
       if (isFinished) return;
