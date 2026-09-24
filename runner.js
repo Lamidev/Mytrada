@@ -712,7 +712,9 @@ async function monitorMarket() {
         ? await getCachedHtfCandles(symbol, config.MACRO_DAILY || '1d', 60, 60 * 60 * 1000)
         : null;
       const htf4hCandles = await getCachedHtfCandles(symbol, config.MACRO_HTF || '4h', 100, 15 * 60 * 1000);
+      await new Promise(r => setTimeout(r, 150));
       const htf1hCandles = await getCachedHtfCandles(symbol, config.INTERMEDIATE_HTF || '1h', 100, 5 * 60 * 1000);
+      await new Promise(r => setTimeout(r, 150));
       const ltfCandles   = await getCandles(symbol, config.DEFAULT_LTF || '5m', 150, true);
       if (!htf1hCandles || !ltfCandles) continue;
 
@@ -841,8 +843,8 @@ async function monitorMarket() {
       console.warn(`  [WARN] ${symbol}: ${err.message}`);
     }
 
-    // Pacing delay (200ms) between symbols to prevent Cloudflare WS handshake bursting
-    await new Promise(r => setTimeout(r, 200));
+    // Pacing delay (300ms) between symbols to prevent Datacenter IP rate-limiting
+    await new Promise(r => setTimeout(r, 300));
   }
 
   console.log(`-------------------------------------------------------------------------------------------------`);

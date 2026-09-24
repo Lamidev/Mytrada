@@ -342,7 +342,7 @@ async function fetchCandlesWithFallback(symbol, granularity, count, end = 'lates
           }));
         }
       } catch (retryErr) {
-        // Fall through to fallback
+        throw retryErr || err;
       }
     }
   }
