@@ -320,7 +320,31 @@ async function fetchCandlesWithFallback(symbol, granularity, count, end = 'lates
       }));
     }
   } catch (err) {
-    // If persistent client is rotating, fallback gracefully
+    if (err.message && err.message.toLowerCase().includes('rate limit')) {
+      // Deriv sliding 1s rate-limit window: pause 1.5s and retry cleanly on persistent connection
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const retryRes = await globalClient.request({
+          ticks_history: symbol,
+          adjust_start_time: 1,
+          count: count,
+          end: end,
+          style: "candles",
+          granularity: granularity
+        }, 8000);
+        if (retryRes.msg_type === 'candles' && Array.isArray(retryRes.candles) && retryRes.candles.length > 0) {
+          return retryRes.candles.map(c => ({
+            time: c.epoch * 1000,
+            open: parseFloat(c.open),
+            high: parseFloat(c.high),
+            low: parseFloat(c.low),
+            close: parseFloat(c.close)
+          }));
+        }
+      } catch (retryErr) {
+        // Fall through to fallback
+      }
+    }
   }
 
   // 2. Direct fallback across available endpoints
@@ -333,7 +357,7 @@ async function fetchCandlesWithFallback(symbol, granularity, count, end = 'lates
       }
     } catch (err) {
       lastErr = err;
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 400));
     }
   }
   throw lastErr || new Error(`All Deriv endpoints failed for ${symbol}`);

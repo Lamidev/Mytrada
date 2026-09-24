@@ -708,7 +708,9 @@ async function monitorMarket() {
       }
 
       // Use cached HTF candles (TTL: 1D = 1hr, 4H = 15m, 1H = 5m) to prevent WS socket overload
-      const dailyCandles = await getCachedHtfCandles(symbol, config.MACRO_DAILY || '1d', 60, 60 * 60 * 1000);
+      const dailyCandles = config.REQUIRE_DAILY_CONFLUENCE
+        ? await getCachedHtfCandles(symbol, config.MACRO_DAILY || '1d', 60, 60 * 60 * 1000)
+        : null;
       const htf4hCandles = await getCachedHtfCandles(symbol, config.MACRO_HTF || '4h', 100, 15 * 60 * 1000);
       const htf1hCandles = await getCachedHtfCandles(symbol, config.INTERMEDIATE_HTF || '1h', 100, 5 * 60 * 1000);
       const ltfCandles   = await getCandles(symbol, config.DEFAULT_LTF || '5m', 150, true);
