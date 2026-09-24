@@ -9,7 +9,7 @@ require('dotenv').config();
 module.exports = {
   // Deriv Connection Settings
   DERIV_APP_ID: 1089, // Standard Deriv public app_id
-  DERIV_WS_URL: "wss://blue.derivws.com/websockets/v3?app_id=1089",
+  DERIV_WS_URL: "wss://api.derivws.com/trading/v1/options/ws/public",
 
   // Top 10 Optimized Elite Boom & Crash Portfolio (Strategy 5C Institutional Momentum Guard)
   SYMBOLS: {
@@ -18,14 +18,13 @@ module.exports = {
     "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "BOOM100":   { name: "Boom 100 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
 
     // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend + Price Action Displacement) ──
     "CRASH500":  { name: "Crash 500 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "CRASH600":  { name: "Crash 600 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "CRASH900":  { name: "Crash 900 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "CRASH1000": { name: "Crash 1000 Index",mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "CRASH99":   { name: "Crash 99 Index",  mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
   },
 
   // Multi-Timeframe Confluence Engine

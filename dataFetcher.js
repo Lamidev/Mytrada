@@ -46,13 +46,10 @@ const WS_OPTIONS = {
   }
 };
 
-const DERIV_ENDPOINTS = Array.from(new Set([
-  config.DERIV_WS_URL || 'wss://blue.derivws.com/websockets/v3?app_id=1089',
-  'wss://blue.derivws.com/websockets/v3?app_id=1089',
-  'wss://green.derivws.com/websockets/v3?app_id=1089',
-  'wss://red.derivws.com/websockets/v3?app_id=1089',
-  'wss://ws.derivws.com/websockets/v3?app_id=1089'
-]));
+const DERIV_ENDPOINTS = [
+  config.DERIV_WS_URL || 'wss://api.derivws.com/trading/v1/options/ws/public',
+  'wss://api.derivws.com/trading/v1/options/ws/public'
+];
 
 class DerivWsClient {
   constructor(endpoints) {
@@ -91,7 +88,7 @@ class DerivWsClient {
       }, 15000);
 
       try {
-        this.ws = new WebSocket(url, WS_OPTIONS);
+        this.ws = new WebSocket(url);
       } catch (err) {
         clearTimeout(timeout);
         this.rotateEndpoint();
@@ -231,7 +228,7 @@ const globalClient = new DerivWsClient(DERIV_ENDPOINTS);
 function fetchCandlesFromSingleEndpoint(url, symbol, granularity, count, end = 'latest') {
   return new Promise((resolve, reject) => {
     let isFinished = false;
-    const ws = new WebSocket(url, WS_OPTIONS);
+    const ws = new WebSocket(url);
 
     const timeout = setTimeout(() => {
       if (!isFinished) {
