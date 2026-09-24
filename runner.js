@@ -532,10 +532,7 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     }
   }
 
-  const c0 = ltfCandles[ltfCandles.length - 1];
-  const c0Range = c0.high - c0.low;
-  const c0Body  = Math.abs(c0.close - c0.open);
-  const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
+  const confirmCount = config.CONFIRMATION_CANDLES || 2;
   const minSpikes = minSpikesRequired || config.MIN_SPIKES || 2;
 
   // ── CASE 1: SELL (BOOM) ──
@@ -544,21 +541,31 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
 
-    // ✅ Strategy 5C Clean Slate: 1H Candle Color Guard removed.
-    // Macro trend is fully governed by Daily + 4H + 1H 50 EMA alignment above.
-    // Active 1H bar color is irrelevant — counter-trend spikes naturally turn the active
-    // bar against trend during valid 5M pullback entries (proven across 105 historical trades).
+    // 1. Multi-Candle Confirmation: Last confirmCount candles must all be closed RED (close < open)
+    let hasConfirm = true;
+    const confirmCandles = [];
+    for (let cIdx = 0; cIdx < confirmCount; cIdx++) {
+      const c = ltfCandles[ltfCandles.length - 1 - cIdx];
+      if (!c || c.close >= c.open) { hasConfirm = false; break; }
+      confirmCandles.push(c);
+    }
+    if (!hasConfirm || confirmCandles.length < confirmCount) return null;
 
+    const c0 = confirmCandles[0];
+    const c0Range = c0.high - c0.low;
+    const c0Body = Math.abs(c0.close - c0.open);
+    const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
+    if (bodyRatio < 0.40) return null;
+
+    // 2. Preceding minSpikes candles must be GREEN spikes (close > open)
     let hasSpikes = true;
     const spikeCandles = [];
-    for (let s = 1; s <= minSpikes; s++) {
-      const c = ltfCandles[ltfCandles.length - 1 - s];
+    for (let s = 0; s < minSpikes; s++) {
+      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
       if (!c || c.close <= c.open) { hasSpikes = false; break; }
       spikeCandles.push(c);
     }
-
-    const c0Exhaustion = c0.close < c0.open && bodyRatio >= 0.50;
-    if (!hasSpikes || !c0Exhaustion) return null;
+    if (!hasSpikes || spikeCandles.length < minSpikes) return null;
 
     const atr = calculateATR(ltfCandles, 14);
     if (!atr || atr === 0) return null;
@@ -568,17 +575,16 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const spikeClusterRange = Math.max(...spikeCandles.map(c => c.high)) - Math.min(...spikeCandles.map(c => c.low));
     if (spikeClusterRange < minClusterRange) return null;
 
-    const spikePeak = Math.max(c0.high, ...spikeCandles.map(c => c.high));
+    const spikePeak = Math.max(...confirmCandles.map(c => c.high), ...spikeCandles.map(c => c.high));
 
-    // 👑 Strategy 5C Pure Price Action: Candle 0 Displacement Confirmation
-    // Rejects lifeless 1-tick pauses (knife-catches) by ensuring recovery body is >= 20% of preceding spike
+    // 👑 Cumulative Displacement Confirmation: Combined recovery bodies must be >= 20% of preceding spike
     const lastBoomSpike = spikeCandles[0];
     const lastSpikeRange = Math.abs(lastBoomSpike.close - lastBoomSpike.open);
-    const c0Body = Math.abs(c0.close - c0.open);
+    const totalRecoveryBody = confirmCandles.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0);
     const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
-    if (c0Body < (lastSpikeRange * minDisplacementRatio)) return null;
+    if (totalRecoveryBody < (lastSpikeRange * minDisplacementRatio)) return null;
 
-    const valueZoneTouched = 'Price Action Displacement (>=20%)';
+    const valueZoneTouched = `Price Action Displacement (${confirmCount}x 5M Recovery >=20%)`;
 
     const entry = c0.close;
     const sl = spikePeak + (atr * 1.5);
@@ -603,7 +609,8 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
       h1ClearancePct,
       bodyRatio,
       valueZoneTouched,
-      candleEpoch
+      candleEpoch,
+      confirmCount
     };
   }
 
@@ -613,21 +620,31 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
 
-    // ✅ Strategy 5C Clean Slate: 1H Candle Color Guard removed.
-    // Macro trend is fully governed by Daily + 4H + 1H 50 EMA alignment above.
-    // Active 1H bar color is irrelevant — counter-trend crashes naturally turn the active
-    // bar against trend during valid 5M pullback entries (proven across 105 historical trades).
+    // 1. Multi-Candle Confirmation: Last confirmCount candles must all be closed GREEN (close > open)
+    let hasConfirm = true;
+    const confirmCandles = [];
+    for (let cIdx = 0; cIdx < confirmCount; cIdx++) {
+      const c = ltfCandles[ltfCandles.length - 1 - cIdx];
+      if (!c || c.close <= c.open) { hasConfirm = false; break; }
+      confirmCandles.push(c);
+    }
+    if (!hasConfirm || confirmCandles.length < confirmCount) return null;
 
+    const c0 = confirmCandles[0];
+    const c0Range = c0.high - c0.low;
+    const c0Body = Math.abs(c0.close - c0.open);
+    const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
+    if (bodyRatio < 0.40) return null;
+
+    // 2. Preceding minSpikes candles must be RED crash spikes (close < open)
     let hasCrashes = true;
     const crashCandles = [];
-    for (let s = 1; s <= minSpikes; s++) {
-      const c = ltfCandles[ltfCandles.length - 1 - s];
+    for (let s = 0; s < minSpikes; s++) {
+      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
       if (!c || c.close >= c.open) { hasCrashes = false; break; }
       crashCandles.push(c);
     }
-
-    const c0Exhaustion = c0.close > c0.open && bodyRatio >= 0.50;
-    if (!hasCrashes || !c0Exhaustion) return null;
+    if (!hasCrashes || crashCandles.length < minSpikes) return null;
 
     const atr = calculateATR(ltfCandles, 14);
     if (!atr || atr === 0) return null;
@@ -637,17 +654,16 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const crashClusterRange = Math.max(...crashCandles.map(c => c.high)) - Math.min(...crashCandles.map(c => c.low));
     if (crashClusterRange < minClusterRange) return null;
 
-    const crashTrough = Math.min(c0.low, ...crashCandles.map(c => c.low));
+    const crashTrough = Math.min(...confirmCandles.map(c => c.low), ...crashCandles.map(c => c.low));
 
-    // 👑 Strategy 5C Pure Price Action: Candle 0 Displacement Confirmation
-    // Rejects lifeless 1-tick pauses (knife-catches) by ensuring recovery body is >= 20% of preceding spike
+    // 👑 Cumulative Displacement Confirmation: Combined recovery bodies must be >= 20% of preceding crash
     const lastCrashSpike = crashCandles[0];
     const lastSpikeRange = Math.abs(lastCrashSpike.close - lastCrashSpike.open);
-    const c0Body = Math.abs(c0.close - c0.open);
+    const totalRecoveryBody = confirmCandles.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0);
     const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
-    if (c0Body < (lastSpikeRange * minDisplacementRatio)) return null;
+    if (totalRecoveryBody < (lastSpikeRange * minDisplacementRatio)) return null;
 
-    const valueZoneTouched = 'Price Action Displacement (>=20%)';
+    const valueZoneTouched = `Price Action Displacement (${confirmCount}x 5M Recovery >=20%)`;
 
     const entry = c0.close;
     const sl = crashTrough - (atr * 1.5);
@@ -672,7 +688,8 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
       h1ClearancePct,
       bodyRatio,
       valueZoneTouched,
-      candleEpoch
+      candleEpoch,
+      confirmCount
     };
   }
 
@@ -720,11 +737,11 @@ async function monitorMarket() {
 
       const latestPrice = ltfCandles[ltfCandles.length - 1].close;
 
-      // 👑 Execution window: check the 2 most recently closed 5M bars to ensure WS polling latency doesn't miss entries
-      const LOOKBACK_BARS = 2;
+      // 👑 Execution window: evaluate ONLY the most recently closed 5M bar (offset=1)
+      // Never look back into stale bars to avoid firing signals that have already hit SL/TP
+      const LOOKBACK_BARS = 1;
       let signalFiredThisScan = false;
 
-      // Start at offset = 1 (most recently closed completed 5M candle) to avoid fluctuating in-progress bars
       for (let offset = 1; offset <= LOOKBACK_BARS; offset++) {
         if (ltfCandles.length < offset + 25) break;
 
@@ -740,6 +757,20 @@ async function monitorMarket() {
           if (alertedSetups.has(setupId)) {
             console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | Setup active (already alerted)`);
           }
+          break;
+        }
+
+        // 👑 Stale Signal & Ghost Trap Guard:
+        // Never fire a signal if live price has already breached Stop Loss or reached Take Profit
+        const isBullish = setup.direction === 'BUY';
+        const slAlreadyHit = isBullish ? latestPrice <= setup.sl : latestPrice >= setup.sl;
+        const tpAlreadyHit = isBullish ? latestPrice >= setup.tp : latestPrice <= setup.tp;
+        const maxAllowedDrift = (setup.atr || 1.0) * 0.40;
+        const priceDrift = Math.abs(latestPrice - setup.entry);
+
+        if (slAlreadyHit || tpAlreadyHit || priceDrift > maxAllowedDrift) {
+          console.log(`  [${mode}] ${symbol.padEnd(12)} | Discarding stale setup (live price ${latestPrice.toFixed(2)} already beyond entry ${setup.entry.toFixed(2)} / SL ${setup.sl.toFixed(2)})`);
+          saveAlertedSetup(setupId); // mark as alerted so it doesn't re-trigger
           break;
         }
 
@@ -784,7 +815,7 @@ async function monitorMarket() {
           `🛡️ <b>Risk:</b> <code>-$${riskUSD.toFixed(2)} USD (${compRisk.riskPercent.toFixed(1)}%)</code>`,
           `💵 <b>Account Equity:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `📊 <i>Trend: 4H ${setup.htf4hTrend.toUpperCase()} + 1H ${setup.htf1hTrend.toUpperCase()} | 2 Spikes Exhaustion</i>`
+          `📊 <i>Trend: 4H ${setup.htf4hTrend.toUpperCase()} + 1H ${setup.htf1hTrend.toUpperCase()} | ${minSpikes} Spikes + ${setup.confirmCount || 2}x 5M Confirmation</i>`
         ];
 
         if (config.ENABLE_AI_VISION) {
