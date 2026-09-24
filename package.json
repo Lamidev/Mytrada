@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "dev": "node runner.js",
     "live": "node runner.js",
     "test-alert": "node runner.js --test",
     "trades": "node getTrades.js",
