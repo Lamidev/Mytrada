@@ -542,7 +542,7 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
   if (mode === 'BOOM') {
     if (htf1hTrend !== 'bearish') return null;
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
-    if (dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
+    if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
 
     // ✅ Strategy 5C Clean Slate: 1H Candle Color Guard removed.
     // Macro trend is fully governed by Daily + 4H + 1H 50 EMA alignment above.
@@ -611,7 +611,7 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
   if (mode === 'CRASH') {
     if (htf1hTrend !== 'bullish') return null;
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
-    if (dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
+    if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
 
     // ✅ Strategy 5C Clean Slate: 1H Candle Color Guard removed.
     // Macro trend is fully governed by Daily + 4H + 1H 50 EMA alignment above.
@@ -780,7 +780,7 @@ async function monitorMarket() {
           `🛡️ <b>Risk:</b> <code>-$${riskUSD.toFixed(2)} USD (${compRisk.riskPercent.toFixed(1)}%)</code>`,
           `💵 <b>Account Equity:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `📊 <i>Trend: ${setup.htf1hTrend.toUpperCase()} | 2 Spikes Exhaustion</i>`
+          `📊 <i>Trend: 4H ${setup.htf4hTrend.toUpperCase()} + 1H ${setup.htf1hTrend.toUpperCase()} | 2 Spikes Exhaustion</i>`
         ];
 
         if (config.ENABLE_AI_VISION) {
