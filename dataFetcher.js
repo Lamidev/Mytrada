@@ -46,9 +46,12 @@ const WS_OPTIONS = {
   }
 };
 
+const DERIV_PRIMARY_URL = (config.DERIV_WS_URL || 'wss://api.derivws.com/trading/v1/options/ws/public')
+  + ((config.DERIV_WS_URL || '').includes('app_id') ? '' : `?app_id=${config.DERIV_APP_ID || 1089}`);
+
 const DERIV_ENDPOINTS = [
-  config.DERIV_WS_URL || 'wss://api.derivws.com/trading/v1/options/ws/public',
-  'wss://api.derivws.com/trading/v1/options/ws/public'
+  DERIV_PRIMARY_URL,
+  `wss://api.derivws.com/trading/v1/options/ws/public?app_id=${config.DERIV_APP_ID || 1089}`
 ];
 
 class DerivWsClient {

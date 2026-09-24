@@ -9,7 +9,7 @@ require('dotenv').config();
 module.exports = {
   // Deriv Connection Settings
   DERIV_APP_ID: 1089, // Standard Deriv public app_id
-  DERIV_WS_URL: "wss://api.derivws.com/trading/v1/options/ws/public",
+  DERIV_WS_URL: "wss://api.derivws.com/trading/v1/options/ws/public?app_id=1089",
 
   // Top 10 Optimized Elite Boom & Crash Portfolio (Strategy 5C Institutional Momentum Guard)
   SYMBOLS: {
