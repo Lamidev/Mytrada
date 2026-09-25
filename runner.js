@@ -570,12 +570,19 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const atr = calculateATR(ltfCandles, 14);
     if (!atr || atr === 0) return null;
 
-    // Minimum Spike Cluster Magnitude Filter (>= 0.5x ATR(14))
-    const minClusterRange = atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 0.50);
+    // Minimum Spike Cluster Magnitude Filter (>= 1.2x ATR(14))
+    const minClusterRange = atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20);
     const spikeClusterRange = Math.max(...spikeCandles.map(c => c.high)) - Math.min(...spikeCandles.map(c => c.low));
     if (spikeClusterRange < minClusterRange) return null;
 
     const spikePeak = Math.max(...confirmCandles.map(c => c.high), ...spikeCandles.map(c => c.high));
+
+    // 👑 5M 50 EMA Value Zone Guard: reject if price has not pulled back near the value zone
+    const ltfCloses = ltfCandles.map(c => c.close);
+    const ltfEMA = calculateEMA(ltfCloses, 50);
+    const lastLtfEma = ltfEMA && ltfEMA.length > 0 ? ltfEMA[ltfEMA.length - 1] : null;
+    const maxAtrDist = (config.VALUE_ZONE_MAX_ATR_DIST || 2.5) * atr;
+    if (lastLtfEma && (lastLtfEma - spikePeak) > maxAtrDist) return null;
 
     // 👑 Cumulative Displacement Confirmation: Combined recovery bodies must be >= 20% of preceding spike
     const lastBoomSpike = spikeCandles[0];
@@ -649,12 +656,19 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const atr = calculateATR(ltfCandles, 14);
     if (!atr || atr === 0) return null;
 
-    // Minimum Crash Cluster Magnitude Filter (>= 0.5x ATR(14))
-    const minClusterRange = atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 0.50);
+    // Minimum Crash Cluster Magnitude Filter (>= 1.2x ATR(14))
+    const minClusterRange = atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20);
     const crashClusterRange = Math.max(...crashCandles.map(c => c.high)) - Math.min(...crashCandles.map(c => c.low));
     if (crashClusterRange < minClusterRange) return null;
 
     const crashTrough = Math.min(...confirmCandles.map(c => c.low), ...crashCandles.map(c => c.low));
+
+    // 👑 5M 50 EMA Value Zone Guard: reject if price has not pulled back near the value zone (overbought ceiling)
+    const ltfCloses = ltfCandles.map(c => c.close);
+    const ltfEMA = calculateEMA(ltfCloses, 50);
+    const lastLtfEma = ltfEMA && ltfEMA.length > 0 ? ltfEMA[ltfEMA.length - 1] : null;
+    const maxAtrDist = (config.VALUE_ZONE_MAX_ATR_DIST || 2.5) * atr;
+    if (lastLtfEma && (crashTrough - lastLtfEma) > maxAtrDist) return null;
 
     // 👑 Cumulative Displacement Confirmation: Combined recovery bodies must be >= 20% of preceding crash
     const lastCrashSpike = crashCandles[0];

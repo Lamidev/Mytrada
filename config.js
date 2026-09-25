@@ -48,7 +48,8 @@ module.exports = {
   REQUIRE_DAILY_CONFLUENCE: false,      // 👑 Relaxed to 4H + 1H confluence: captures high-probability 4H/1H intraday swings
   CONFIRMATION_CANDLES: 2,              // 👑 2-Candle Confirmation (10 mins): eliminates 1-candle false-bounce traps
   MIN_SPIKES: 2,                        // Universal 2-Spike Model (Strategy 5C)
-  MIN_SPIKE_CLUSTER_ATR_RATIO: 0.50,    // 👑 Institutional filter: spike cluster range must be >= 0.5x ATR(14) (filters micro-duds)
+  MIN_SPIKE_CLUSTER_ATR_RATIO: 1.20,    // 👑 Substantial Spike Filter: spike cluster range must be >= 1.2x ATR(14) (rejects micro-duds)
+  VALUE_ZONE_MAX_ATR_DIST: 2.5,         // 👑 Value Zone Guard: rejects overbought ceiling buys or oversold floor sells
   MIN_CANDLE0_DISPLACEMENT_RATIO: 0.20, // 👑 Price action confirmation: C0 recovery body must be >= 20% of preceding spike
 
   // Institutional Responsive Tiered Circuit Breakers
