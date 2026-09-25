@@ -423,12 +423,6 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
 
     if (hitTP) {
       const pnlUsd = trade.rewardUSD || compRisk.rewardUSD;
-      let aiValidation = '';
-      if (trade.aiVisionVerdict === 'TAKE') {
-        aiValidation = `\n🧠 <b>AI VISION VALIDATION:</b> 🎯 <b>CORRECT CALL!</b> (AI recommended TAKE IT ➔ Full TP Captured)`;
-      } else if (trade.aiVisionVerdict === 'LEAVE') {
-        aiValidation = `\n🧠 <b>AI VISION VALIDATION:</b> ⚠️ <b>OVER-FILTERED!</b> (AI recommended LEAVE IT, but trade pushed through to TP)`;
-      }
 
       recordSymbolTradeOutcome(symbol, 'WIN');
       recordClose(trade.setupId, 'WIN', trade.takeProfit, pnlUsd, 1.3, trade.aiVisionVerdict);
@@ -443,7 +437,6 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         `💰 <b>Profit:</b> <code>+$${pnlUsd.toFixed(2)} USD (+1.3R)</code>`,
         `💵 <b>New Balance:</b> <code>$${updatedBalance.toFixed(2)} USD</code>`,
         `🎯 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> ➔ 🏆 <b>TP:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
-        aiValidation,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🛡️ <i>Post-win cooldown active (${config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 35}m).</i>`
       ].filter(Boolean).join('\n');
@@ -458,12 +451,6 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
     if (hitSL) {
       const riskUSD = trade.riskUSD || compRisk.riskUSD;
       const pauseMins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 45;
-      let aiValidation = '';
-      if (trade.aiVisionVerdict === 'LEAVE') {
-        aiValidation = `\n🧠 <b>AI VISION VALIDATION:</b> 🛡️ <b>CORRECT CALL!</b> (AI recommended LEAVE IT ➔ Saved -$${riskUSD.toFixed(2)} USD loss!)`;
-      } else if (trade.aiVisionVerdict === 'TAKE') {
-        aiValidation = `\n🧠 <b>AI VISION VALIDATION:</b> ❌ <b>MISSED TRAP!</b> (AI recommended TAKE IT, but market reversed to SL)`;
-      }
 
       recordSymbolTradeOutcome(symbol, 'LOSS');
       recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0, trade.aiVisionVerdict);
@@ -478,7 +465,6 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         `💸 <b>Loss:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R)</code>`,
         `💵 <b>New Balance:</b> <code>$${updatedBalance.toFixed(2)} USD</code>`,
         `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> ➔ 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
-        aiValidation,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🛡️ <i>Defensive cooldown active (${pauseMins}m).</i>`
       ].filter(Boolean).join('\n');
@@ -496,7 +482,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
 }
 
 // ── STRATEGY 5B SIGNAL DETECTION ENGINE ──
-function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired) {
+function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
   if (!ltfCandles || !htf1hCandles || ltfCandles.length < 25 || htf1hCandles.length < 55) return null;
 
   // 1. 1H 50 EMA Intermediate Trend
@@ -532,7 +518,7 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     }
   }
 
-  const confirmCount = config.CONFIRMATION_CANDLES || 2;
+  const confirmCount = (symbol && config.SYMBOLS[symbol] && config.SYMBOLS[symbol].confirm_candles) || config.CONFIRMATION_CANDLES || 2;
   const minSpikes = minSpikesRequired || config.MIN_SPIKES || 2;
 
   // ── CASE 1: SELL (BOOM) ──
@@ -778,7 +764,7 @@ async function monitorMarket() {
         if (ltfCandles.length < offset + 25) break;
 
         const completedSlice = ltfCandles.slice(0, ltfCandles.length - (offset - 1) - 1);
-        const setup = detectStrategy5BSetup(completedSlice, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikes);
+        const setup = detectStrategy5BSetup(completedSlice, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikes, symbol);
         if (!setup) continue;
 
         const setupId = `${symbol}_${setup.direction}_${setup.candleEpoch}`;

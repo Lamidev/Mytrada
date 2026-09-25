@@ -11,21 +11,22 @@ module.exports = {
   DERIV_APP_ID: 1089, // Standard Deriv public app_id
   DERIV_WS_URL: "wss://api.derivws.com/trading/v1/options/ws/public?app_id=1089",
 
-  // Top 10 Optimized Elite Boom & Crash Portfolio (Strategy 5C Institutional Momentum Guard)
+  // Top Optimized Elite Boom & Crash Portfolio (Strategy 5C Institutional Momentum Guard)
   SYMBOLS: {
     // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend + Price Action Displacement) ──
-    "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
+    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 1 }, // 👑 Fast 300 cycle: 1 confirmation candle
+    "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM",  min_spikes: 3, confirm_candles: 1 }, // 👑 Restored MVP (+8.9R): 3 spikes, 1 confirmation candle
+    "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
+    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
+    "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
 
     // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend + Price Action Displacement) ──
-    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "CRASH500":  { name: "Crash 500 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "CRASH600":  { name: "Crash 600 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "CRASH900":  { name: "Crash 900 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "CRASH1000": { name: "Crash 1000 Index",mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 2, confirm_candles: 1 }, // 👑 Fast 300 cycle: 1 confirmation candle
+    "CRASH500":  { name: "Crash 500 Index", mode: "CRASH", min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
+    "CRASH600":  { name: "Crash 600 Index", mode: "CRASH", min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
+    "CRASH900":  { name: "Crash 900 Index", mode: "CRASH", min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
+    "CRASH1000": { name: "Crash 1000 Index",mode: "CRASH", min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
   },
 
   // Multi-Timeframe Confluence Engine
