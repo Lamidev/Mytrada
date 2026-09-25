@@ -16,7 +16,6 @@ module.exports = {
     // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend + Price Action Displacement) ──
     "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
     "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 1 }, // 👑 Fast 300 cycle: 1 confirmation candle
-    "BOOM200":   { name: "Boom 200 Index",  mode: "BOOM",  min_spikes: 3, confirm_candles: 1 }, // 👑 Restored MVP (+8.9R): 3 spikes, 1 confirmation candle
     "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
     "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
     "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
