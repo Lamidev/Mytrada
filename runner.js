@@ -557,25 +557,33 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
     if (bodyRatio < 0.40) return null;
 
-    // 2. Preceding minSpikes candles must be GREEN spikes (close > open)
-    let hasSpikes = true;
-    const spikeCandles = [];
-    for (let s = 0; s < minSpikes; s++) {
-      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
-      if (!c || c.close <= c.open) { hasSpikes = false; break; }
-      spikeCandles.push(c);
-    }
-    if (!hasSpikes || spikeCandles.length < minSpikes) return null;
-
     const atr = calculateATR(ltfCandles, 14);
     if (!atr || atr === 0) return null;
 
-    // Minimum Spike Cluster Magnitude Filter (>= 1.2x ATR(14))
-    const minClusterRange = atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20);
-    const spikeClusterRange = Math.max(...spikeCandles.map(c => c.high)) - Math.min(...spikeCandles.map(c => c.low));
-    if (spikeClusterRange < minClusterRange) return null;
+    // 2. Dynamic Spike Exhaustion: 1 Monster Spike (>=1.5x ATR) OR 2-3 Spike Cluster (>=1.2x ATR)
+    const s0 = ltfCandles[ltfCandles.length - 1 - confirmCount];
+    if (!s0 || s0.close <= s0.open) return null;
+    const spikeCandles = [s0];
+    const s0Range = s0.high - s0.low;
+
+    for (let s = 1; s <= 2; s++) {
+      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
+      if (c && c.close > c.open) {
+        spikeCandles.push(c);
+      } else {
+        break;
+      }
+    }
 
     const spikePeak = Math.max(...confirmCandles.map(c => c.high), ...spikeCandles.map(c => c.high));
+    const spikeClusterRange = Math.max(...spikeCandles.map(c => c.high)) - Math.min(...spikeCandles.map(c => c.low));
+
+    const isSingleMonster = spikeCandles.length === 1 && s0Range >= (atr * 1.50);
+    const isMultiCluster = spikeCandles.length >= 2 && spikeClusterRange >= (atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20));
+
+    if (!isSingleMonster && !isMultiCluster) return null;
+
+    const spikeCountLabel = isSingleMonster ? '1 Monster Spike' : `${spikeCandles.length} Spikes`;
 
     // 👑 5M 50 EMA Value Zone Guard: reject if price has not pulled back near the value zone
     const ltfCloses = ltfCandles.map(c => c.close);
@@ -617,7 +625,8 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
       bodyRatio,
       valueZoneTouched,
       candleEpoch,
-      confirmCount
+      confirmCount,
+      spikeCountLabel
     };
   }
 
@@ -643,25 +652,33 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
     if (bodyRatio < 0.40) return null;
 
-    // 2. Preceding minSpikes candles must be RED crash spikes (close < open)
-    let hasCrashes = true;
-    const crashCandles = [];
-    for (let s = 0; s < minSpikes; s++) {
-      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
-      if (!c || c.close >= c.open) { hasCrashes = false; break; }
-      crashCandles.push(c);
-    }
-    if (!hasCrashes || crashCandles.length < minSpikes) return null;
-
     const atr = calculateATR(ltfCandles, 14);
     if (!atr || atr === 0) return null;
 
-    // Minimum Crash Cluster Magnitude Filter (>= 1.2x ATR(14))
-    const minClusterRange = atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20);
-    const crashClusterRange = Math.max(...crashCandles.map(c => c.high)) - Math.min(...crashCandles.map(c => c.low));
-    if (crashClusterRange < minClusterRange) return null;
+    // 2. Dynamic Crash Exhaustion: 1 Monster Crash (>=1.5x ATR) OR 2-3 Crash Cluster (>=1.2x ATR)
+    const s0 = ltfCandles[ltfCandles.length - 1 - confirmCount];
+    if (!s0 || s0.close >= s0.open) return null;
+    const crashCandles = [s0];
+    const s0Range = s0.high - s0.low;
+
+    for (let s = 1; s <= 2; s++) {
+      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
+      if (c && c.close < c.open) {
+        crashCandles.push(c);
+      } else {
+        break;
+      }
+    }
 
     const crashTrough = Math.min(...confirmCandles.map(c => c.low), ...crashCandles.map(c => c.low));
+    const crashClusterRange = Math.max(...crashCandles.map(c => c.high)) - Math.min(...crashCandles.map(c => c.low));
+
+    const isSingleMonster = crashCandles.length === 1 && s0Range >= (atr * 1.50);
+    const isMultiCluster = crashCandles.length >= 2 && crashClusterRange >= (atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20));
+
+    if (!isSingleMonster && !isMultiCluster) return null;
+
+    const spikeCountLabel = isSingleMonster ? '1 Monster Spike' : `${crashCandles.length} Spikes`;
 
     // 👑 5M 50 EMA Value Zone Guard: reject if price has not pulled back near the value zone (overbought ceiling)
     const ltfCloses = ltfCandles.map(c => c.close);
@@ -703,7 +720,8 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
       bodyRatio,
       valueZoneTouched,
       candleEpoch,
-      confirmCount
+      confirmCount,
+      spikeCountLabel
     };
   }
 
@@ -829,7 +847,7 @@ async function monitorMarket() {
           `🛡️ <b>Risk:</b> <code>-$${riskUSD.toFixed(2)} USD (${compRisk.riskPercent.toFixed(1)}%)</code>`,
           `💵 <b>Account Equity:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `📊 <i>Trend: 4H ${setup.htf4hTrend.toUpperCase()} + 1H ${setup.htf1hTrend.toUpperCase()} | ${minSpikes} Spikes + ${setup.confirmCount || 2}x 5M Confirmation</i>`
+          `📊 <i>Trend: 4H ${setup.htf4hTrend.toUpperCase()} + 1H ${setup.htf1hTrend.toUpperCase()} | ${setup.spikeCountLabel || `${minSpikes} Spikes`} + ${setup.confirmCount || 2}x 5M Confirmation</i>`
         ];
 
         if (config.ENABLE_AI_VISION) {
