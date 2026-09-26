@@ -14,18 +14,18 @@ module.exports = {
   // Top Optimized Elite Boom & Crash Portfolio (Strategy 5C Institutional Momentum Guard)
   SYMBOLS: {
     // ── BOOM Pairs (SELL ONLY in Daily/4H/1H Bearish Trend + Price Action Displacement) ──
-    "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
-    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 1 }, // 👑 Fast 300 cycle: 1 confirmation candle
-    "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
-    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
-    "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM",  min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
+    "BOOM500":   { name: "Boom 500 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
 
     // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend + Price Action Displacement) ──
-    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 2, confirm_candles: 1 }, // 👑 Fast 300 cycle: 1 confirmation candle
-    "CRASH500":  { name: "Crash 500 Index", mode: "CRASH", min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
-    "CRASH600":  { name: "Crash 600 Index", mode: "CRASH", min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
-    "CRASH900":  { name: "Crash 900 Index", mode: "CRASH", min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
-    "CRASH1000": { name: "Crash 1000 Index",mode: "CRASH", min_spikes: 2, confirm_candles: 2 }, // 👑 Standard 2-Spike Sniper (2x 5M confirm)
+    "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "CRASH500":  { name: "Crash 500 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "CRASH600":  { name: "Crash 600 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "CRASH900":  { name: "Crash 900 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "CRASH1000": { name: "Crash 1000 Index",mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
   },
 
   // Multi-Timeframe Confluence Engine
@@ -46,7 +46,7 @@ module.exports = {
   REWARD_RATIO: 1.3,                    // 1:1.3 R:R Fixed Sniper Target
   USE_HTF_CHOP_FILTER: true,            // Filter out flat 1H 50 EMA chop (>0.08% clearance required)
   REQUIRE_DAILY_CONFLUENCE: true,       // 👑 Triple Confluence (Daily + 4H + 1H 50 EMA): guarantees institutional macro backing
-  CONFIRMATION_CANDLES: 2,              // 👑 2-Candle Confirmation (10 mins): eliminates 1-candle false-bounce traps
+  CONFIRMATION_CANDLES: 1,              // 👑 1-Candle Exhaustion Entry (5 mins): captures lowest entry price & fastest TP (Old 5B Timing)
   MIN_SPIKES: 2,                        // Universal 2-Spike Model (Strategy 5C)
   MIN_SPIKE_CLUSTER_ATR_RATIO: 1.20,    // 👑 Substantial Spike Filter: spike cluster range must be >= 1.2x ATR(14) (rejects micro-duds)
   VALUE_ZONE_MAX_ATR_DIST: 2.5,         // 👑 Value Zone Guard: rejects overbought ceiling buys or oversold floor sells
