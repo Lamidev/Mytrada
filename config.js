@@ -45,7 +45,7 @@ module.exports = {
   // Strategy 5C Execution Parameters
   REWARD_RATIO: 1.3,                    // 1:1.3 R:R Fixed Sniper Target
   USE_HTF_CHOP_FILTER: true,            // Filter out flat 1H 50 EMA chop (>0.08% clearance required)
-  REQUIRE_DAILY_CONFLUENCE: false,      // 👑 Relaxed to 4H + 1H confluence: captures high-probability 4H/1H intraday swings
+  REQUIRE_DAILY_CONFLUENCE: true,       // 👑 Triple Confluence (Daily + 4H + 1H 50 EMA): guarantees institutional macro backing
   CONFIRMATION_CANDLES: 2,              // 👑 2-Candle Confirmation (10 mins): eliminates 1-candle false-bounce traps
   MIN_SPIKES: 2,                        // Universal 2-Spike Model (Strategy 5C)
   MIN_SPIKE_CLUSTER_ATR_RATIO: 1.20,    // 👑 Substantial Spike Filter: spike cluster range must be >= 1.2x ATR(14) (rejects micro-duds)
@@ -58,7 +58,7 @@ module.exports = {
     POST_WIN_PAUSE_MINS: 35,     // 👑 35m pause: gives price 7x 5M candles of breathing room post-TP to prevent climax traps
     TIER_1_PAUSE_MINS: 45,       // 45-minute pause on symbol after 1 loss (9x M5 candles)
     TIER_2_PAUSE_MINS: 60,       // 60-minute pause on symbol after 2 consecutive losses (12x M5 candles)
-    MAX_DAILY_LOSSES_PER_SYMBOL: 3 // 3 Daily Losses = Halted on symbol for remainder of day
+    MAX_DAILY_LOSSES_PER_SYMBOL: 2 // 👑 2 Daily Losses = Halted on symbol for remainder of day (stops bleeding on choppy pairs)
   },
 
   // Bot Settings & Modes
