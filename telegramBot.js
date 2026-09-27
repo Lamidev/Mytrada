@@ -108,6 +108,46 @@ function fetchUpdates(offset = 0) {
 }
 
 /**
+ * Registers native slash commands menu in Telegram UI
+ */
+function registerTelegramCommands() {
+  const botToken = config.TELEGRAM && config.TELEGRAM.BOT_TOKEN;
+  if (!botToken) return;
+
+  const commands = [
+    { command: 'status', description: "Live balance, today's P&L, target & cooldowns" },
+    { command: 'trades', description: "Live active positions & distance to TP/SL" },
+    { command: 'target', description: "Set daily profit target (/target 300 or /target off)" },
+    { command: 'lock', description: "Lock today's profit & move trades to Breakeven" },
+    { command: 'close', description: "Close specific trade (/close CRASH1000)" },
+    { command: 'closeall', description: "Close all open trades immediately" },
+    { command: 'be', description: "Move open trades to Breakeven ($0 risk)" },
+    { command: 'pause', description: "Pause new signals and entries" },
+    { command: 'resume', description: "Resume active market scanning" },
+    { command: 'risk', description: "Change risk % per trade (/risk 1.5)" },
+    { command: 'help', description: "Show all command options" }
+  ];
+
+  const payload = JSON.stringify({ commands });
+  const options = {
+    hostname: 'api.telegram.org',
+    port: 443,
+    path: `/bot${botToken}/setMyCommands`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload)
+    },
+    timeout: 10000
+  };
+
+  const req = https.request(options, () => {});
+  req.on('error', () => {});
+  req.write(payload);
+  req.end();
+}
+
+/**
  * Starts the inbound Telegram command listener
  * @param {Object} handlers Callbacks providing access to runner state
  */
@@ -123,6 +163,11 @@ async function startTelegramListener(handlers) {
   if (isPolling) return;
   isPolling = true;
   console.log(`📱 [telegramBot] Interactive Telegram Remote Control Listener active.`);
+
+  // Auto-register slash commands menu with Telegram API
+  try {
+    registerTelegramCommands();
+  } catch (e) {}
 
   // Drain old updates so we don't process stale past messages on restart
   try {
@@ -169,6 +214,10 @@ async function handleCommand(rawText, handlers) {
   const arg2 = parts[2];
 
   switch (command) {
+    case '':
+    case '/':
+    case '/menu':
+    case '/commands':
     case '/start':
     case '/help': {
       const helpMsg = [
@@ -179,11 +228,13 @@ async function handleCommand(rawText, handlers) {
         `• <code>/trades</code> ➜ Live active positions & distance to TP/SL`,
         `• <code>/target &lt;amt&gt;</code> ➜ Set daily profit target (e.g. <code>/target 300</code> or <code>/target off</code>)`,
         `• <code>/lock</code> ➜ Lock in today's profit & pause until 12:00 AM`,
+        `• <code>/close &lt;pair&gt;</code> ➜ Close specific trade (e.g. <code>/close CRASH1000</code>)`,
+        `• <code>/closeall</code> ➜ Close all open trades immediately`,
+        `• <code>/be</code> ➜ Move open trades to Breakeven ($0 risk)`,
         `• <code>/pause</code> ➜ Manually pause bot (stays paused until /resume)`,
         `• <code>/resume</code> ➜ Resume trading immediately`,
         `• <code>/risk &lt;pct&gt;</code> ➜ Change risk % (e.g. <code>/risk 1.5</code>)`,
         `• <code>/cooldown &lt;pair&gt; [mins]</code> ➜ Pause pair (e.g. <code>/cooldown BOOM300N 60</code>)`,
-        `• <code>/be</code> ➜ Move open trades to Breakeven`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
       ].join('\n');
       await sendTelegramMessage(helpMsg);
