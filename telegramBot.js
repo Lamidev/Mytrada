@@ -116,6 +116,7 @@ function registerTelegramCommands() {
 
   const commands = [
     { command: 'status', description: "Live balance, today's P&L, target & cooldowns" },
+    { command: 'report', description: "Daily performance summary report" },
     { command: 'trades', description: "Live active positions & distance to TP/SL" },
     { command: 'target', description: "Set daily profit target (/target 300 or /target off)" },
     { command: 'lock', description: "Lock today's profit & move trades to Breakeven" },
@@ -225,6 +226,7 @@ async function handleCommand(rawText, handlers) {
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Available Remote Commands:</b>`,
         `• <code>/status</code> ➜ Live equity, P&L, daily target & cooldowns`,
+        `• <code>/report</code> ➜ Daily performance summary report`,
         `• <code>/trades</code> ➜ Live active positions & distance to TP/SL`,
         `• <code>/target &lt;amt&gt;</code> ➜ Set daily profit target (e.g. <code>/target 300</code> or <code>/target off</code>)`,
         `• <code>/lock</code> ➜ Lock in today's profit & pause until 12:00 AM`,

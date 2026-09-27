@@ -424,19 +424,6 @@ function formatReportTelegramHTML(report) {
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
   }
 
-  // ── AI VISION A/B SHADOW TRACKER ──
-  if (report.aiStats && report.aiStats.aiAudited > 0) {
-    const ai = report.aiStats;
-    const diff = ai.aiHypotheticalPnl - report.netUSD;
-    const diffSign = diff >= 0 ? '+' : '-';
-    lines.push(`🧠 <b>AI VISION A/B SHADOW TRACKER:</b>`);
-    lines.push(`• <b>Signals Audited:</b> <code>${ai.aiAudited} Trades</code>`);
-    lines.push(`• <b>When AI said TAKE IT:</b> <code>${ai.aiTakeWins}W / ${ai.aiTakeLosses}L (${ai.aiWinRate}% WR)</code>`);
-    lines.push(`• <b>When AI said LEAVE IT:</b> <code>${ai.aiLeaveLossesSaved} Losses Avoided 🛡️ | ${ai.aiLeaveWinsMissed} Wins Missed ⚠️</code>`);
-    lines.push(`• <b>P/L Following AI:</b> <code>${ai.aiHypotheticalPnl >= 0 ? '+' : '-'}$${Math.abs(ai.aiHypotheticalPnl).toFixed(2)} USD (${diffSign}$${Math.abs(diff).toFixed(2)} vs Actual)</code>`);
-    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
-  }
-
   // ── WEEKLY COMPOUNDING RE-ANCHOR (SUNDAY END-OF-WEEK ONLY) ──
   if (report.period === 'WEEKLY') {
     const riskPercent = config.RISK_PERCENT || 3.0;
