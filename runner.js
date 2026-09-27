@@ -1,22 +1,23 @@
 // runner.js
 /**
- * Mytrada - Strategy 5C Value-Zone Sniper (Clean Slate — Locked Production Standard)
+ * Mytrada - Strategy 5B/5C Institutional Momentum Guard (Upgraded Production Standard)
  *
  * Execution Core:
- *  - 12 Elite Boom & Crash Portfolio (Daily + 4H + 1H 50 EMA Trend Alignment)
- *  - 2–3 Spike Cluster Exhaustion Trigger (5M Body >= 50%) — Tailored per pair
+ *  - 11 Elite Boom & Crash Portfolio (Daily + 4H + 1H 50 EMA Trend Alignment)
+ *  - 2–3 Spike Cluster Exhaustion Trigger (5M Body >= 50%) — Tailored per pair (3 spikes on fast Boom 300 / Boom 200)
  *  - Fixed 1:1.3 R:R Sniper Target with Dynamic Lot Sizing (3% Equity Risk)
- *  - Responsive Tiered Circuit Breakers (45m Loss Cooldown / Daily Lockout)
+ *  - Responsive Tiered Circuit Breakers (45m Loss Cooldown / 2-Loss Daily Lockout / 3-Loss Portfolio Pause)
+ *  - Dynamic Daily Profit Target & Lockout Engine with Auto-Resume at 12:00 AM UTC
+ *  - Interactive Telegram Remote Control & Inbound Command Center (/status, /trades, /target, /lock, /pause, /resume, /risk, /be)
  *  - Automated 12:00 AM Midnight Daily Performance Report with Pair-by-Pair Breakdown
- *  - Real-Time Telegram Signal Dispatcher
  */
 
-const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { getCandles } = require('./dataFetcher');
 const { auditTradeWithVision } = require('./aiVisionAuditor');
+const { sendTelegramMessage, startTelegramListener } = require('./telegramBot');
 const { 
   recordSignal, 
   recordTrigger, 
@@ -40,6 +41,7 @@ const CACHE_DIR = path.join(__dirname, 'cache');
 const ALERTED_SETUPS_FILE = path.join(CACHE_DIR, 'alerted_setups.json');
 const ACTIVE_TRADES_FILE = path.join(CACHE_DIR, 'active_trades.json');
 const CIRCUIT_BREAKER_FILE = path.join(CACHE_DIR, 'circuit_breaker_state.json');
+const DYNAMIC_STATE_FILE = path.join(CACHE_DIR, 'dynamic_state.json');
 const LAST_REPORT_DATE_FILE = path.join(CACHE_DIR, 'last_daily_report_date.json');
 
 if (!fs.existsSync(CACHE_DIR)) {
@@ -102,6 +104,51 @@ function saveLastReportedDate(dateStr) {
   } catch (e) {}
 }
 
+// ── DYNAMIC STATE & DAILY TARGET MANAGER ──
+function loadDynamicState() {
+  const today = new Date().toISOString().slice(0, 10);
+  const defaultTarget = config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.DEFAULT_DAILY_PROFIT_TARGET_USD !== undefined
+    ? config.CIRCUIT_BREAKER.DEFAULT_DAILY_PROFIT_TARGET_USD
+    : 250.0;
+
+  if (fs.existsSync(DYNAMIC_STATE_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(DYNAMIC_STATE_FILE, 'utf8'));
+      if (data.date !== today) {
+        data.date = today;
+        data.dailyTargetLocked = false;
+        if (data.dailyTargetUSD === undefined) data.dailyTargetUSD = defaultTarget;
+        saveDynamicState(data);
+      }
+      return data;
+    } catch (e) {
+      console.warn("[runner] Warning loading dynamic state:", e.message);
+    }
+  }
+
+  const freshState = {
+    date: today,
+    dailyTargetUSD: defaultTarget,
+    dailyTargetLocked: false,
+    isManuallyPaused: false,
+    customRiskPercent: null,
+    portfolioConsecutiveLosses: 0,
+    portfolioPauseUntil: 0
+  };
+  saveDynamicState(freshState);
+  return freshState;
+}
+
+function saveDynamicState(state) {
+  try {
+    fs.writeFileSync(DYNAMIC_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (e) {
+    console.warn("[runner] Warning saving dynamic state:", e.message);
+  }
+}
+
+let dynamicState = loadDynamicState();
+
 // ── CIRCUIT BREAKER STATE MANAGER ──
 function loadCircuitBreakerState() {
   const today = new Date().toISOString().slice(0, 10);
@@ -143,14 +190,14 @@ function isSymbolInCooldown(symbol) {
   const rec = circuitBreakerState.symbols && circuitBreakerState.symbols[symbol];
   if (!rec) return { inCooldown: false };
 
-  if (rec.dailyLosses >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 3)) {
+  if (rec.dailyLosses >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2)) {
     return { inCooldown: true, reason: `Daily limit (${rec.dailyLosses} losses) reached` };
   }
 
   const now = Date.now();
   if (rec.pauseUntil && now < rec.pauseUntil) {
     const remMins = Math.ceil((rec.pauseUntil - now) / 60000);
-    const reason = (rec.consecutiveLosses === 0 && rec.dailyLosses < (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 3))
+    const reason = (rec.consecutiveLosses === 0 && rec.dailyLosses < (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2))
       ? `Post-Win breathing room (${remMins}m remaining)`
       : `Cooldown active — ${remMins}m remaining`;
     return { inCooldown: true, reason };
@@ -164,6 +211,9 @@ function recordSymbolTradeOutcome(symbol, outcome) {
   if (!circuitBreakerState || circuitBreakerState.date !== today) {
     circuitBreakerState = loadCircuitBreakerState();
   }
+  if (!dynamicState || dynamicState.date !== today) {
+    dynamicState = loadDynamicState();
+  }
 
   if (!circuitBreakerState.symbols) circuitBreakerState.symbols = {};
   if (!circuitBreakerState.symbols[symbol]) {
@@ -175,15 +225,18 @@ function recordSymbolTradeOutcome(symbol, outcome) {
 
   if (outcome === 'WIN') {
     rec.consecutiveLosses = 0;
+    dynamicState.portfolioConsecutiveLosses = 0;
+
     // 👑 Institutional Post-Win Breathing Room: pause symbol to prevent immediate tail-end re-entry
-    const postWinMins = config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 15;
+    const postWinMins = config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 35;
     rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (postWinMins * 60 * 1000));
   } else if (outcome === 'LOSS') {
     rec.consecutiveLosses = (rec.consecutiveLosses || 0) + 1;
     rec.dailyLosses = (rec.dailyLosses || 0) + 1;
+    dynamicState.portfolioConsecutiveLosses = (dynamicState.portfolioConsecutiveLosses || 0) + 1;
 
-    // Responsive Tiered Circuit Breakers:
-    if (rec.dailyLosses >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 3)) {
+    // Symbol-Level Responsive Tiered Circuit Breakers:
+    if (rec.dailyLosses >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2)) {
       const endOfDay = new Date();
       endOfDay.setUTCHours(23, 59, 59, 999);
       rec.pauseUntil = endOfDay.getTime();
@@ -191,59 +244,342 @@ function recordSymbolTradeOutcome(symbol, outcome) {
       const tier2Mins = config.CIRCUIT_BREAKER.TIER_2_PAUSE_MINS || 60;
       rec.pauseUntil = now + (tier2Mins * 60 * 1000);
     } else {
-      const tier1Mins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 30;
+      const tier1Mins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 45;
       rec.pauseUntil = now + (tier1Mins * 60 * 1000);
+    }
+
+    // Portfolio-Wide Consecutive Loss Breaker (e.g. 3 consecutive losses across ANY pairs):
+    const maxPortfolioLosses = config.CIRCUIT_BREAKER.PORTFOLIO_CONSECUTIVE_LOSS_LIMIT || 3;
+    if (dynamicState.portfolioConsecutiveLosses >= maxPortfolioLosses) {
+      const pauseMins = config.CIRCUIT_BREAKER.PORTFOLIO_LOSS_PAUSE_MINS || 60;
+      dynamicState.portfolioPauseUntil = now + (pauseMins * 60 * 1000);
+      sendTelegramMessage([
+        `⚠️ 🛡️ <b>[MYTRADA PORTFOLIO CIRCUIT BREAKER]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `<b>Trigger:</b> <code>${dynamicState.portfolioConsecutiveLosses} consecutive losses</code> hit across portfolio.`,
+        `<b>Action:</b> Entire bot paused for <b>${pauseMins} minutes</b> to let market turbulence settle.`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `<i>Active positions will continue monitoring to TP/SL. Send /resume to override.</i>`
+      ].join('\n'));
     }
   }
 
   saveCircuitBreakerState(circuitBreakerState);
+  saveDynamicState(dynamicState);
 }
 
-// ── TELEGRAM DISPATCHER ──
-function sendTelegramMessage(text) {
-  return new Promise((resolve) => {
-    const botToken = config.TELEGRAM && config.TELEGRAM.BOT_TOKEN;
-    const chatId   = config.TELEGRAM && config.TELEGRAM.CHAT_ID;
+// ── AUTO BREAKEVEN & MANUAL CLOSE ENGINE ──
+async function autoBreakevenProfitableTrades() {
+  const activeTrades = loadActiveTrades();
+  if (!activeTrades || activeTrades.length === 0) return [];
 
-    if (!botToken || !chatId) {
-      console.warn("[runner] Telegram credentials not configured.");
-      return resolve(false);
+  const summary = [];
+  let updated = false;
+
+  for (const trade of activeTrades) {
+    try {
+      const candles = await getCandles(trade.symbol, config.DEFAULT_LTF || '5m', 5, true);
+      if (!candles || candles.length === 0) continue;
+      const livePrice = candles[candles.length - 1].close;
+      const isBullish = trade.type === 'bullish';
+      const inProfit = isBullish ? (livePrice > trade.entryPrice) : (livePrice < trade.entryPrice);
+
+      if (inProfit) {
+        trade.stopLoss = trade.entryPrice;
+        trade.isBreakeven = true;
+        updated = true;
+        summary.push(`• 🟢 <b>${trade.symbol}</b>: In Profit @ ${livePrice.toFixed(2)} ➔ 🛡️ <b>SL moved to Breakeven ($0 risk)</b>`);
+      } else {
+        summary.push(`• 🔴 <b>${trade.symbol}</b>: In Drawdown @ ${livePrice.toFixed(2)} ➔ 🛡️ <i>SL protected at ${trade.stopLoss.toFixed(2)}</i>`);
+      }
+    } catch (e) {
+      summary.push(`• ⚪ <b>${trade.symbol}</b>: Active position monitoring`);
+    }
+  }
+
+  if (updated) {
+    saveActiveTrades(activeTrades);
+  }
+  return summary;
+}
+
+async function closeTradeManually(symbol) {
+  const activeTrades = loadActiveTrades();
+  const trade = activeTrades.find(t => t.symbol === symbol);
+  if (!trade) {
+    return { success: false, message: `⚠️ No active trade found for <code>${symbol}</code>.` };
+  }
+
+  let livePrice = trade.entryPrice;
+  try {
+    const candles = await getCandles(symbol, config.DEFAULT_LTF || '5m', 5, true);
+    if (candles && candles.length > 0) {
+      livePrice = candles[candles.length - 1].close;
+    }
+  } catch (e) {}
+
+  const isBullish = trade.type === 'bullish';
+  const slDist = Math.abs(trade.entryPrice - trade.stopLoss);
+  const priceDiff = isBullish ? (livePrice - trade.entryPrice) : (trade.entryPrice - livePrice);
+  const compRisk = getWeeklyCompoundedRisk();
+  const riskUSD = trade.riskUSD || compRisk.riskUSD;
+  const pnlR = slDist > 0 ? (priceDiff / slDist) : 0;
+  const pnlUSD = pnlR * riskUSD;
+  const outcome = pnlUSD >= 0 ? 'WIN' : 'LOSS';
+
+  recordSymbolTradeOutcome(symbol, outcome);
+  recordClose(trade.setupId, outcome, livePrice, pnlUSD, pnlR, 'MANUAL_CLOSE');
+
+  const updatedTrades = activeTrades.filter(t => t.setupId !== trade.setupId);
+  saveActiveTrades(updatedTrades);
+  await checkDailyTargetLock();
+
+  const newBalance = getCurrentAccountBalance();
+  const pnlSign = pnlUSD >= 0 ? '+' : '-';
+  const statusEmoji = pnlUSD >= 0 ? '🟢' : '🔴';
+
+  return {
+    success: true,
+    message: [
+      `✂️ ${statusEmoji} <b>[MYTRADA MANUAL TRADE CLOSED]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `<b>Asset:</b> <code>${symbol}</code> (${isBullish ? 'BUY' : 'SELL'})`,
+      `<b>Exit Price:</b> <code>${livePrice.toFixed(2)}</code> (Entry: ${trade.entryPrice.toFixed(2)})`,
+      `💰 <b>Realized PnL:</b> <code>${pnlSign}$${Math.abs(pnlUSD).toFixed(2)} USD (${pnlSign}${Math.abs(pnlR).toFixed(2)}R)</code>`,
+      `💵 <b>New Balance:</b> <code>$${newBalance.toFixed(2)} USD</code>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+    ].join('\n')
+  };
+}
+
+async function closeAllTradesManually() {
+  const activeTrades = loadActiveTrades();
+  if (!activeTrades || activeTrades.length === 0) {
+    return { success: false, message: `⚠️ No active positions currently open.` };
+  }
+
+  const results = [];
+  for (const t of activeTrades) {
+    const res = await closeTradeManually(t.symbol);
+    results.push(res.message);
+  }
+
+  return {
+    success: true,
+    message: `✂️ <b>[CLOSED ALL POSITIONS]</b>\n\n${results.join('\n\n')}`
+  };
+}
+
+// ── DAILY PROFIT TARGET CIRCUIT BREAKER ──
+async function checkDailyTargetLock() {
+  const todayStr = new Date().toISOString().split('T')[0];
+  if (!dynamicState || dynamicState.date !== todayStr) {
+    dynamicState = loadDynamicState();
+  }
+
+  if (dynamicState.dailyTargetLocked || !dynamicState.dailyTargetUSD || dynamicState.dailyTargetUSD <= 0) {
+    return;
+  }
+
+  const todayReport = generateDailyReport(todayStr);
+  if (todayReport.netUSD >= dynamicState.dailyTargetUSD) {
+    dynamicState.dailyTargetLocked = true;
+    saveDynamicState(dynamicState);
+
+    // Auto-move profitable running trades to Breakeven
+    const beSummary = await autoBreakevenProfitableTrades();
+
+    const alertLines = [
+      `🎯 🟢 <b>[MYTRADA DAILY PROFIT TARGET REACHED!]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `💰 <b>Realized Today:</b> <code>+$${todayReport.netUSD.toFixed(2)} USD (${todayReport.netR >= 0 ? '+' : ''}${todayReport.netR.toFixed(1)}R)</code>`,
+      `🎯 <b>Target Goal:</b> <code>+$${dynamicState.dailyTargetUSD.toFixed(2)} USD</code>`,
+      `📊 <b>Today's Record:</b> <code>${todayReport.wins}W / ${todayReport.losses}L (${todayReport.winRate}% WR)</code>`,
+      `💵 <b>Account Equity:</b> <code>$${todayReport.newBalance.toFixed(2)} USD</code>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `🔒 <b>Status:</b> <b>NEW TRADING ENTRIES LOCKED FOR THE DAY</b>`
+    ];
+
+    if (beSummary.length > 0) {
+      alertLines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+      alertLines.push(`📂 <b>ONGOING TRADES STATUS:</b>`);
+      alertLines.push(...beSummary);
     }
 
-    const payload = JSON.stringify({
-      chat_id: chatId,
-      text: text,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true
-    });
+    alertLines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+    alertLines.push(`⏳ <i>Bot will automatically reset & resume tomorrow at 12:00 AM UTC. Send /resume to override now.</i>`);
 
-    const options = {
-      hostname: 'api.telegram.org',
-      port: 443,
-      path: `/bot${botToken}/sendMessage`,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload)
-      },
-      timeout: 10000
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        if (res.statusCode === 200) resolve(true);
-        else resolve(false);
-      });
-    });
-
-    req.on('error', () => resolve(false));
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-    req.write(payload);
-    req.end();
-  });
+    await sendTelegramMessage(alertLines.join('\n'));
+    console.log(`\n🎯 [TARGET HIT] Daily profit target (+$${dynamicState.dailyTargetUSD}) achieved! Trading locked for remainder of day.\n`);
+  }
 }
+
+// ── TELEGRAM INBOUND COMMAND HANDLERS ──
+const telegramHandlers = {
+  getStatus: async () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const report = generateDailyReport(todayStr);
+    const compRisk = getWeeklyCompoundedRisk();
+    const activeTrades = loadActiveTrades();
+    const now = Date.now();
+
+    // Check pair cooldowns
+    const cooldowns = [];
+    if (circuitBreakerState && circuitBreakerState.symbols) {
+      for (const [sym, rec] of Object.entries(circuitBreakerState.symbols)) {
+        if (rec.pauseUntil && now < rec.pauseUntil) {
+          const rem = Math.ceil((rec.pauseUntil - now) / 60000);
+          cooldowns.push(`• <code>${sym}</code>: ${rem}m remaining (${rec.dailyLosses || 0} losses today)`);
+        }
+      }
+    }
+
+    let stateBadge = '🟢 <b>ACTIVE & SCANNING</b>';
+    if (dynamicState.isManuallyPaused) stateBadge = '⏸️ <b>MANUALLY PAUSED (/resume to restart)</b>';
+    else if (dynamicState.dailyTargetLocked) stateBadge = '🎯 <b>DAILY TARGET LOCKED (Resumes 12 AM)</b>';
+    else if (dynamicState.portfolioPauseUntil && now < dynamicState.portfolioPauseUntil) {
+      const rem = Math.ceil((dynamicState.portfolioPauseUntil - now) / 60000);
+      stateBadge = `⚠️ <b>PORTFOLIO COOLDOWN (${rem}m remaining)</b>`;
+    }
+
+    const pnlSign = report.netUSD >= 0 ? '+' : '-';
+    const targetStatus = (dynamicState.dailyTargetUSD && dynamicState.dailyTargetUSD > 0)
+      ? `$${dynamicState.dailyTargetUSD.toFixed(2)} USD ${dynamicState.dailyTargetLocked ? '🔒 (HIT)' : `(Need: $${Math.max(0, dynamicState.dailyTargetUSD - report.netUSD).toFixed(2)})`}`
+      : 'Disabled (Full Session)';
+
+    const lines = [
+      `👑 <b>[MYTRADA LIVE STATUS MONITOR]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `💵 <b>Starting Balance:</b> <code>$${(report.startingBalance || 100.0).toFixed(2)} USD</code>`,
+      `💰 <b>Current Balance:</b> <code>$${(report.newBalance || 100.0).toFixed(2)} USD</code>`,
+      `📈 <b>Today's Realized PnL:</b> <code>${pnlSign}$${Math.abs(report.netUSD).toFixed(2)} USD (${pnlSign}${report.netR.toFixed(1)}R)</code>`,
+      `📊 <b>Today's Record:</b> <code>${report.wins} Wins / ${report.losses} Losses (${report.winRate}% WR)</code>`,
+      `🎯 <b>Daily Profit Target:</b> <code>${targetStatus}</code>`,
+      `🛡️ <b>Risk Per Trade:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0).toFixed(1)}%)</code>`,
+      `📂 <b>Active Positions:</b> <code>${activeTrades.length} Trade(s)</code>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `🤖 <b>Engine State:</b> ${stateBadge}`
+    ];
+
+    if (cooldowns.length > 0) {
+      lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+      lines.push(`⏳ <b>ACTIVE PAIR COOLDOWNS:</b>`);
+      lines.push(...cooldowns);
+    }
+
+    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+    return lines.join('\n');
+  },
+
+  getActiveTrades: async () => {
+    const activeTrades = loadActiveTrades();
+    if (!activeTrades || activeTrades.length === 0) {
+      return `📂 <b>[MYTRADA ACTIVE POSITIONS]</b>\n\nNo active trades currently open. Bot is monitoring for new setups.`;
+    }
+
+    const lines = [
+      `📂 <b>[MYTRADA ACTIVE POSITIONS (${activeTrades.length})]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+    ];
+
+    for (const t of activeTrades) {
+      const isBullish = t.type === 'bullish';
+      const dirLabel = isBullish ? '🟢 BUY' : '🔴 SELL';
+      const symName = config.SYMBOLS[t.symbol] ? config.SYMBOLS[t.symbol].name : t.symbol;
+      const slDist = Math.abs(t.entryPrice - t.stopLoss).toFixed(2);
+      const tpDist = Math.abs(t.entryPrice - t.takeProfit).toFixed(2);
+
+      let statusTag = t.isBreakeven ? ' 🛡️ [BREAKEVEN]' : '';
+      lines.push(`<b>${t.symbol}</b> (${symName})${statusTag}`);
+      lines.push(`• <b>Action:</b> ${dirLabel} @ <code>${t.entryPrice.toFixed(2)}</code>`);
+      lines.push(`• 🎯 <b>TP:</b> <code>${t.takeProfit.toFixed(2)}</code> (+${tpDist} pts • +$${(t.rewardUSD || 0).toFixed(2)})`);
+      lines.push(`• 🛡️ <b>SL:</b> <code>${t.stopLoss.toFixed(2)}</code> (-${slDist} pts • -$${(t.riskUSD || 0).toFixed(2)})`);
+      lines.push(`• 💡 <i>To close this trade now: /close ${t.symbol}</i>`);
+      lines.push(`<code>──────────────────────────</code>`);
+    }
+
+    return lines.join('\n');
+  },
+
+  getDailyTarget: () => {
+    return dynamicState.dailyTargetUSD || 0;
+  },
+
+  setDailyTarget: (val) => {
+    dynamicState.dailyTargetUSD = val;
+    dynamicState.dailyTargetLocked = false;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const report = generateDailyReport(todayStr);
+    let alreadyHit = false;
+    if (val > 0 && report.netUSD >= val) {
+      dynamicState.dailyTargetLocked = true;
+      alreadyHit = true;
+      autoBreakevenProfitableTrades();
+    }
+    saveDynamicState(dynamicState);
+    return { alreadyHit, todayNet: report.netUSD };
+  },
+
+  lockDailyProfit: () => {
+    dynamicState.dailyTargetLocked = true;
+    saveDynamicState(dynamicState);
+    autoBreakevenProfitableTrades();
+    const todayStr = new Date().toISOString().split('T')[0];
+    const report = generateDailyReport(todayStr);
+    return {
+      todayNet: report.netUSD,
+      todayR: report.netR,
+      liveBalance: report.newBalance
+    };
+  },
+
+  pauseBot: () => {
+    dynamicState.isManuallyPaused = true;
+    saveDynamicState(dynamicState);
+  },
+
+  resumeBot: () => {
+    dynamicState.isManuallyPaused = false;
+    dynamicState.dailyTargetLocked = false;
+    dynamicState.portfolioPauseUntil = 0;
+    saveDynamicState(dynamicState);
+    return { symbolsCount: Object.keys(config.SYMBOLS).length };
+  },
+
+  closeTrade: async (sym) => {
+    return await closeTradeManually(sym);
+  },
+
+  closeAllTrades: async () => {
+    return await closeAllTradesManually();
+  },
+
+  setRiskPercent: (pct) => {
+    dynamicState.customRiskPercent = pct;
+    saveDynamicState(dynamicState);
+  },
+
+  setSymbolCooldown: (sym, mins) => {
+    if (!circuitBreakerState.symbols) circuitBreakerState.symbols = {};
+    if (!circuitBreakerState.symbols[sym]) {
+      circuitBreakerState.symbols[sym] = { consecutiveLosses: 0, dailyLosses: 0, pauseUntil: 0 };
+    }
+    circuitBreakerState.symbols[sym].pauseUntil = Date.now() + (mins * 60 * 1000);
+    saveCircuitBreakerState(circuitBreakerState);
+  },
+
+  moveToBreakeven: () => {
+    const activeTrades = loadActiveTrades();
+    let count = 0;
+    activeTrades.forEach(t => {
+      t.stopLoss = t.entryPrice;
+      t.isBreakeven = true;
+      count++;
+    });
+    saveActiveTrades(activeTrades);
+    return count;
+  }
+};
 
 const LAST_WEEKLY_REPORT_FILE = path.join(CACHE_DIR, 'last_weekly_report_week.json');
 
@@ -346,12 +682,16 @@ function calculateATR(candles, period = 14) {
 
 function calculateLotSize(symbol, entry, sl, customRiskUSD = null) {
   const compRisk = getWeeklyCompoundedRisk();
-  const riskAmount = customRiskUSD !== null ? customRiskUSD : compRisk.riskUSD;
+  let riskAmount = customRiskUSD !== null ? customRiskUSD : compRisk.riskUSD;
+  if (dynamicState && dynamicState.customRiskPercent && dynamicState.customRiskPercent > 0) {
+    riskAmount = compRisk.liveBalance * (dynamicState.customRiskPercent / 100);
+  }
   const slDistance = Math.abs(entry - sl);
   if (slDistance <= 0) return 0.20;
 
   const minLots = {
     'BOOM300N': 0.50, 'CRASH300N': 0.50,
+    'BOOM200': 0.20,
     'BOOM500': 0.20,  'CRASH500': 0.20,
     'BOOM1000': 0.20, 'CRASH1000': 0.20,
     'BOOM600': 0.20,  'CRASH600': 0.20,
@@ -478,6 +818,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
 
   if (changed) {
     saveActiveTrades(updatedTrades);
+    await checkDailyTargetLock();
   }
 }
 
@@ -717,14 +1058,68 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
 // ── MAIN MONITOR CYCLE ──
 async function monitorMarket() {
   const now = new Date();
-  
+  const todayStr = now.toISOString().split('T')[0];
+
+  // Refresh dynamic state on date rollover
+  if (!dynamicState || dynamicState.date !== todayStr) {
+    const wasLocked = dynamicState && dynamicState.dailyTargetLocked;
+    dynamicState = loadDynamicState();
+    if (wasLocked) {
+      const compRisk = getWeeklyCompoundedRisk();
+      sendTelegramMessage([
+        `🌅 <b>[NEW TRADING DAY ACTIVATED]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `💵 <b>Starting Balance:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
+        `🎯 <b>Daily Profit Target:</b> <code>$${(dynamicState.dailyTargetUSD || 250).toFixed(2)} USD</code>`,
+        `🚀 <b>Status:</b> <b>ONLINE & SCANNING ${Object.keys(config.SYMBOLS).length} PAIRS</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+      ].join('\n'));
+    }
+  }
+
   // 1. Automated Check for 12:00 AM Midnight Daily Performance Report
   await checkAndSendDailyMidnightReport();
 
   // 2. Automated Check for Sunday Midnight Weekly Performance Report
   await checkAndSendWeeklyReport();
 
-  console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for Strategy 5C setups...${RESET}`);
+  // 3. Check for Daily Profit Target Reach
+  await checkDailyTargetLock();
+
+  const nowMs = Date.now();
+
+  // Check if system is in global manual pause mode
+  if (dynamicState.isManuallyPaused) {
+    console.log(`\n⏸️ [MYTRADA PAUSED] Bot is manually paused via Telegram (/resume to continue). Monitoring active positions...`);
+    for (const sym of Object.keys(config.SYMBOLS)) {
+      const ltf = await getCandles(sym, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
+      if (ltf) await checkActiveTradesForSymbol(sym, ltf);
+    }
+    return;
+  }
+
+  // Check if daily profit target is locked for the rest of the day
+  if (dynamicState.dailyTargetLocked) {
+    console.log(`\n🎯 [DAILY TARGET LOCKED] Profit target reached! Paused until midnight. Monitoring active positions...`);
+    for (const sym of Object.keys(config.SYMBOLS)) {
+      const ltf = await getCandles(sym, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
+      if (ltf) await checkActiveTradesForSymbol(sym, ltf);
+    }
+    return;
+  }
+
+  // Check if portfolio is in global consecutive loss cooldown
+  if (dynamicState.portfolioPauseUntil && nowMs < dynamicState.portfolioPauseUntil) {
+    const remMins = Math.ceil((dynamicState.portfolioPauseUntil - nowMs) / 60000);
+    console.log(`\n⚠️ [PORTFOLIO COOLDOWN] 3 consecutive losses hit across bot. Paused for ${remMins}m more. Monitoring active positions...`);
+    for (const sym of Object.keys(config.SYMBOLS)) {
+      const ltf = await getCandles(sym, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
+      if (ltf) await checkActiveTradesForSymbol(sym, ltf);
+    }
+    return;
+  }
+
+  console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for Strategy 5B/5C setups...${RESET}`);
   console.log(`-------------------------------------------------------------------------------------------------`);
 
   const symbols = Object.keys(config.SYMBOLS);
@@ -792,6 +1187,12 @@ async function monitorMarket() {
           break;
         }
 
+        // Double check target lock or pause before sending
+        if (dynamicState.dailyTargetLocked || dynamicState.isManuallyPaused) {
+          console.log(`  [${mode}] ${symbol.padEnd(12)} | Setup ignored: Bot is currently in locked/paused state.`);
+          break;
+        }
+
         // ── NEW SIGNAL — FIRE ALERT ──
         saveAlertedSetup(setupId);
         signalFiredThisScan = true;
@@ -830,7 +1231,7 @@ async function monitorMarket() {
           `🏆 <b>Take Profit:</b> <code>${setup.tp.toFixed(2)}</code> (+$${rewardUSD} USD • 1:1.3 R:R)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💰 <b>Lot Size:</b> <code>${lotSize} Lots</code>`,
-          `🛡️ <b>Risk:</b> <code>-$${riskUSD.toFixed(2)} USD (${compRisk.riskPercent.toFixed(1)}%)</code>`,
+          `🛡️ <b>Risk:</b> <code>-$${riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || compRisk.riskPercent).toFixed(1)}%)</code>`,
           `💵 <b>Account Equity:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `📊 <i>Trend: 4H ${setup.htf4hTrend.toUpperCase()} + 1H ${setup.htf1hTrend.toUpperCase()} | ${setup.spikeCountLabel || `${minSpikes} Spikes`} + ${setup.confirmCount || 2}x 5M Confirmation</i>`
@@ -846,7 +1247,7 @@ async function monitorMarket() {
         const alertHtml = alertLines.join('\n');
 
         await sendTelegramMessage(alertHtml);
-        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 5C SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
+        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 5B/5C SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
 
         const activeTrades = loadActiveTrades();
         activeTrades.push({
@@ -926,7 +1327,7 @@ async function main() {
 
   if (isTest) {
     console.log("\n🧪 Dispatching Test Telegram Alert...");
-    const testMsg = "🚀 <b>[MYTRADA STRATEGY 5C TEST]</b>\nTelegram Signal Dispatcher connected successfully!";
+    const testMsg = "🚀 <b>[MYTRADA STRATEGY 5B/5C TEST]</b>\nTelegram Signal Dispatcher & Interactive Command Center connected successfully!\nSend <code>/status</code> to check bot status.";
     await sendTelegramMessage(testMsg);
     console.log(`${GREEN}✅ SUCCESS: Test alert sent to Telegram!${RESET}`);
     process.exit(0);
@@ -944,16 +1345,28 @@ async function main() {
   }
 
   if (isScanOnly) {
-    console.log(`\n👑 ${BOLD}${CYAN}Mytrada Real-Time Market Scan (10 Elite Pairs)${RESET}`);
+    console.log(`\n👑 ${BOLD}${CYAN}Mytrada Real-Time Market Scan (${Object.keys(config.SYMBOLS).length} Elite Pairs)${RESET}`);
     await monitorMarket();
     console.log(`\n${GREEN}✅ Real-time scan completed successfully.${RESET}`);
     process.exit(0);
   }
 
-  console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Strategy 5C Value-Zone Sniper LIVE)${RESET}`);
-  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Boom & Crash Pairs (81.8% 6-Month Flagship | 1:1.3 R:R | Dynamic Value Zone | 45m/60m Circuit Breakers | Weekly Smart Auto-Compounding)...\n`);
+  console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Upgraded Strategy 5B/5C LIVE)${RESET}`);
+  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Pairs (1:1.3 R:R | Dynamic Target Lock: $${(dynamicState.dailyTargetUSD || 250).toFixed(2)} | 35m/45m Cooldowns | Portfolio Breakers | Telegram Command Center Active)...\n`);
 
-  await sendTelegramMessage(`🚀 <b>[MYTRADA SYSTEM ONLINE]</b>\nMonitoring ${Object.keys(config.SYMBOLS).length} Elite Pairs (1:1.3 R:R • 35m/45m Cooldowns active).`);
+  const targetLabel = dynamicState.dailyTargetUSD > 0 ? `$${dynamicState.dailyTargetUSD.toFixed(2)} USD` : 'Disabled';
+  await sendTelegramMessage([
+    `🚀 <b>[MYTRADA SYSTEM ONLINE — UPGRADED 5B]</b>`,
+    `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+    `• <b>Universe:</b> <code>${Object.keys(config.SYMBOLS).length} Elite Pairs</code>`,
+    `• <b>Daily Profit Target:</b> <code>${targetLabel}</code>`,
+    `• <b>Risk Model:</b> <code>Fixed 1:1.3 R:R (3.0% Risk)</code>`,
+    `• <b>Telegram Control:</b> <b>ACTIVE</b> (Send <code>/help</code> for commands)`,
+    `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+  ].join('\n'));
+
+  // Start Interactive Telegram Inbound Listener in Background
+  startTelegramListener(telegramHandlers);
 
   await monitorMarket();
   setInterval(monitorMarket, 30000);
