@@ -241,6 +241,14 @@ async function handleCommand(rawText, handlers) {
       break;
     }
 
+    case '/report': {
+      if (handlers.getDailyReport) {
+        const reportHtml = handlers.getDailyReport(arg1);
+        await sendTelegramMessage(reportHtml);
+      }
+      break;
+    }
+
     case '/status': {
       if (handlers.getStatus) {
         const statusHtml = await handlers.getStatus();

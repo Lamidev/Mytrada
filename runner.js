@@ -572,6 +572,15 @@ const telegramHandlers = {
     saveCircuitBreakerState(circuitBreakerState);
   },
 
+  getDailyReport: (targetDate) => {
+    let dateStr = targetDate;
+    if (!dateStr) {
+      dateStr = new Date().toISOString().split('T')[0];
+    }
+    const report = generateDailyReport(dateStr);
+    return formatReportTelegramHTML(report);
+  },
+
   moveToBreakeven: () => {
     const activeTrades = loadActiveTrades();
     let count = 0;
