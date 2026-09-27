@@ -542,6 +542,10 @@ const telegramHandlers = {
     dynamicState.isManuallyPaused = false;
     dynamicState.dailyTargetLocked = false;
     dynamicState.portfolioPauseUntil = 0;
+    // Clear all symbol cooldowns to give a completely fresh session
+    const today = new Date().toISOString().slice(0, 10);
+    circuitBreakerState = { date: today, symbols: {} };
+    saveCircuitBreakerState(circuitBreakerState);
     saveDynamicState(dynamicState);
     return { symbolsCount: Object.keys(config.SYMBOLS).length };
   },
