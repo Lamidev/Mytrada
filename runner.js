@@ -117,7 +117,13 @@ function loadDynamicState() {
       if (data.date !== today) {
         data.date = today;
         data.dailyTargetLocked = false;
-        if (data.dailyTargetUSD === undefined) data.dailyTargetUSD = defaultTarget;
+        data.dailyTargetUSD = defaultTarget;
+        saveDynamicState(data);
+      }
+      // If dailyTargetUSD in cached file is still the old 250 default, reset to defaultTarget (0)
+      if (data.dailyTargetUSD === 250 || data.dailyTargetUSD === undefined) {
+        data.dailyTargetUSD = defaultTarget;
+        data.dailyTargetLocked = false;
         saveDynamicState(data);
       }
       return data;
@@ -541,6 +547,7 @@ const telegramHandlers = {
   resumeBot: () => {
     dynamicState.isManuallyPaused = false;
     dynamicState.dailyTargetLocked = false;
+    dynamicState.dailyTargetUSD = 0; // Clear target so it does not immediately re-lock
     dynamicState.portfolioPauseUntil = 0;
     // Clear all symbol cooldowns to give a completely fresh session
     const today = new Date().toISOString().slice(0, 10);
