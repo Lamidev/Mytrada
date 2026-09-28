@@ -61,7 +61,7 @@ module.exports = {
     MAX_DAILY_LOSSES_PER_SYMBOL: 2,      // 👑 2 Daily Losses = Halted on symbol for remainder of day
     PORTFOLIO_CONSECUTIVE_LOSS_LIMIT: 3, // 👑 3 Consecutive Losses across ANY pairs = 60m Portfolio-wide Cooldown
     PORTFOLIO_LOSS_PAUSE_MINS: 60,       // 60-minute portfolio pause duration
-    DEFAULT_DAILY_PROFIT_TARGET_USD: 250.0 // 👑 Default daily profit target ($250 USD) - can be overridden via Telegram
+    DEFAULT_DAILY_PROFIT_TARGET_USD: 0   // 👑 Default daily profit target disabled (0) — set dynamically via Telegram /target <amt>
   },
 
   // Bot Settings & Modes

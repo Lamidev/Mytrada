@@ -109,7 +109,7 @@ function loadDynamicState() {
   const today = new Date().toISOString().slice(0, 10);
   const defaultTarget = config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.DEFAULT_DAILY_PROFIT_TARGET_USD !== undefined
     ? config.CIRCUIT_BREAKER.DEFAULT_DAILY_PROFIT_TARGET_USD
-    : 250.0;
+    : 0.0;
 
   if (fs.existsSync(DYNAMIC_STATE_FILE)) {
     try {
@@ -802,27 +802,49 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
     }
 
     if (hitSL) {
+      const isBreakevenExit = trade.isBreakeven || Math.abs(trade.stopLoss - trade.entryPrice) < 0.001;
       const riskUSD = trade.riskUSD || compRisk.riskUSD;
       const pauseMins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 45;
 
-      recordSymbolTradeOutcome(symbol, 'LOSS');
-      recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0, trade.aiVisionVerdict);
-      const updatedBalance = getCurrentAccountBalance();
+      if (isBreakevenExit) {
+        // Breakeven Exit: Zero Loss / 0.0R — Capital preserved
+        recordClose(trade.setupId, 'BREAKEVEN', trade.stopLoss, 0.0, 0.0, trade.aiVisionVerdict);
+        const updatedBalance = getCurrentAccountBalance();
 
-      const slAlert = [
-        `🔴 🛡️ <b>[MYTRADA STOP LOSS HIT (-1.0R)]</b>`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-        `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💸 <b>Loss:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R)</code>`,
-        `💵 <b>New Balance:</b> <code>$${updatedBalance.toFixed(2)} USD</code>`,
-        `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> ➔ 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `🛡️ <i>Defensive cooldown active (${pauseMins}m).</i>`
-      ].filter(Boolean).join('\n');
+        const beAlert = [
+          `🛡️ 🟡 <b>[MYTRADA BREAKEVEN EXIT ($0 RISK)]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `💸 <b>Outcome:</b> <code>$0.00 USD (0.0R Breakeven)</code>`,
+          `💵 <b>Account Balance:</b> <code>$${updatedBalance.toFixed(2)} USD</code>`,
+          `🎯 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> ➔ 🛡️ <b>Exit:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `👌 <i>Capital fully protected. Position closed at breakeven without loss.</i>`
+        ].filter(Boolean).join('\n');
 
-      await sendTelegramMessage(slAlert);
+        await sendTelegramMessage(beAlert);
+      } else {
+        recordSymbolTradeOutcome(symbol, 'LOSS');
+        recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0, trade.aiVisionVerdict);
+        const updatedBalance = getCurrentAccountBalance();
+
+        const slAlert = [
+          `🔴 🛡️ <b>[MYTRADA STOP LOSS HIT (-1.0R)]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `💸 <b>Loss:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R)</code>`,
+          `💵 <b>New Balance:</b> <code>$${updatedBalance.toFixed(2)} USD</code>`,
+          `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> ➔ 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `🛡️ <i>Defensive cooldown active (${pauseMins}m).</i>`
+        ].filter(Boolean).join('\n');
+
+        await sendTelegramMessage(slAlert);
+      }
 
       updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
       changed = true;
@@ -1090,13 +1112,10 @@ async function monitorMarket() {
     }
   }
 
-  // 1. Automated Check for 12:00 AM Midnight Daily Performance Report
-  await checkAndSendDailyMidnightReport();
-
-  // 2. Automated Check for Sunday Midnight Weekly Performance Report
+  // 1. Automated Check for Sunday Midnight Weekly Performance Report
   await checkAndSendWeeklyReport();
 
-  // 3. Check for Daily Profit Target Reach
+  // 2. Check for Daily Profit Target Reach
   await checkDailyTargetLock();
 
   const nowMs = Date.now();
