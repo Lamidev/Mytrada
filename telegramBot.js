@@ -284,9 +284,9 @@ async function handleCommand(rawText, handlers) {
           await sendTelegramMessage(`⚠️ Invalid target amount. Example: <code>/target 300</code>`);
         } else {
           if (handlers.setDailyTarget) {
-            const res = handlers.setDailyTarget(val);
+            const res = await handlers.setDailyTarget(val);
             if (res && res.alreadyHit) {
-              await sendTelegramMessage(`🎯 <b>Daily Profit Target set to $${val.toFixed(2)} USD.</b>\n\n🚨 <b>Target already exceeded today (+$${res.todayNet.toFixed(2)} USD)!</b> Bot has locked in profits and paused for the day.`);
+              await sendTelegramMessage(`🎯 <b>Daily Profit Target set to $${val.toFixed(2)} USD.</b>\n\n🚨 <b>Target already exceeded today (+$${res.todayNet.toFixed(2)} USD)!</b> Closed all active positions and locked in profits for the day.`);
             } else {
               await sendTelegramMessage(`🎯 <b>Daily Profit Target updated to:</b> <code>+$${val.toFixed(2)} USD</code>\nTrading will automatically lock when today's profit reaches this amount.`);
             }
@@ -299,7 +299,7 @@ async function handleCommand(rawText, handlers) {
     case '/lock':
     case '/lockprofit': {
       if (handlers.lockDailyProfit) {
-        const res = handlers.lockDailyProfit();
+        const res = await handlers.lockDailyProfit();
         await sendTelegramMessage([
           `🔒 <b>[MYTRADA DAILY PROFIT LOCK ACTIVATED]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,

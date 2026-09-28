@@ -309,7 +309,7 @@ async function autoBreakevenProfitableTrades() {
   return summary;
 }
 
-async function closeTradeManually(symbol) {
+async function closeTradeManually(symbol, skipTargetCheck = false) {
   const activeTrades = loadActiveTrades();
   const trade = activeTrades.find(t => t.symbol === symbol);
   if (!trade) {
@@ -338,7 +338,9 @@ async function closeTradeManually(symbol) {
 
   const updatedTrades = activeTrades.filter(t => t.setupId !== trade.setupId);
   saveActiveTrades(updatedTrades);
-  await checkDailyTargetLock();
+  if (!skipTargetCheck) {
+    await checkDailyTargetLock();
+  }
 
   const newBalance = getCurrentAccountBalance();
   const pnlSign = pnlUSD >= 0 ? '+' : '-';
@@ -361,18 +363,19 @@ async function closeTradeManually(symbol) {
 async function closeAllTradesManually() {
   const activeTrades = loadActiveTrades();
   if (!activeTrades || activeTrades.length === 0) {
-    return { success: false, message: `⚠️ No active positions currently open.` };
+    return { success: false, message: `⚠️ No active positions currently open.`, results: [] };
   }
 
   const results = [];
   for (const t of activeTrades) {
-    const res = await closeTradeManually(t.symbol);
+    const res = await closeTradeManually(t.symbol, true);
     results.push(res.message);
   }
 
   return {
     success: true,
-    message: `✂️ <b>[CLOSED ALL POSITIONS]</b>\n\n${results.join('\n\n')}`
+    message: `✂️ <b>[CLOSED ALL POSITIONS]</b>\n\n${results.join('\n\n')}`,
+    results
   };
 }
 
@@ -392,31 +395,33 @@ async function checkDailyTargetLock() {
     dynamicState.dailyTargetLocked = true;
     saveDynamicState(dynamicState);
 
-    // Auto-move profitable running trades to Breakeven
-    const beSummary = await autoBreakevenProfitableTrades();
+    // 👑 Option A: Auto-close ALL active positions at current market to bank floating profit & eliminate all open risk
+    const closeRes = await closeAllTradesManually();
+    const finalReport = generateDailyReport(todayStr);
 
     const alertLines = [
       `🎯 🟢 <b>[MYTRADA DAILY PROFIT TARGET REACHED!]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-      `💰 <b>Realized Today:</b> <code>+$${todayReport.netUSD.toFixed(2)} USD (${todayReport.netR >= 0 ? '+' : ''}${todayReport.netR.toFixed(1)}R)</code>`,
+      `💰 <b>Final Realized Today:</b> <code>+$${finalReport.netUSD.toFixed(2)} USD (${finalReport.netR >= 0 ? '+' : ''}${finalReport.netR.toFixed(1)}R)</code>`,
       `🎯 <b>Target Goal:</b> <code>+$${dynamicState.dailyTargetUSD.toFixed(2)} USD</code>`,
-      `📊 <b>Today's Record:</b> <code>${todayReport.wins}W / ${todayReport.losses}L (${todayReport.winRate}% WR)</code>`,
-      `💵 <b>Account Equity:</b> <code>$${todayReport.newBalance.toFixed(2)} USD</code>`,
+      `📊 <b>Today's Record:</b> <code>${finalReport.wins}W / ${finalReport.losses}L (${finalReport.winRate}% WR)</code>`,
+      `💵 <b>Final Account Equity:</b> <code>$${finalReport.newBalance.toFixed(2)} USD</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-      `🔒 <b>Status:</b> <b>NEW TRADING ENTRIES LOCKED FOR THE DAY</b>`
+      `✂️ <b>All active positions closed at market to lock in 100% of profits.</b>`,
+      `🔒 <b>Status:</b> <b>TRADING HALTED FOR THE DAY (0 Open Risk)</b>`
     ];
 
-    if (beSummary.length > 0) {
+    if (closeRes.success && closeRes.results && closeRes.results.length > 0) {
       alertLines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
-      alertLines.push(`📂 <b>ONGOING TRADES STATUS:</b>`);
-      alertLines.push(...beSummary);
+      alertLines.push(`📂 <b>POSITIONS CLOSED AT TARGET:</b>`);
+      alertLines.push(...closeRes.results);
     }
 
     alertLines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
-    alertLines.push(`⏳ <i>Bot will automatically reset & resume tomorrow at 12:00 AM UTC. Send /resume to override now.</i>`);
+    alertLines.push(`⏳ <i>Zero market exposure. Bot will automatically reset & resume tomorrow at 12:00 AM UTC. Send /resume to override now.</i>`);
 
     await sendTelegramMessage(alertLines.join('\n'));
-    console.log(`\n🎯 [TARGET HIT] Daily profit target (+$${dynamicState.dailyTargetUSD}) achieved! Trading locked for remainder of day.\n`);
+    console.log(`\n🎯 [TARGET HIT] Daily profit target (+$${dynamicState.dailyTargetUSD}) achieved! All active trades closed and trading locked for remainder of day.\n`);
   }
 }
 
@@ -511,7 +516,7 @@ const telegramHandlers = {
     return dynamicState.dailyTargetUSD || 0;
   },
 
-  setDailyTarget: (val) => {
+  setDailyTarget: async (val) => {
     dynamicState.dailyTargetUSD = val;
     dynamicState.dailyTargetLocked = false;
     const todayStr = new Date().toISOString().split('T')[0];
@@ -520,16 +525,17 @@ const telegramHandlers = {
     if (val > 0 && report.netUSD >= val) {
       dynamicState.dailyTargetLocked = true;
       alreadyHit = true;
-      autoBreakevenProfitableTrades();
+      await closeAllTradesManually();
     }
     saveDynamicState(dynamicState);
-    return { alreadyHit, todayNet: report.netUSD };
+    const finalReport = generateDailyReport(todayStr);
+    return { alreadyHit, todayNet: finalReport.netUSD };
   },
 
-  lockDailyProfit: () => {
+  lockDailyProfit: async () => {
     dynamicState.dailyTargetLocked = true;
     saveDynamicState(dynamicState);
-    autoBreakevenProfitableTrades();
+    await closeAllTradesManually();
     const todayStr = new Date().toISOString().split('T')[0];
     const report = generateDailyReport(todayStr);
     return {
