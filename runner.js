@@ -1404,9 +1404,9 @@ async function main() {
 
   const targetLabel = dynamicState.dailyTargetUSD > 0 ? `$${dynamicState.dailyTargetUSD.toFixed(2)} USD` : 'Disabled';
   await sendTelegramMessage([
-    `🚀 <b>[MYTRADA SYSTEM ONLINE — STRATEGY 5C]</b>`,
+    `🚀 <b>[MYTRADA SYSTEM ONLINE — STRATEGY 5B ENHANCED]</b>`,
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-    `• <b>Strategy:</b> <code>Strategy 5C Institutional Momentum Guard</code>`,
+    `• <b>Strategy:</b> <code>Strategy 5B Enhanced (Value-Zone Momentum Sniper)</code>`,
     `• <b>Universe:</b> <code>${Object.keys(config.SYMBOLS).length} Elite Pairs</code>`,
     `• <b>Daily Profit Target:</b> <code>${targetLabel}</code>`,
     `• <b>Risk Model:</b> <code>Fixed 1:1.3 R:R (3.0% Risk)</code>`,
