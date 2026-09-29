@@ -1125,10 +1125,13 @@ async function monitorMarket() {
     }
   }
 
-  // 1. Automated Check for Sunday Midnight Weekly Performance Report
+  // 1. Automated Check for 12:00 AM Midnight Daily Performance Report
+  await checkAndSendDailyMidnightReport();
+
+  // 2. Automated Check for Sunday Midnight Weekly Performance Report
   await checkAndSendWeeklyReport();
 
-  // 2. Check for Daily Profit Target Reach
+  // 3. Check for Daily Profit Target Reach
   await checkDailyTargetLock();
 
   const nowMs = Date.now();
