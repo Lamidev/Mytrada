@@ -630,7 +630,13 @@ function saveLastReportedWeek(weekStr) {
 // ── AUTOMATED 12:00 AM MIDNIGHT DAILY REPORT DELIVERY ──
 async function checkAndSendDailyMidnightReport() {
   const now = new Date();
-  
+  const utcHour = now.getUTCHours();
+  const utcMinute = now.getUTCMinutes();
+
+  // Only fire the midnight report within the 00:00–00:04 UTC window to ensure
+  // it always sends at midnight, not whenever the bot first restarts after midnight.
+  if (utcHour !== 0 || utcMinute > 4) return;
+
   // Calculate yesterday's date string (UTC)
   const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const yesterdayDateStr = yesterday.toISOString().split('T')[0];
@@ -1110,19 +1116,21 @@ async function monitorMarket() {
 
   // Refresh dynamic state on date rollover
   if (!dynamicState || dynamicState.date !== todayStr) {
-    const wasLocked = dynamicState && dynamicState.dailyTargetLocked;
     dynamicState = loadDynamicState();
-    if (wasLocked) {
-      const compRisk = getWeeklyCompoundedRisk();
-      sendTelegramMessage([
-        `🌅 <b>[NEW TRADING DAY ACTIVATED]</b>`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💵 <b>Starting Balance:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
-        `🎯 <b>Daily Profit Target:</b> <code>$${(dynamicState.dailyTargetUSD || 250).toFixed(2)} USD</code>`,
-        `🚀 <b>Status:</b> <b>ONLINE & SCANNING ${Object.keys(config.SYMBOLS).length} PAIRS</b>`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
-      ].join('\n'));
-    }
+    const compRisk = getWeeklyCompoundedRisk();
+    // Always send the new-day banner on date rollover, regardless of whether yesterday was locked.
+    // Daily target is NOT auto-set — the trader sets it manually via /target each day.
+    const newDayTargetLabel = (dynamicState.dailyTargetUSD && dynamicState.dailyTargetUSD > 0)
+      ? `$${dynamicState.dailyTargetUSD.toFixed(2)} USD`
+      : 'Not Set — Use /target to set today\'s goal';
+    sendTelegramMessage([
+      `🌅 <b>[NEW TRADING DAY ACTIVATED]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `💵 <b>Starting Balance:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
+      `🎯 <b>Daily Profit Target:</b> <code>${newDayTargetLabel}</code>`,
+      `🚀 <b>Status:</b> <b>ONLINE & SCANNING ${Object.keys(config.SYMBOLS).length} PAIRS</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+    ].join('\n'));
   }
 
   // 1. Automated Check for 12:00 AM Midnight Daily Performance Report
@@ -1399,8 +1407,9 @@ async function main() {
     process.exit(0);
   }
 
-  console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner (Upgraded Strategy 5B/5C LIVE)${RESET}`);
-  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Pairs (1:1.3 R:R | Dynamic Target Lock: $${(dynamicState.dailyTargetUSD || 250).toFixed(2)} | 35m/45m Cooldowns | Portfolio Breakers | Telegram Command Center Active)...\n`);
+  const startupTargetLabel = dynamicState.dailyTargetUSD > 0 ? `$${dynamicState.dailyTargetUSD.toFixed(2)}` : 'None';
+  console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner — Strategy 5B Enhanced${RESET}`);
+  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Pairs (1:1.3 R:R | Target: ${startupTargetLabel} | 35m/45m Cooldowns | Portfolio Breakers | Telegram Command Center Active)...\n`);
 
   const targetLabel = dynamicState.dailyTargetUSD > 0 ? `$${dynamicState.dailyTargetUSD.toFixed(2)} USD` : 'Disabled';
   await sendTelegramMessage([
