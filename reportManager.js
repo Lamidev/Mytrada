@@ -73,6 +73,35 @@ function recordShadowOutcome(outcomeData) {
   saveShadowHistory(history.slice(-300));
 }
 
+// ── INCUBATION PAIR FOOTPRINT HISTORY ──
+const INCUBATION_HISTORY_FILE = path.join(CACHE_DIR, 'incubation_history.json');
+
+function loadIncubationHistory() {
+  if (fs.existsSync(INCUBATION_HISTORY_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(INCUBATION_HISTORY_FILE, 'utf8'));
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+}
+
+function saveIncubationHistory(history) {
+  try {
+    fs.writeFileSync(INCUBATION_HISTORY_FILE, JSON.stringify(history, null, 2), 'utf8');
+  } catch (e) {}
+}
+
+function recordIncubationOutcome(outcomeData) {
+  const history = loadIncubationHistory();
+  history.push({
+    ...outcomeData,
+    time: new Date().toISOString()
+  });
+  saveIncubationHistory(history.slice(-500));
+}
+
 /**
  * Records a new signal in history
  */
@@ -489,8 +518,24 @@ function formatReportTelegramHTML(report) {
     lines.push(`🛡️ <b>FILTER GUARD AUDIT (COUNTERFACTUAL ANALYSIS):</b>`);
     lines.push(`• <b>Setups Blocked Today:</b> <code>${shadowToday.length} Setups</code>`);
     lines.push(`• <b>Prevented Losses:</b> <code>${savedLosses.length} Trades (+$${totalSavedUSD.toFixed(2)} USD Saved)</code>`);
-    lines.push(`• <b>Missed Wins:</b> <code>${missedWins.length} Trades (-$${totalMissedUSD.toFixed(2)} USD Missed)</code>`);
     lines.push(`📈 <b>Net Guard Advantage:</b> <code>${netFilterAdvantage >= 0 ? '+' : ''}$${netFilterAdvantage.toFixed(2)} USD Preserved</code>`);
+    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+  }
+
+  // ── INCUBATION PAIR FOOTPRINT AUDIT ──
+  const incubationHistory = loadIncubationHistory();
+  const incTargetDate = report.targetDateStr || new Date().toISOString().split('T')[0];
+  const incToday = incubationHistory.filter(s => getDateString(s.time) === incTargetDate);
+  if (incToday.length > 0) {
+    const incWins = incToday.filter(s => s.outcome === 'WIN');
+    const incLosses = incToday.filter(s => s.outcome === 'LOSS');
+    const incWinRate = ((incWins.length / incToday.length) * 100).toFixed(1);
+    const incProfitUSD = incWins.reduce((acc, s) => acc + (s.pnlUSD || 0), 0) - incLosses.reduce((acc, s) => acc + (Math.abs(s.pnlUSD) || 0), 0);
+
+    lines.push(`🔬 <b>INCUBATION SANDBOX AUDIT (PAPER MONITORING):</b>`);
+    lines.push(`• <b>Paper Scalps Today:</b> <code>${incToday.length} Trades (${incWins.length}W / ${incLosses.length}L • ${incWinRate}% WR)</code>`);
+    lines.push(`• <b>Theoretical Net PnL:</b> <code>${incProfitUSD >= 0 ? '+' : ''}$${incProfitUSD.toFixed(2)} USD</code>`);
+    lines.push(`• <b>Status:</b> <i>Zero capital impact. Footprint tracking active.</i>`);
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
   }
 
@@ -559,5 +604,7 @@ module.exports = {
   getWeeklyCompoundedRisk,
   getDailyCompoundedRisk: getWeeklyCompoundedRisk,
   loadShadowHistory,
-  recordShadowOutcome
+  recordShadowOutcome,
+  loadIncubationHistory,
+  recordIncubationOutcome
 };

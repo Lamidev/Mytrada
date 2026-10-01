@@ -19,6 +19,7 @@ module.exports = {
     "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM150N":  { name: "Boom 150 Index",  mode: "BOOM",  min_spikes: 2, monitorOnly: true }, // 🔬 Incubation Paper Monitor ($0 Risk)
 
     // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend + Price Action Displacement) ──
     "CRASH300N": { name: "Crash 300 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
@@ -26,6 +27,7 @@ module.exports = {
     "CRASH600":  { name: "Crash 600 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "CRASH900":  { name: "Crash 900 Index", mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "CRASH1000": { name: "Crash 1000 Index",mode: "CRASH", min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "CRASH150N": { name: "Crash 150 Index", mode: "CRASH", min_spikes: 2, monitorOnly: true }, // 🔬 Incubation Paper Monitor ($0 Risk)
   },
 
   // Multi-Timeframe Confluence Engine

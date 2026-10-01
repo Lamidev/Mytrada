@@ -28,7 +28,9 @@ const {
   getCurrentAccountBalance,
   getWeeklyCompoundedRisk,
   loadShadowHistory,
-  recordShadowOutcome
+  recordShadowOutcome,
+  loadIncubationHistory,
+  recordIncubationOutcome
 } = require('./reportManager');
 
 // ANSI Color Codes
@@ -859,6 +861,72 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
       hitSL = isBullish ? currentLivePrice <= trade.stopLoss : currentLivePrice >= trade.stopLoss;
     }
 
+    if (trade.isIncubation) {
+      if (hitTP) {
+        recordIncubationOutcome({
+          setupId: trade.setupId,
+          symbol: trade.symbol,
+          type: trade.type,
+          entryPrice: trade.entryPrice,
+          exitPrice: trade.takeProfit,
+          outcome: 'WIN',
+          rMultiple: 1.3,
+          pnlUSD: compRisk.rewardUSD
+        });
+
+        const tpAlert = [
+          `🔬 🟢 <b>[MYTRADA INCUBATION OUTCOME — TP HIT (+1.3R)]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `🎯 <b>Outcome:</b> <code>+1.3R (+$${compRisk.rewardUSD.toFixed(2)} USD Paper Return)</code>`,
+          `🎯 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> ➔ 🏆 <b>TP:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `🧪 <i>Paper Incubation trade closed. Real account equity ($${getCurrentAccountBalance().toFixed(2)}) unaffected.</i>`
+        ].join('\n');
+
+        await sendTelegramMessage(tpAlert);
+
+        updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
+        changed = true;
+        continue;
+      }
+
+      if (hitSL) {
+        recordIncubationOutcome({
+          setupId: trade.setupId,
+          symbol: trade.symbol,
+          type: trade.type,
+          entryPrice: trade.entryPrice,
+          exitPrice: trade.stopLoss,
+          outcome: 'LOSS',
+          rMultiple: -1.0,
+          pnlUSD: -compRisk.riskUSD
+        });
+
+        const slAlert = [
+          `🔬 🔴 <b>[MYTRADA INCUBATION OUTCOME — SL HIT (-1.0R)]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `💸 <b>Outcome:</b> <code>-1.0R (-$${compRisk.riskUSD.toFixed(2)} USD Paper Loss)</code>`,
+          `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> ➔ 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `🧪 <i>Paper Incubation trade closed. Real account equity ($${getCurrentAccountBalance().toFixed(2)}) unaffected.</i>`
+        ].join('\n');
+
+        await sendTelegramMessage(slAlert);
+
+        updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
+        changed = true;
+        continue;
+      }
+
+      continue;
+    }
+
     if (hitTP) {
       const pnlUsd = trade.rewardUSD || compRisk.rewardUSD;
 
@@ -1504,7 +1572,7 @@ async function monitorMarket() {
         }
 
         // Double check target lock or pause before sending
-        if (dynamicState.dailyTargetLocked || dynamicState.isManuallyPaused) {
+        if (!symConfig.monitorOnly && (dynamicState.dailyTargetLocked || dynamicState.isManuallyPaused)) {
           console.log(`  [${mode}] ${symbol.padEnd(12)} | Setup ignored: Bot is currently in locked/paused state.`);
           break;
         }
@@ -1512,6 +1580,46 @@ async function monitorMarket() {
         // ── NEW SIGNAL — FIRE ALERT ──
         saveAlertedSetup(setupId);
         signalFiredThisScan = true;
+
+        if (symConfig.monitorOnly) {
+          // ── INCUBATION PAIR (PAPER MONITORING — $0 RISK) ──
+          const dirEmoji = setup.direction === 'SELL' ? '🔴' : '🟢';
+          const alertLines = [
+            `🔬 🟡 <b>[MYTRADA INCUBATION SIGNAL — PAPER ONLY]</b>`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `<b>Asset:</b> <code>${symbol}</code> (${symConfig.name})`,
+            `<b>Action:</b> ${dirEmoji} <b>${setup.direction} (Paper Monitor)</b>`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `🎯 <b>Entry:</b> <code>${setup.entry.toFixed(2)}</code>`,
+            `🛡️ <b>Stop Loss:</b> <code>${setup.sl.toFixed(2)}</code>`,
+            `🏆 <b>Take Profit:</b> <code>${setup.tp.toFixed(2)}</code> (1:1.3 R:R Target)`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `🧪 <b>Mode:</b> <code>Incubation Sandbox ($0 Capital at Risk)</code>`,
+            `📊 <i>Trend: 4H ${setup.htf4hTrend.toUpperCase()} + 1H ${setup.htf1hTrend.toUpperCase()} | ${setup.spikeCountLabel || `${minSpikes} Spikes`}</i>`,
+            `🔬 <i>Tracking forward outcome for performance footprint audit.</i>`
+          ];
+
+          await sendTelegramMessage(alertLines.join('\n'));
+          console.log(`${YELLOW}${BOLD}   >>> [INCUBATION PAPER SIGNAL]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
+
+          const activeTrades = loadActiveTrades();
+          activeTrades.push({
+            setupId,
+            symbol,
+            type: setup.type,
+            entryPrice: setup.entry,
+            stopLoss: setup.sl,
+            takeProfit: setup.tp,
+            riskUSD: 0,
+            rewardUSD: 0,
+            candleEpoch: setup.candleEpoch,
+            triggeredTime: Date.now(),
+            isIncubation: true
+          });
+          saveActiveTrades(activeTrades);
+
+          break;
+        }
 
         const compRisk = getWeeklyCompoundedRisk();
         const lotSize = calculateLotSize(symbol, setup.entry, setup.sl, compRisk.riskUSD);
