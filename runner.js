@@ -104,9 +104,19 @@ function saveLastReportedDate(dateStr) {
   } catch (e) {}
 }
 
+// ── TIMEZONE HELPERS (TRADER LOCAL TIMEZONE) ──
+function getLocalTime(date = new Date()) {
+  const offset = config.TIMEZONE_OFFSET_HOURS !== undefined ? config.TIMEZONE_OFFSET_HOURS : 1;
+  return new Date(date.getTime() + offset * 60 * 60 * 1000);
+}
+
+function getLocalDateStr(date = new Date()) {
+  return getLocalTime(date).toISOString().split('T')[0];
+}
+
 // ── DYNAMIC STATE & DAILY TARGET MANAGER ──
 function loadDynamicState() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDateStr();
   const defaultTarget = config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.DEFAULT_DAILY_PROFIT_TARGET_USD !== undefined
     ? config.CIRCUIT_BREAKER.DEFAULT_DAILY_PROFIT_TARGET_USD
     : 0.0;
@@ -381,7 +391,7 @@ async function closeAllTradesManually() {
 
 // ── DAILY PROFIT TARGET CIRCUIT BREAKER ──
 async function checkDailyTargetLock() {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateStr();
   if (!dynamicState || dynamicState.date !== todayStr) {
     dynamicState = loadDynamicState();
   }
@@ -428,7 +438,7 @@ async function checkDailyTargetLock() {
 // ── TELEGRAM INBOUND COMMAND HANDLERS ──
 const telegramHandlers = {
   getStatus: async () => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateStr();
     const report = generateDailyReport(todayStr);
     const compRisk = getWeeklyCompoundedRisk();
     const activeTrades = loadActiveTrades();
@@ -519,7 +529,7 @@ const telegramHandlers = {
   setDailyTarget: async (val) => {
     dynamicState.dailyTargetUSD = val;
     dynamicState.dailyTargetLocked = false;
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateStr();
     const report = generateDailyReport(todayStr);
     let alreadyHit = false;
     if (val > 0 && report.netUSD >= val) {
@@ -536,7 +546,7 @@ const telegramHandlers = {
     dynamicState.dailyTargetLocked = true;
     saveDynamicState(dynamicState);
     await closeAllTradesManually();
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateStr();
     const report = generateDailyReport(todayStr);
     return {
       todayNet: report.netUSD,
@@ -556,7 +566,7 @@ const telegramHandlers = {
     dynamicState.dailyTargetUSD = 0; // Clear target so it does not immediately re-lock
     dynamicState.portfolioPauseUntil = 0;
     // Clear all symbol cooldowns to give a completely fresh session
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalDateStr();
     circuitBreakerState = { date: today, symbols: {} };
     saveCircuitBreakerState(circuitBreakerState);
     saveDynamicState(dynamicState);
@@ -588,7 +598,7 @@ const telegramHandlers = {
   getDailyReport: (targetDate) => {
     let dateStr = targetDate;
     if (!dateStr) {
-      dateStr = new Date().toISOString().split('T')[0];
+      dateStr = getLocalDateStr();
     }
     const report = generateDailyReport(dateStr);
     return formatReportTelegramHTML(report);
@@ -630,15 +640,15 @@ function saveLastReportedWeek(weekStr) {
 // ── AUTOMATED 12:00 AM MIDNIGHT DAILY REPORT DELIVERY ──
 async function checkAndSendDailyMidnightReport() {
   const now = new Date();
-  const utcHour = now.getUTCHours();
-  const utcMinute = now.getUTCMinutes();
+  const localNow = getLocalTime(now);
+  const localHour = localNow.getUTCHours();
+  const localMinute = localNow.getUTCMinutes();
 
-  // Only fire the midnight report within the 00:00–00:04 UTC window to ensure
-  // it always sends at midnight, not whenever the bot first restarts after midnight.
-  if (utcHour !== 0 || utcMinute > 4) return;
+  // Only fire the midnight report within the 00:00–00:04 local midnight window (12:00 AM - 12:04 AM)
+  if (localHour !== 0 || localMinute > 4) return;
 
-  // Calculate yesterday's date string (UTC)
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  // Calculate yesterday's date string in trader local timezone
+  const yesterday = new Date(localNow.getTime() - 24 * 60 * 60 * 1000);
   const yesterdayDateStr = yesterday.toISOString().split('T')[0];
 
   const lastReported = getLastReportedDate();
@@ -658,9 +668,10 @@ async function checkAndSendDailyMidnightReport() {
 // ── AUTOMATED WEEKLY PERFORMANCE REPORT DELIVERY (SUNDAY MIDNIGHT) ──
 async function checkAndSendWeeklyReport() {
   const now = new Date();
-  // Check if today is Sunday (day 0) at 12:00 AM+
-  if (now.getUTCDay() === 0) {
-    const weekYear = `${now.getUTCFullYear()}-W${Math.ceil((now.getUTCDate() + 6) / 7)}`;
+  const localNow = getLocalTime(now);
+  // Check if today is Sunday (day 0) at 12:00 AM+ local time
+  if (localNow.getUTCDay() === 0) {
+    const weekYear = `${localNow.getUTCFullYear()}-W${Math.ceil((localNow.getUTCDate() + 6) / 7)}`;
     const lastWeek = getLastReportedWeek();
     if (lastWeek !== weekYear) {
       console.log(`\n📊 [WEEKLY REPORT] Compiling Weekly Performance Report...`);
@@ -891,6 +902,30 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
   const h1ClearancePct = (Math.abs(last1hClose - last1hEma) / last1hEma) * 100;
   if (config.USE_HTF_CHOP_FILTER && h1ClearancePct < 0.08) return null;
 
+  // 👑 Active 1H Candle Momentum Guard: never trade against the active 1-hour bar
+  if (config.USE_ACTIVE_1H_CANDLE_GUARD) {
+    const active1h = htf1hCandles[htf1hCandles.length - 1];
+    if (active1h) {
+      if (mode === 'CRASH' && active1h.close < active1h.open) return null; // Reject BUY on Crash if active 1H bar is red
+      if (mode === 'BOOM' && active1h.close > active1h.open) return null;  // Reject SELL on Boom if active 1H bar is green
+    }
+  }
+
+  // 👑 24-Hour Range Climax Filter: reject buying at daily ceilings / selling at daily floors
+  if (config.USE_24H_RANGE_EXTREME_FILTER && htf1hCandles.length >= 24) {
+    const lookback24h = htf1hCandles.slice(-24);
+    const high24h = Math.max(...lookback24h.map(c => c.high));
+    const low24h  = Math.min(...lookback24h.map(c => c.low));
+    const range24h = high24h - low24h;
+    if (range24h > 0) {
+      const rangePos = (last1hClose - low24h) / range24h;
+      const maxPct = config.MAX_24H_RANGE_PERCENTILE !== undefined ? config.MAX_24H_RANGE_PERCENTILE : 0.90;
+      const minPct = config.MIN_24H_RANGE_PERCENTILE !== undefined ? config.MIN_24H_RANGE_PERCENTILE : 0.10;
+      if (mode === 'CRASH' && rangePos >= maxPct) return null; // In top 10% ceiling of the day
+      if (mode === 'BOOM' && rangePos <= minPct) return null;  // In bottom 10% floor of the day
+    }
+  }
+
   // 2. 4H 50 EMA Macro Trend
   let htf4hTrend = 'N/A';
   if (htf4hCandles && htf4hCandles.length >= 55) {
@@ -1112,18 +1147,36 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
 // ── MAIN MONITOR CYCLE ──
 async function monitorMarket() {
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
+  const todayStr = getLocalDateStr(now);
 
   // Refresh dynamic state on date rollover
   if (!dynamicState || dynamicState.date !== todayStr) {
+    // 👑 1. Send yesterday's midnight report FIRST (if not already delivered)
+    const localNow = getLocalTime(now);
+    const yesterday = new Date(localNow.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayDateStr = yesterday.toISOString().split('T')[0];
+    const lastReported = getLastReportedDate();
+
+    if (lastReported !== yesterdayDateStr) {
+      console.log(`\n📅 [12:00 AM MIDNIGHT REPORT] Compiling Daily Performance Report for ${yesterdayDateStr}...`);
+      const report = generateDailyReport(yesterdayDateStr);
+      const reportHtml = formatReportTelegramHTML(report);
+      await sendTelegramMessage(reportHtml);
+      saveLastReportedDate(yesterdayDateStr);
+      console.log(`✅ [12:00 AM MIDNIGHT REPORT] Daily Report for ${yesterdayDateStr} dispatched to Telegram successfully!\n`);
+      // Brief pause to guarantee Telegram chat ordering (Report first, Banner second)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    // 👑 2. Load dynamic state for the new day
     dynamicState = loadDynamicState();
     const compRisk = getWeeklyCompoundedRisk();
-    // Always send the new-day banner on date rollover, regardless of whether yesterday was locked.
-    // Daily target is NOT auto-set — the trader sets it manually via /target each day.
+
+    // 👑 3. Send NEW TRADING DAY banner SECOND
     const newDayTargetLabel = (dynamicState.dailyTargetUSD && dynamicState.dailyTargetUSD > 0)
       ? `$${dynamicState.dailyTargetUSD.toFixed(2)} USD`
       : 'Not Set — Use /target to set today\'s goal';
-    sendTelegramMessage([
+    await sendTelegramMessage([
       `🌅 <b>[NEW TRADING DAY ACTIVATED]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `💵 <b>Starting Balance:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
@@ -1392,7 +1445,7 @@ async function main() {
   if (isReport) {
     console.log("\n📊 Dispatching Manual Daily Report Test to Telegram...");
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const yesterdayStr = getLocalDateStr(yesterday);
     const report = generateDailyReport(yesterdayStr);
     const reportHtml = formatReportTelegramHTML(report);
     await sendTelegramMessage(reportHtml);

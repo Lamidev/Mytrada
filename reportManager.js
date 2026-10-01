@@ -39,7 +39,9 @@ function saveTradeHistory(history) {
 
 function getDateString(isoString) {
   if (!isoString) return "";
-  return isoString.split('T')[0];
+  const offset = config.TIMEZONE_OFFSET_HOURS !== undefined ? config.TIMEZONE_OFFSET_HOURS : 1;
+  const d = new Date(new Date(isoString).getTime() + offset * 3600000);
+  return d.toISOString().split('T')[0];
 }
 
 /**
@@ -112,9 +114,10 @@ function generateDailyReport(targetDateStr) {
   const history = loadTradeHistory();
   
   if (!targetDateStr) {
-    // Default to yesterday's date if called at 12:00 AM midnight
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - 1);
+    // Default to yesterday's date in trader local timezone
+    const offset = config.TIMEZONE_OFFSET_HOURS !== undefined ? config.TIMEZONE_OFFSET_HOURS : 1;
+    const localNow = new Date(Date.now() + offset * 3600000);
+    const d = new Date(localNow.getTime() - 24 * 60 * 60 * 1000);
     targetDateStr = d.toISOString().split('T')[0];
   }
 
@@ -448,7 +451,12 @@ function formatReportTelegramHTML(report) {
     lines.push(`📋 <b>TRADE LIFECYCLE LOG:</b>`);
     report.closedTrades.forEach(t => {
       const outEmoji = t.outcome === 'WIN' ? '🟢 WIN (+1.3R)' : (t.outcome === 'BREAKEVEN' ? '🟡 BE' : '🔴 LOSS (-1.0R)');
-      const sigTime = t.signalTime ? t.signalTime.slice(11, 16) : 'N/A';
+      let sigTime = 'N/A';
+      if (t.signalTime) {
+        const offset = config.TIMEZONE_OFFSET_HOURS !== undefined ? config.TIMEZONE_OFFSET_HOURS : 1;
+        const localD = new Date(new Date(t.signalTime).getTime() + offset * 3600000);
+        sigTime = localD.toISOString().slice(11, 16);
+      }
       lines.push(`• <b>${t.symbol}</b>: ${outEmoji} @ ${sigTime}`);
     });
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);

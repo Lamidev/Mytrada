@@ -42,6 +42,9 @@ module.exports = {
   DYNAMIC_RISK_COMPOUNDING: true,       // 👑 Auto-adjust risk and lot sizes weekly based on account equity
   COMPOUNDING_FREQUENCY: "WEEKLY",      // 👑 Weekly End-of-Week (Sunday Midnight) Re-anchoring
   
+  // Timezone Settings (WAT / West Africa Time / GMT+1)
+  TIMEZONE_OFFSET_HOURS: 1,             // 12:00 AM midnight daily report & date rollover triggers in trader local time
+
   // Strategy 5B/5C Execution Parameters
   REWARD_RATIO: 1.3,                    // 1:1.3 R:R Fixed Sniper Target
   USE_HTF_CHOP_FILTER: true,            // Filter out flat 1H 50 EMA chop (>0.08% clearance required)
@@ -51,6 +54,12 @@ module.exports = {
   MIN_SPIKE_CLUSTER_ATR_RATIO: 1.20,    // 👑 Substantial Spike Filter: spike cluster range must be >= 1.2x ATR(14)
   VALUE_ZONE_MAX_ATR_DIST: 2.5,         // 👑 Value Zone Guard: rejects overbought ceiling buys or oversold floor sells
   MIN_CANDLE0_DISPLACEMENT_RATIO: 0.20, // 👑 Price action confirmation: C0 recovery body must be >= 20% of preceding spike
+
+  // Anti-Climax & Momentum Guards (Strategy 5B Enhanced)
+  USE_ACTIVE_1H_CANDLE_GUARD: true,     // 👑 Reject BUY on Crash if active 1H candle is red; reject SELL on Boom if green
+  USE_24H_RANGE_EXTREME_FILTER: true,   // 👑 Reject entries in extreme top 10% (Crash) or bottom 10% (Boom) of 24h range
+  MAX_24H_RANGE_PERCENTILE: 0.90,       // Ceiling threshold: no buys if price >= 90% of daily range
+  MIN_24H_RANGE_PERCENTILE: 0.10,       // Floor threshold: no sells if price <= 10% of daily range
 
   // Institutional Responsive Tiered Circuit Breakers & Daily Targets
   CIRCUIT_BREAKER: {
