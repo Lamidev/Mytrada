@@ -481,5 +481,6 @@ async function getHistoricalCandles(symbol, timeframe, months = 6, forceRefresh 
 module.exports = {
   getCandles,
   timeframeToSeconds,
-  getHistoricalCandles
+  getHistoricalCandles,
+  fetchCandlesInChunks
 };

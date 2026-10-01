@@ -44,6 +44,35 @@ function getDateString(isoString) {
   return d.toISOString().split('T')[0];
 }
 
+// ── SHADOW / COUNTERFACTUAL FILTER HISTORY ──
+const SHADOW_HISTORY_FILE = path.join(CACHE_DIR, 'shadow_history.json');
+
+function loadShadowHistory() {
+  if (fs.existsSync(SHADOW_HISTORY_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(SHADOW_HISTORY_FILE, 'utf8'));
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+}
+
+function saveShadowHistory(history) {
+  try {
+    fs.writeFileSync(SHADOW_HISTORY_FILE, JSON.stringify(history, null, 2), 'utf8');
+  } catch (e) {}
+}
+
+function recordShadowOutcome(outcomeData) {
+  const history = loadShadowHistory();
+  history.push({
+    ...outcomeData,
+    time: new Date().toISOString()
+  });
+  saveShadowHistory(history.slice(-300));
+}
+
 /**
  * Records a new signal in history
  */
@@ -446,19 +475,22 @@ function formatReportTelegramHTML(report) {
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
   }
 
-  // ── TRADE LIFECYCLE BREAKDOWN ──
-  if (report.closedTrades && report.closedTrades.length > 0) {
-    lines.push(`📋 <b>TRADE LIFECYCLE LOG:</b>`);
-    report.closedTrades.forEach(t => {
-      const outEmoji = t.outcome === 'WIN' ? '🟢 WIN (+1.3R)' : (t.outcome === 'BREAKEVEN' ? '🟡 BE' : '🔴 LOSS (-1.0R)');
-      let sigTime = 'N/A';
-      if (t.signalTime) {
-        const offset = config.TIMEZONE_OFFSET_HOURS !== undefined ? config.TIMEZONE_OFFSET_HOURS : 1;
-        const localD = new Date(new Date(t.signalTime).getTime() + offset * 3600000);
-        sigTime = localD.toISOString().slice(11, 16);
-      }
-      lines.push(`• <b>${t.symbol}</b>: ${outEmoji} @ ${sigTime}`);
-    });
+  // ── SHADOW FILTER AUDIT SUMMARY (COUNTERFACTUAL ANALYSIS) ──
+  const shadowHistory = loadShadowHistory();
+  const shadowTargetDate = report.targetDateStr || new Date().toISOString().split('T')[0];
+  const shadowToday = shadowHistory.filter(s => getDateString(s.time) === shadowTargetDate);
+  if (shadowToday.length > 0) {
+    const savedLosses = shadowToday.filter(s => s.outcome === 'SAVED_LOSS');
+    const missedWins = shadowToday.filter(s => s.outcome === 'MISSED_WIN');
+    const totalSavedUSD = savedLosses.reduce((acc, s) => acc + (s.savedUSD || 0), 0);
+    const totalMissedUSD = missedWins.reduce((acc, s) => acc + (s.missedUSD || 0), 0);
+    const netFilterAdvantage = totalSavedUSD - totalMissedUSD;
+
+    lines.push(`🛡️ <b>FILTER GUARD AUDIT (COUNTERFACTUAL ANALYSIS):</b>`);
+    lines.push(`• <b>Setups Blocked Today:</b> <code>${shadowToday.length} Setups</code>`);
+    lines.push(`• <b>Prevented Losses:</b> <code>${savedLosses.length} Trades (+$${totalSavedUSD.toFixed(2)} USD Saved)</code>`);
+    lines.push(`• <b>Missed Wins:</b> <code>${missedWins.length} Trades (-$${totalMissedUSD.toFixed(2)} USD Missed)</code>`);
+    lines.push(`📈 <b>Net Guard Advantage:</b> <code>${netFilterAdvantage >= 0 ? '+' : ''}$${netFilterAdvantage.toFixed(2)} USD Preserved</code>`);
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
   }
 
@@ -525,5 +557,7 @@ module.exports = {
   getWeeklyAnchorBalance,
   saveWeeklyAnchorBalance,
   getWeeklyCompoundedRisk,
-  getDailyCompoundedRisk: getWeeklyCompoundedRisk
+  getDailyCompoundedRisk: getWeeklyCompoundedRisk,
+  loadShadowHistory,
+  recordShadowOutcome
 };

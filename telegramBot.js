@@ -126,6 +126,7 @@ function registerTelegramCommands() {
     { command: 'pause', description: "Pause new signals and entries" },
     { command: 'resume', description: "Resume active market scanning" },
     { command: 'risk', description: "Change risk % per trade (/risk 1.5)" },
+    { command: 'audit', description: "View filter guard audit & prevented losses" },
     { command: 'help', description: "Show all command options" }
   ];
 
@@ -237,9 +238,19 @@ async function handleCommand(rawText, handlers) {
         `• <code>/resume</code> ➜ Resume trading immediately`,
         `• <code>/risk &lt;pct&gt;</code> ➜ Change risk % (e.g. <code>/risk 1.5</code>)`,
         `• <code>/cooldown &lt;pair&gt; [mins]</code> ➜ Pause pair (e.g. <code>/cooldown BOOM300N 60</code>)`,
+        `• <code>/audit</code> ➜ View counterfactual filter audit & prevented losses`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
       ].join('\n');
       await sendTelegramMessage(helpMsg);
+      break;
+    }
+
+    case '/audit':
+    case '/shadow': {
+      if (handlers.getShadowAudit) {
+        const auditHtml = await handlers.getShadowAudit();
+        await sendTelegramMessage(auditHtml);
+      }
       break;
     }
 

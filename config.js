@@ -57,9 +57,6 @@ module.exports = {
 
   // Anti-Climax & Momentum Guards (Strategy 5B Enhanced)
   USE_ACTIVE_1H_CANDLE_GUARD: true,     // 👑 Reject BUY on Crash if active 1H candle is red; reject SELL on Boom if green
-  USE_24H_RANGE_EXTREME_FILTER: true,   // 👑 Reject entries in extreme top 10% (Crash) or bottom 10% (Boom) of 24h range
-  MAX_24H_RANGE_PERCENTILE: 0.90,       // Ceiling threshold: no buys if price >= 90% of daily range
-  MIN_24H_RANGE_PERCENTILE: 0.10,       // Floor threshold: no sells if price <= 10% of daily range
 
   // Institutional Responsive Tiered Circuit Breakers & Daily Targets
   CIRCUIT_BREAKER: {

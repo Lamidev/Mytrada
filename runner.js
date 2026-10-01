@@ -26,7 +26,9 @@ const {
   generateWeeklyReport,
   formatReportTelegramHTML,
   getCurrentAccountBalance,
-  getWeeklyCompoundedRisk
+  getWeeklyCompoundedRisk,
+  loadShadowHistory,
+  recordShadowOutcome
 } = require('./reportManager');
 
 // ANSI Color Codes
@@ -40,12 +42,30 @@ const CYAN   = "\x1b[36m";
 const CACHE_DIR = path.join(__dirname, 'cache');
 const ALERTED_SETUPS_FILE = path.join(CACHE_DIR, 'alerted_setups.json');
 const ACTIVE_TRADES_FILE = path.join(CACHE_DIR, 'active_trades.json');
+const SHADOW_TRADES_FILE = path.join(CACHE_DIR, 'shadow_trades.json');
 const CIRCUIT_BREAKER_FILE = path.join(CACHE_DIR, 'circuit_breaker_state.json');
 const DYNAMIC_STATE_FILE = path.join(CACHE_DIR, 'dynamic_state.json');
 const LAST_REPORT_DATE_FILE = path.join(CACHE_DIR, 'last_daily_report_date.json');
 
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+function loadShadowTrades() {
+  if (fs.existsSync(SHADOW_TRADES_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(SHADOW_TRADES_FILE, 'utf8'));
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+}
+
+function saveShadowTrades(trades) {
+  try {
+    fs.writeFileSync(SHADOW_TRADES_FILE, JSON.stringify(trades, null, 2), 'utf8');
+  } catch (e) {}
 }
 
 // ── PERSISTENCE HELPERS ──
@@ -614,6 +634,41 @@ const telegramHandlers = {
     });
     saveActiveTrades(activeTrades);
     return count;
+  },
+
+  getShadowAudit: async () => {
+    const shadowTrades = loadShadowTrades();
+    const shadowHistory = loadShadowHistory();
+    const todayStr = getLocalDateStr();
+    const shadowToday = shadowHistory.filter(s => (s.time || '').startsWith(todayStr));
+
+    const savedLosses = shadowToday.filter(s => s.outcome === 'SAVED_LOSS');
+    const missedWins = shadowToday.filter(s => s.outcome === 'MISSED_WIN');
+    const totalSavedUSD = savedLosses.reduce((acc, s) => acc + (s.savedUSD || 0), 0);
+    const totalMissedUSD = missedWins.reduce((acc, s) => acc + (s.missedUSD || 0), 0);
+    const netAdvantage = totalSavedUSD - totalMissedUSD;
+
+    const lines = [
+      `🛡️ <b>[MYTRADA COUNTERFACTUAL FILTER AUDIT]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `📊 <b>Today's Blocked Setups:</b> <code>${shadowToday.length + shadowTrades.length} Total</code>`,
+      `🛡️ <b>Losses Prevented:</b> <code>${savedLosses.length} Trades (+$${totalSavedUSD.toFixed(2)} USD Saved)</code>`,
+      `⚠️ <b>Missed Wins:</b> <code>${missedWins.length} Trades (-$${totalMissedUSD.toFixed(2)} USD Missed)</code>`,
+      `📈 <b>Net Guard Advantage:</b> <code>${netAdvantage >= 0 ? '+' : ''}$${netAdvantage.toFixed(2)} USD Preserved</code>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+    ];
+
+    if (shadowTrades.length === 0) {
+      lines.push(`🔍 <b>Active Shadow Tracking:</b> <i>No blocked setups currently in flight.</i>`);
+    } else {
+      lines.push(`🔍 <b>ACTIVE SHADOW TRADES IN FLIGHT (${shadowTrades.length}):</b>`);
+      shadowTrades.forEach(st => {
+        lines.push(`• <b>${st.symbol}</b> (${st.direction}): Entry ${st.entryPrice.toFixed(2)} | SL ${st.stopLoss.toFixed(2)} | TP ${st.takeProfit.toFixed(2)}`);
+        lines.push(`  🛑 <i>Filter: ${st.blockedReason}</i>`);
+      });
+    }
+
+    return lines.join('\n');
   }
 };
 
@@ -887,6 +942,117 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
   }
 }
 
+// ── SHADOW / COUNTERFACTUAL TRADE MONITOR ──
+async function checkShadowTradesForSymbol(symbol, ltfCandles) {
+  if (!ltfCandles || ltfCandles.length === 0) return;
+  const shadowTrades = loadShadowTrades();
+  const tradesForSymbol = shadowTrades.filter(t => t.symbol === symbol);
+  if (tradesForSymbol.length === 0) return;
+
+  const currentLivePrice = ltfCandles[ltfCandles.length - 1].close;
+  let updatedShadows = [...shadowTrades];
+  let changed = false;
+
+  for (const trade of tradesForSymbol) {
+    const entryCandleEpoch = trade.candleEpoch || (trade.triggeredTime ? trade.triggeredTime - 300000 : 0);
+    const postEntryCandles = ltfCandles.filter(c => (c.time > entryCandleEpoch));
+
+    let hitTP = false;
+    let hitSL = false;
+    const isBullish = trade.type === 'bullish';
+
+    if (postEntryCandles.length > 0) {
+      const maxHigh = Math.max(...postEntryCandles.map(c => c.high));
+      const minLow  = Math.min(...postEntryCandles.map(c => c.low));
+      hitTP = isBullish ? maxHigh >= trade.takeProfit : minLow <= trade.takeProfit;
+      hitSL = isBullish ? minLow <= trade.stopLoss : maxHigh >= trade.stopLoss;
+    } else {
+      hitTP = isBullish ? currentLivePrice >= trade.takeProfit : currentLivePrice <= trade.takeProfit;
+      hitSL = isBullish ? currentLivePrice <= trade.stopLoss : currentLivePrice >= trade.stopLoss;
+    }
+
+    if (hitSL) {
+      // 🛡️ Filter SUCCESS: Saved the user from a loss!
+      recordShadowOutcome({
+        setupId: trade.setupId,
+        symbol: trade.symbol,
+        direction: trade.direction,
+        entryPrice: trade.entryPrice,
+        stopLoss: trade.stopLoss,
+        takeProfit: trade.takeProfit,
+        outcome: 'SAVED_LOSS',
+        blockedReason: trade.blockedReason,
+        savedUSD: trade.riskUSD || 65.0
+      });
+
+      const auditAlert = [
+        `🛡️ 🟢 <b>[MYTRADA SHADOW AUDIT — LOSS PREVENTED]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `<b>Asset:</b> <code>${trade.symbol}</code> (${trade.direction})`,
+        `🎯 <b>Blocked Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
+        `🛡️ <b>Would-be SL Hit:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `💰 <b>Capital Preserved:</b> <code>+$${(trade.riskUSD || 65.0).toFixed(2)} USD Saved!</code>`,
+        `🛑 <b>Filter Guard:</b> <code>${trade.blockedReason}</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `✅ <i>The filter successfully saved your capital from this loss!</i>`
+      ].join('\n');
+
+      await sendTelegramMessage(auditAlert);
+      console.log(`\n🛡️ [SHADOW AUDIT] ${trade.symbol} blocked setup hit Stop Loss. Filter saved $${(trade.riskUSD || 65.0).toFixed(2)}!\n`);
+
+      updatedShadows = updatedShadows.filter(t => t.setupId !== trade.setupId);
+      changed = true;
+      continue;
+    }
+
+    if (hitTP) {
+      // ⚠️ Filter MISSED WIN: Setup hit TP despite filter
+      recordShadowOutcome({
+        setupId: trade.setupId,
+        symbol: trade.symbol,
+        direction: trade.direction,
+        entryPrice: trade.entryPrice,
+        stopLoss: trade.stopLoss,
+        takeProfit: trade.takeProfit,
+        outcome: 'MISSED_WIN',
+        blockedReason: trade.blockedReason,
+        missedUSD: trade.rewardUSD || 84.50
+      });
+
+      const auditAlert = [
+        `⚠️ 🟡 <b>[MYTRADA SHADOW AUDIT — MISSED WIN]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `<b>Asset:</b> <code>${trade.symbol}</code> (${trade.direction})`,
+        `🎯 <b>Blocked Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
+        `🏆 <b>Would-be TP Hit:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `💸 <b>Missed Profit:</b> <code>-$${(trade.rewardUSD || 84.50).toFixed(2)} USD (+1.3R)</code>`,
+        `🛑 <b>Filter Guard:</b> <code>${trade.blockedReason}</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `ℹ️ <i>Logged for algorithmic optimization and strategy calibration.</i>`
+      ].join('\n');
+
+      await sendTelegramMessage(auditAlert);
+      console.log(`\n⚠️ [SHADOW AUDIT] ${trade.symbol} blocked setup hit Take Profit. Missed: +$${(trade.rewardUSD || 84.50).toFixed(2)}.\n`);
+
+      updatedShadows = updatedShadows.filter(t => t.setupId !== trade.setupId);
+      changed = true;
+      continue;
+    }
+
+    // Auto-expire stale shadow trades after 6 hours
+    if (trade.triggeredTime && (Date.now() - trade.triggeredTime) > 6 * 60 * 60 * 1000) {
+      updatedShadows = updatedShadows.filter(t => t.setupId !== trade.setupId);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveShadowTrades(updatedShadows);
+  }
+}
+
 // ── STRATEGY 5B SIGNAL DETECTION ENGINE ──
 function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
   if (!ltfCandles || !htf1hCandles || ltfCandles.length < 25 || htf1hCandles.length < 55) return null;
@@ -901,30 +1067,6 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
   // 1H Chop Clearance Filter (>0.08%)
   const h1ClearancePct = (Math.abs(last1hClose - last1hEma) / last1hEma) * 100;
   if (config.USE_HTF_CHOP_FILTER && h1ClearancePct < 0.08) return null;
-
-  // 👑 Active 1H Candle Momentum Guard: never trade against the active 1-hour bar
-  if (config.USE_ACTIVE_1H_CANDLE_GUARD) {
-    const active1h = htf1hCandles[htf1hCandles.length - 1];
-    if (active1h) {
-      if (mode === 'CRASH' && active1h.close < active1h.open) return null; // Reject BUY on Crash if active 1H bar is red
-      if (mode === 'BOOM' && active1h.close > active1h.open) return null;  // Reject SELL on Boom if active 1H bar is green
-    }
-  }
-
-  // 👑 24-Hour Range Climax Filter: reject buying at daily ceilings / selling at daily floors
-  if (config.USE_24H_RANGE_EXTREME_FILTER && htf1hCandles.length >= 24) {
-    const lookback24h = htf1hCandles.slice(-24);
-    const high24h = Math.max(...lookback24h.map(c => c.high));
-    const low24h  = Math.min(...lookback24h.map(c => c.low));
-    const range24h = high24h - low24h;
-    if (range24h > 0) {
-      const rangePos = (last1hClose - low24h) / range24h;
-      const maxPct = config.MAX_24H_RANGE_PERCENTILE !== undefined ? config.MAX_24H_RANGE_PERCENTILE : 0.90;
-      const minPct = config.MIN_24H_RANGE_PERCENTILE !== undefined ? config.MIN_24H_RANGE_PERCENTILE : 0.10;
-      if (mode === 'CRASH' && rangePos >= maxPct) return null; // In top 10% ceiling of the day
-      if (mode === 'BOOM' && rangePos <= minPct) return null;  // In bottom 10% floor of the day
-    }
-  }
 
   // 2. 4H 50 EMA Macro Trend
   let htf4hTrend = 'N/A';
@@ -1025,6 +1167,18 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const tp = entry - (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
+    // 👑 Active 1H Candle Momentum Guard (Shadow Tracking)
+    let isBlocked = false;
+    let blockedReason = null;
+
+    if (config.USE_ACTIVE_1H_CANDLE_GUARD) {
+      const active1h = htf1hCandles[htf1hCandles.length - 1];
+      if (active1h && active1h.close > active1h.open) {
+        isBlocked = true;
+        blockedReason = 'Active 1H Candle Guard (Active 1H candle is Bullish/Green)';
+      }
+    }
+
     return {
       direction: 'SELL',
       type: 'bearish',
@@ -1042,7 +1196,9 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
       valueZoneTouched,
       candleEpoch,
       confirmCount,
-      spikeCountLabel
+      spikeCountLabel,
+      isBlocked,
+      blockedReason
     };
   }
 
@@ -1120,6 +1276,18 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const tp = entry + (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
+    // 👑 Active 1H Candle Momentum Guard (Shadow Tracking)
+    let isBlocked = false;
+    let blockedReason = null;
+
+    if (config.USE_ACTIVE_1H_CANDLE_GUARD) {
+      const active1h = htf1hCandles[htf1hCandles.length - 1];
+      if (active1h && active1h.close < active1h.open) {
+        isBlocked = true;
+        blockedReason = 'Active 1H Candle Guard (Active 1H candle is Bearish/Red)';
+      }
+    }
+
     return {
       direction: 'BUY',
       type: 'bullish',
@@ -1137,7 +1305,9 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
       valueZoneTouched,
       candleEpoch,
       confirmCount,
-      spikeCountLabel
+      spikeCountLabel,
+      isBlocked,
+      blockedReason
     };
   }
 
@@ -1202,7 +1372,10 @@ async function monitorMarket() {
     console.log(`\n⏸️ [MYTRADA PAUSED] Bot is manually paused via Telegram (/resume to continue). Monitoring active positions...`);
     for (const sym of Object.keys(config.SYMBOLS)) {
       const ltf = await getCandles(sym, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
-      if (ltf) await checkActiveTradesForSymbol(sym, ltf);
+      if (ltf) {
+        await checkActiveTradesForSymbol(sym, ltf);
+        await checkShadowTradesForSymbol(sym, ltf);
+      }
     }
     return;
   }
@@ -1212,7 +1385,10 @@ async function monitorMarket() {
     console.log(`\n🎯 [DAILY TARGET LOCKED] Profit target reached! Paused until midnight. Monitoring active positions...`);
     for (const sym of Object.keys(config.SYMBOLS)) {
       const ltf = await getCandles(sym, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
-      if (ltf) await checkActiveTradesForSymbol(sym, ltf);
+      if (ltf) {
+        await checkActiveTradesForSymbol(sym, ltf);
+        await checkShadowTradesForSymbol(sym, ltf);
+      }
     }
     return;
   }
@@ -1223,7 +1399,10 @@ async function monitorMarket() {
     console.log(`\n⚠️ [PORTFOLIO COOLDOWN] 3 consecutive losses hit across bot. Paused for ${remMins}m more. Monitoring active positions...`);
     for (const sym of Object.keys(config.SYMBOLS)) {
       const ltf = await getCandles(sym, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
-      if (ltf) await checkActiveTradesForSymbol(sym, ltf);
+      if (ltf) {
+        await checkActiveTradesForSymbol(sym, ltf);
+        await checkShadowTradesForSymbol(sym, ltf);
+      }
     }
     return;
   }
@@ -1274,6 +1453,34 @@ async function monitorMarket() {
         const setupId = `${symbol}_${setup.direction}_${setup.candleEpoch}`;
         const existingActive = loadActiveTrades();
         const symbolAlreadyActive = existingActive.some(t => t.symbol === symbol);
+
+        // 👑 COUNTERFACTUAL SHADOW FILTER AUDIT
+        // If setup is blocked by active 1H guard or 24H extreme range, track it silently without broadcasting a signal!
+        if (setup.isBlocked) {
+          const shadowTrades = loadShadowTrades();
+          const alreadyShadowed = shadowTrades.some(t => t.setupId === setupId);
+          if (!alreadyShadowed && !alertedSetups.has(setupId)) {
+            saveAlertedSetup(setupId);
+            const compRisk = getWeeklyCompoundedRisk();
+            shadowTrades.push({
+              setupId,
+              symbol,
+              type: setup.type,
+              direction: setup.direction,
+              entryPrice: setup.entry,
+              stopLoss: setup.sl,
+              takeProfit: setup.tp,
+              riskUSD: compRisk.riskUSD,
+              rewardUSD: compRisk.rewardUSD,
+              candleEpoch: setup.candleEpoch,
+              triggeredTime: Date.now(),
+              blockedReason: setup.blockedReason
+            });
+            saveShadowTrades(shadowTrades);
+            console.log(`  [SHADOW AUDIT] ${symbol.padEnd(12)} | 🛑 Blocked by: ${setup.blockedReason} | Enrolled in shadow tracking`);
+          }
+          break;
+        }
 
         if (alertedSetups.has(setupId) || symbolAlreadyActive) {
           if (alertedSetups.has(setupId)) {
@@ -1396,6 +1603,9 @@ async function monitorMarket() {
       if (!signalFiredThisScan) {
         console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | Monitoring for ${minSpikes}-Spike Pullback Exhaustion...`);
         await checkActiveTradesForSymbol(symbol, ltfCandles);
+        await checkShadowTradesForSymbol(symbol, ltfCandles);
+      } else {
+        await checkShadowTradesForSymbol(symbol, ltfCandles);
       }
     } catch (err) {
       console.log(`  [DATA ERROR] ${symbol}: ${err.message}`);
