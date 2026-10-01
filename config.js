@@ -58,7 +58,7 @@ module.exports = {
   MIN_CANDLE0_DISPLACEMENT_RATIO: 0.20, // 👑 Price action confirmation: C0 recovery body must be >= 20% of preceding spike
 
   // Anti-Climax & Momentum Guards (Strategy 5B Enhanced)
-  USE_ACTIVE_1H_CANDLE_GUARD: true,     // 👑 Reject BUY on Crash if active 1H candle is red; reject SELL on Boom if green
+  USE_ACTIVE_1H_CANDLE_GUARD: false,    // Disabled: Rely on Daily+4H+1H 50 EMA Triple Confluence and circuit breakers
 
   // Institutional Responsive Tiered Circuit Breakers & Daily Targets
   CIRCUIT_BREAKER: {
