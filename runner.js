@@ -157,7 +157,6 @@ function loadDynamicState() {
         data.dailyMaxLossUSD = defaultMaxLoss;
         saveDynamicState(data);
       }
-      // If dailyTargetUSD in cached file is still the old 250 default, reset to defaultTarget (0)
       if (data.dailyTargetUSD === 250 || data.dailyTargetUSD === undefined) {
         data.dailyTargetUSD = defaultTarget;
         data.dailyTargetLocked = false;
@@ -168,6 +167,24 @@ function loadDynamicState() {
         data.dailyLossLocked = false;
         saveDynamicState(data);
       }
+      if (!data.activeStrategy) {
+        data.activeStrategy = 'NONE';
+        saveDynamicState(data);
+      }
+      if (!data.executionMode) {
+        data.executionMode = 'LIVE';
+        saveDynamicState(data);
+      }
+      if (!data.mode5b) {
+        data.mode5b = 'LIVE';
+        saveDynamicState(data);
+      }
+      if (!data.mode6pro) {
+        data.mode6pro = 'PAPER';
+        saveDynamicState(data);
+      }
+      if (data.is5bPaused === undefined) data.is5bPaused = false;
+      if (data.is6proPaused === undefined) data.is6proPaused = false;
       return data;
     } catch (e) {
       console.warn("[runner] Warning loading dynamic state:", e.message);
@@ -183,7 +200,13 @@ function loadDynamicState() {
     isManuallyPaused: false,
     customRiskPercent: null,
     portfolioConsecutiveLosses: 0,
-    portfolioPauseUntil: 0
+    portfolioPauseUntil: 0,
+    activeStrategy: 'NONE',
+    executionMode: 'LIVE',
+    mode5b: 'LIVE',
+    mode6pro: 'PAPER',
+    is5bPaused: false,
+    is6proPaused: false
   };
   saveDynamicState(freshState);
   return freshState;
@@ -553,6 +576,19 @@ const telegramHandlers = {
       ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)} USD ${dynamicState.dailyLossLocked ? '🛑 (HIT)' : `(Remaining Buffer: $${Math.max(0, dynamicState.dailyMaxLossUSD + report.netUSD).toFixed(2)})`}`
       : 'Disabled (No Floor)';
 
+    let stratBadge = '🟡 <b>STANDBY (Awaiting /strategy command)</b>';
+    if (dynamicState.activeStrategy === 'BOTH') {
+      const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (dynamicState.mode5b === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+      const mode6Label = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.mode6pro === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+      stratBadge = `⚡ <b>DUAL ENGINE</b> (5B: ${mode5bLabel} | 6 Pro: ${mode6Label})`;
+    } else if (dynamicState.activeStrategy === 'STRATEGY_6_PRO') {
+      const mode6Label = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.executionMode === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+      stratBadge = `👑 <b>Strategy 6 Pro</b> (${mode6Label})`;
+    } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
+      const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (dynamicState.executionMode === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+      stratBadge = `🚀 <b>Strategy 5B Enhanced</b> (${mode5bLabel})`;
+    }
+
     const lines = [
       `👑 <b>[MYTRADA LIVE STATUS MONITOR]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -563,6 +599,7 @@ const telegramHandlers = {
       `🎯 <b>Daily Profit Target:</b> <code>${targetStatus}</code>`,
       `🛡️ <b>Daily Max Loss Floor:</b> <code>${maxLossStatus}</code>`,
       `🛡️ <b>Risk Per Trade:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0).toFixed(1)}%)</code>`,
+      `🏛️ <b>Strategy Configuration:</b> ${stratBadge}`,
       `📂 <b>Active Positions:</b> <code>${activeTrades.length} Trade(s)</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `🤖 <b>Engine State:</b> ${stateBadge}`
@@ -579,9 +616,24 @@ const telegramHandlers = {
   },
 
   getActiveTrades: async () => {
-    const activeTrades = loadActiveTrades();
+    let activeTrades = loadActiveTrades();
     if (!activeTrades || activeTrades.length === 0) {
       return `📂 <b>[MYTRADA ACTIVE POSITIONS]</b>\n\nNo active trades currently open. Bot is monitoring for new setups.`;
+    }
+
+    // Refresh live candles and evaluate TP/SL for all active trades immediately
+    for (const t of activeTrades) {
+      try {
+        const ltf = await getCandles(t.symbol, config.DEFAULT_LTF || '5m', 10, true);
+        if (ltf && ltf.length > 0) {
+          await checkActiveTradesForSymbol(t.symbol, ltf);
+        }
+      } catch (e) {}
+    }
+
+    activeTrades = loadActiveTrades();
+    if (!activeTrades || activeTrades.length === 0) {
+      return `📂 <b>[MYTRADA ACTIVE POSITIONS]</b>\n\nAll open positions reached target or closed. No active trades currently open.`;
     }
 
     const lines = [
@@ -718,6 +770,49 @@ const telegramHandlers = {
     }
     circuitBreakerState.symbols[sym].pauseUntil = Date.now() + (mins * 60 * 1000);
     saveCircuitBreakerState(circuitBreakerState);
+  },
+
+  getActiveStrategy: () => {
+    return dynamicState.activeStrategy || 'NONE';
+  },
+
+  setActiveStrategy: (strat) => {
+    dynamicState.activeStrategy = strat;
+    dynamicState.is5bPaused = false;
+    dynamicState.is6proPaused = false;
+    saveDynamicState(dynamicState);
+  },
+
+  pauseStrategy: (strat) => {
+    if (strat === '5b') dynamicState.is5bPaused = true;
+    if (strat === '6pro') dynamicState.is6proPaused = true;
+    saveDynamicState(dynamicState);
+  },
+
+  resumeStrategy: (strat) => {
+    if (strat === '5b') dynamicState.is5bPaused = false;
+    if (strat === '6pro') dynamicState.is6proPaused = false;
+    if (dynamicState.activeStrategy === 'NONE') {
+      dynamicState.activeStrategy = strat === '5b' ? 'STRATEGY_5B' : 'STRATEGY_6_PRO';
+    }
+    saveDynamicState(dynamicState);
+  },
+
+  setStrategyMode: (strat, mode) => {
+    if (strat === '5b') dynamicState.mode5b = mode;
+    if (strat === '6pro') dynamicState.mode6pro = mode;
+    saveDynamicState(dynamicState);
+  },
+
+  getExecutionMode: () => {
+    return dynamicState.executionMode || 'LIVE';
+  },
+
+  setExecutionMode: (mode) => {
+    dynamicState.executionMode = mode;
+    dynamicState.mode5b = mode;
+    dynamicState.mode6pro = mode;
+    saveDynamicState(dynamicState);
   },
 
   getDailyReport: (targetDate) => {
@@ -954,8 +1049,8 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
     const isBullish = trade.type === 'bullish';
 
     if (postEntryCandles.length > 0) {
-      const maxHigh = Math.max(...postEntryCandles.map(c => c.high));
-      const minLow  = Math.min(...postEntryCandles.map(c => c.low));
+      const maxHigh = Math.max(...postEntryCandles.map(c => c.high), currentLivePrice);
+      const minLow  = Math.min(...postEntryCandles.map(c => c.low), currentLivePrice);
       hitTP = isBullish ? maxHigh >= trade.takeProfit : minLow <= trade.takeProfit;
       hitSL = isBullish ? minLow <= trade.stopLoss : maxHigh >= trade.stopLoss;
     } else {
@@ -1134,8 +1229,8 @@ async function checkShadowTradesForSymbol(symbol, ltfCandles) {
     const isBullish = trade.type === 'bullish';
 
     if (postEntryCandles.length > 0) {
-      const maxHigh = Math.max(...postEntryCandles.map(c => c.high));
-      const minLow  = Math.min(...postEntryCandles.map(c => c.low));
+      const maxHigh = Math.max(...postEntryCandles.map(c => c.high), currentLivePrice);
+      const minLow  = Math.min(...postEntryCandles.map(c => c.low), currentLivePrice);
       hitTP = isBullish ? maxHigh >= trade.takeProfit : minLow <= trade.takeProfit;
       hitSL = isBullish ? minLow <= trade.stopLoss : maxHigh >= trade.stopLoss;
     } else {
@@ -1196,6 +1291,44 @@ async function checkShadowTradesForSymbol(symbol, ltfCandles) {
 
   if (changed) {
     saveShadowTrades(updatedShadows);
+  }
+}
+
+// ── DEDICATED HIGH-SPEED POSITION MONITOR (Every 3 seconds) ──
+let isFastMonitoring = false;
+
+async function monitorActivePositionsFast() {
+  if (isFastMonitoring) return;
+  isFastMonitoring = true;
+  try {
+    const activeTrades = loadActiveTrades();
+    const shadowTrades = loadShadowTrades();
+
+    const symbolsToMonitor = Array.from(new Set([
+      ...activeTrades.map(t => t.symbol),
+      ...shadowTrades.map(t => t.symbol)
+    ]));
+
+    if (symbolsToMonitor.length === 0) {
+      isFastMonitoring = false;
+      return;
+    }
+
+    for (const sym of symbolsToMonitor) {
+      try {
+        const ltf = await getCandles(sym, config.DEFAULT_LTF || '5m', 15, true);
+        if (ltf && ltf.length > 0) {
+          await checkActiveTradesForSymbol(sym, ltf);
+          await checkShadowTradesForSymbol(sym, ltf);
+        }
+      } catch (err) {
+        // Silent catch to prevent console spam in high frequency loop
+      }
+    }
+  } catch (e) {
+    console.warn("[fastMonitor] Warning:", e.message);
+  } finally {
+    isFastMonitoring = false;
   }
 }
 
@@ -1442,6 +1575,268 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
   return null;
 }
 
+// ── STRATEGY 6 PRO: INSTITUTIONAL SMC LIQUIDITY & VALUATION ENGINE ──
+function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
+  if (!ltfCandles || !htf1hCandles || ltfCandles.length < 35 || htf1hCandles.length < 55) return null;
+
+  // 1. 1H 50 EMA Intermediate Trend
+  const htf1hCloses = htf1hCandles.map(c => c.close);
+  const htf1hEMA = calculateEMA(htf1hCloses, 50);
+  const last1hClose = htf1hCloses[htf1hCloses.length - 1];
+  const last1hOpen  = htf1hCandles[htf1hCandles.length - 1].open;
+  const last1hEma   = htf1hEMA[htf1hEMA.length - 1];
+  if (!last1hEma) return null;
+  const htf1hTrend  = last1hClose > last1hEma ? 'bullish' : 'bearish';
+
+  // 1H Chop Clearance Filter (>0.08%)
+  const h1ClearancePct = (Math.abs(last1hClose - last1hEma) / last1hEma) * 100;
+  if (config.USE_HTF_CHOP_FILTER && h1ClearancePct < 0.08) return null;
+
+  // 2. 4H 50 EMA Macro Trend
+  let htf4hTrend = 'N/A';
+  if (htf4hCandles && htf4hCandles.length >= 55) {
+    const htf4hCloses = htf4hCandles.map(c => c.close);
+    const htf4hEMA    = calculateEMA(htf4hCloses, 50);
+    const last4hClose = htf4hCloses[htf4hCloses.length - 1];
+    const last4hEma   = htf4hEMA[htf4hEMA.length - 1];
+    htf4hTrend        = last4hClose > last4hEma ? 'bullish' : 'bearish';
+  }
+
+  // 3. Daily 50 EMA Macro Trend
+  let dailyTrend = 'N/A';
+  if (dailyCandles && dailyCandles.length >= 30) {
+    const dailyCloses = dailyCandles.map(c => c.close);
+    const dailyEMA    = calculateEMA(dailyCloses, Math.min(50, dailyCloses.length - 1));
+    if (dailyEMA.length > 0) {
+      const lastDailyClose = dailyCloses[dailyCloses.length - 1];
+      const lastDailyEma   = dailyEMA[dailyEMA.length - 1];
+      dailyTrend           = lastDailyClose > lastDailyEma ? 'bullish' : 'bearish';
+    }
+  }
+
+  // 4. 1H Dealing Range (Premium vs Discount Valuation)
+  const rangeLookback = Math.min(50, htf1hCandles.length);
+  const rangeSlice = htf1hCandles.slice(htf1hCandles.length - rangeLookback);
+  const rangeHigh = Math.max(...rangeSlice.map(c => c.high));
+  const rangeLow = Math.min(...rangeSlice.map(c => c.low));
+  const rangeSpan = rangeHigh - rangeLow;
+  const latestPrice = ltfCandles[ltfCandles.length - 1].close;
+  const dealingRangePct = rangeSpan > 0 ? ((latestPrice - rangeLow) / rangeSpan) * 100 : 50;
+
+  // 5. 5M Swing Liquidity Detection (BSL / SSL)
+  const confirmCount = (symbol && config.SYMBOLS[symbol] && config.SYMBOLS[symbol].confirm_candles) || config.CONFIRMATION_CANDLES || 2;
+  const minSpikes = minSpikesRequired || config.MIN_SPIKES || 2;
+
+  const swingLookback = Math.min(60, ltfCandles.length - confirmCount - 2);
+  const swingSlice = ltfCandles.slice(ltfCandles.length - confirmCount - swingLookback, ltfCandles.length - confirmCount - 1);
+  const localSwingHigh = swingSlice.length > 0 ? Math.max(...swingSlice.map(c => c.high)) : 0;
+  const localSwingLow  = swingSlice.length > 0 ? Math.min(...swingSlice.map(c => c.low)) : Infinity;
+
+  // ── CASE 1: SELL (BOOM) ──
+  if (mode === 'BOOM') {
+    if (htf1hTrend !== 'bearish') return null;
+    if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
+    if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
+
+    // Active 1H Candle Guard (Reject if 1H bar is green expansion)
+    if (last1hClose > last1hOpen) return null;
+
+    // Premium Valuation Guard: Must be in Premium (>=50% of Dealing Range)
+    if (dealingRangePct < 50.0) return null;
+
+    // Multi-Candle Confirmation (Red candles)
+    let hasConfirm = true;
+    const confirmCandles = [];
+    for (let cIdx = 0; cIdx < confirmCount; cIdx++) {
+      const c = ltfCandles[ltfCandles.length - 1 - cIdx];
+      if (!c || c.close >= c.open) { hasConfirm = false; break; }
+      confirmCandles.push(c);
+    }
+    if (!hasConfirm || confirmCandles.length < confirmCount) return null;
+
+    const c0 = confirmCandles[0];
+    const c0Range = c0.high - c0.low;
+    const c0Body = Math.abs(c0.close - c0.open);
+    const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
+    if (bodyRatio < 0.40) return null;
+
+    const atr = calculateATR(ltfCandles, 14);
+    if (!atr || atr === 0) return null;
+
+    // Spike Cluster
+    const s0 = ltfCandles[ltfCandles.length - 1 - confirmCount];
+    if (!s0 || s0.close <= s0.open) return null;
+    const spikeCandles = [s0];
+    const s0Range = s0.high - s0.low;
+
+    for (let s = 1; s <= 2; s++) {
+      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
+      if (c && c.close > c.open) spikeCandles.push(c);
+      else break;
+    }
+
+    const spikePeak = Math.max(...confirmCandles.map(c => c.high), ...spikeCandles.map(c => c.high));
+    const spikeClusterRange = spikePeak - Math.min(...spikeCandles.map(c => c.low));
+
+    const isSingleMonster = spikeCandles.length === 1 && s0Range >= (atr * 1.50);
+    const isMultiCluster = spikeCandles.length >= 2 && spikeClusterRange >= (atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20));
+    if (!isSingleMonster && !isMultiCluster) return null;
+
+    // Liquidity Sweep Guard (BSL Purge)
+    const sweptLiquidity = spikePeak >= localSwingHigh;
+    if (!sweptLiquidity) return null;
+
+    // Proximity to 5M 50 EMA Value Zone
+    const ltfCloses = ltfCandles.map(c => c.close);
+    const ltfEMA = calculateEMA(ltfCloses, 50);
+    const lastLtfEma = ltfEMA && ltfEMA.length > 0 ? ltfEMA[ltfEMA.length - 1] : null;
+    const maxAtrDist = (config.VALUE_ZONE_MAX_ATR_DIST || 2.5) * atr;
+    if (lastLtfEma && (lastLtfEma - spikePeak) > maxAtrDist) return null;
+
+    // Displacement
+    const lastBoomSpike = spikeCandles[0];
+    const lastSpikeRange = Math.abs(lastBoomSpike.close - lastBoomSpike.open);
+    const totalRecoveryBody = confirmCandles.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0);
+    const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
+    if (totalRecoveryBody < (lastSpikeRange * minDisplacementRatio)) return null;
+
+    const entry = c0.close;
+    const sl = spikePeak + (atr * 1.5);
+    const slDist = sl - entry;
+    if (slDist <= 0) return null;
+
+    const tp = entry - (slDist * (config.REWARD_RATIO || 1.3));
+    const candleEpoch = c0.epoch || c0.time;
+
+    return {
+      direction: 'SELL',
+      type: 'bearish',
+      strategy: 'Strategy 6 Pro',
+      htf4hTrend,
+      htf1hTrend,
+      dailyTrend,
+      entry,
+      sl,
+      tp,
+      slDist,
+      atr,
+      refPrice: spikePeak,
+      h1ClearancePct,
+      bodyRatio,
+      candleEpoch,
+      confirmCount,
+      spikeCountLabel: isSingleMonster ? '1 Monster Spike' : `${spikeCandles.length} Spikes`,
+      valuationLabel: `Premium (${dealingRangePct.toFixed(0)}% Range)`,
+      liquidityLabel: `BSL Sweep (${localSwingHigh.toFixed(2)})`,
+      isBlocked: false,
+      blockedReason: null
+    };
+  }
+
+  // ── CASE 2: BUY (CRASH) ──
+  if (mode === 'CRASH') {
+    if (htf1hTrend !== 'bullish') return null;
+    if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
+    if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
+
+    // Active 1H Candle Guard (Reject if 1H bar is red dump)
+    if (last1hClose < last1hOpen) return null;
+
+    // Discount Valuation Guard: Must be in Discount (<=50% of Dealing Range)
+    if (dealingRangePct > 50.0) return null;
+
+    // Multi-Candle Confirmation (Green candles)
+    let hasConfirm = true;
+    const confirmCandles = [];
+    for (let cIdx = 0; cIdx < confirmCount; cIdx++) {
+      const c = ltfCandles[ltfCandles.length - 1 - cIdx];
+      if (!c || c.close <= c.open) { hasConfirm = false; break; }
+      confirmCandles.push(c);
+    }
+    if (!hasConfirm || confirmCandles.length < confirmCount) return null;
+
+    const c0 = confirmCandles[0];
+    const c0Range = c0.high - c0.low;
+    const c0Body = Math.abs(c0.close - c0.open);
+    const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
+    if (bodyRatio < 0.40) return null;
+
+    const atr = calculateATR(ltfCandles, 14);
+    if (!atr || atr === 0) return null;
+
+    // Crash Cluster
+    const s0 = ltfCandles[ltfCandles.length - 1 - confirmCount];
+    if (!s0 || s0.close >= s0.open) return null;
+    const crashCandles = [s0];
+    const s0Range = s0.high - s0.low;
+
+    for (let s = 1; s <= 2; s++) {
+      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
+      if (c && c.close < c.open) crashCandles.push(c);
+      else break;
+    }
+
+    const crashTrough = Math.min(...confirmCandles.map(c => c.low), ...crashCandles.map(c => c.low));
+    const crashClusterRange = Math.max(...crashCandles.map(c => c.high)) - crashTrough;
+
+    const isSingleMonster = crashCandles.length === 1 && s0Range >= (atr * 1.50);
+    const isMultiCluster = crashCandles.length >= 2 && crashClusterRange >= (atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20));
+    if (!isSingleMonster && !isMultiCluster) return null;
+
+    // Liquidity Sweep Guard (SSL Purge)
+    const sweptLiquidity = crashTrough <= localSwingLow;
+    if (!sweptLiquidity) return null;
+
+    // Proximity to 5M 50 EMA Value Zone
+    const ltfCloses = ltfCandles.map(c => c.close);
+    const ltfEMA = calculateEMA(ltfCloses, 50);
+    const lastLtfEma = ltfEMA && ltfEMA.length > 0 ? ltfEMA[ltfEMA.length - 1] : null;
+    const maxAtrDist = (config.VALUE_ZONE_MAX_ATR_DIST || 2.5) * atr;
+    if (lastLtfEma && (crashTrough - lastLtfEma) > maxAtrDist) return null;
+
+    // Displacement
+    const lastCrashSpike = crashCandles[0];
+    const lastSpikeRange = Math.abs(lastCrashSpike.close - lastCrashSpike.open);
+    const totalRecoveryBody = confirmCandles.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0);
+    const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
+    if (totalRecoveryBody < (lastSpikeRange * minDisplacementRatio)) return null;
+
+    const entry = c0.close;
+    const sl = crashTrough - (atr * 1.5);
+    const slDist = entry - sl;
+    if (slDist <= 0) return null;
+
+    const tp = entry + (slDist * (config.REWARD_RATIO || 1.3));
+    const candleEpoch = c0.epoch || c0.time;
+
+    return {
+      direction: 'BUY',
+      type: 'bullish',
+      strategy: 'Strategy 6 Pro',
+      htf4hTrend,
+      htf1hTrend,
+      dailyTrend,
+      entry,
+      sl,
+      tp,
+      slDist,
+      atr,
+      refPrice: crashTrough,
+      h1ClearancePct,
+      bodyRatio,
+      candleEpoch,
+      confirmCount,
+      spikeCountLabel: isSingleMonster ? '1 Monster Spike' : `${crashCandles.length} Spikes`,
+      valuationLabel: `Discount (${dealingRangePct.toFixed(0)}% Range)`,
+      liquidityLabel: `SSL Sweep (${localSwingLow.toFixed(2)})`,
+      isBlocked: false,
+      blockedReason: null
+    };
+  }
+
+  return null;
+}
+
 // ── MAIN MONITOR CYCLE ──
 async function monitorMarket() {
   const now = new Date();
@@ -1496,6 +1891,19 @@ async function monitorMarket() {
 
   const nowMs = Date.now();
 
+  // Check if bot is in Standby mode (activeStrategy === 'NONE')
+  if (dynamicState.activeStrategy === 'NONE') {
+    console.log(`\n⏸️ [MYTRADA STANDBY] Bot is online & connected to Telegram. Awaiting /strategy command (/strategy 6pro, /strategy 5b, /strategy both)...`);
+    for (const sym of Object.keys(config.SYMBOLS)) {
+      const ltf = await getCandles(sym, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
+      if (ltf) {
+        await checkActiveTradesForSymbol(sym, ltf);
+        await checkShadowTradesForSymbol(sym, ltf);
+      }
+    }
+    return;
+  }
+
   // Check if system is in global manual pause mode
   if (dynamicState.isManuallyPaused) {
     console.log(`\n⏸️ [MYTRADA PAUSED] Bot is manually paused via Telegram (/resume to continue). Monitoring active positions...`);
@@ -1536,7 +1944,12 @@ async function monitorMarket() {
     return;
   }
 
-  console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for Strategy 5B/5C setups...${RESET}`);
+  const isBoth = dynamicState.activeStrategy === 'BOTH';
+  const scanStratLabel = isBoth
+    ? 'Dual Engine (5B + 6 Pro)'
+    : (dynamicState.activeStrategy === 'STRATEGY_6_PRO' ? 'Strategy 6 Pro' : 'Strategy 5B Enhanced');
+
+  console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for ${scanStratLabel}...${RESET}`);
   console.log(`-------------------------------------------------------------------------------------------------`);
 
   const symbols = Object.keys(config.SYMBOLS);
@@ -1551,6 +1964,11 @@ async function monitorMarket() {
       const cbStatus = isSymbolInCooldown(symbol);
       if (cbStatus.inCooldown) {
         console.log(`  [${mode}] ${symbol.padEnd(12)} | 🛡️ COOLDOWN: ${cbStatus.reason}`);
+        const ltf = await getCandles(symbol, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
+        if (ltf && ltf.length > 0) {
+          await checkActiveTradesForSymbol(symbol, ltf);
+          await checkShadowTradesForSymbol(symbol, ltf);
+        }
         continue;
       }
 
@@ -1567,101 +1985,238 @@ async function monitorMarket() {
 
       const latestPrice = ltfCandles[ltfCandles.length - 1].close;
 
+      // Build active strategies for this scan
+      const strategiesToRun = [];
+      if (isBoth) {
+        if (!dynamicState.is5bPaused) {
+          strategiesToRun.push({
+            id: '5B',
+            name: 'STRATEGY_5B',
+            displayName: 'Strategy 5B Enhanced',
+            fn: detectStrategy5BSetup,
+            isPaper: (dynamicState.mode5b || 'LIVE') === 'PAPER'
+          });
+        }
+        if (!dynamicState.is6proPaused) {
+          strategiesToRun.push({
+            id: '6PRO',
+            name: 'STRATEGY_6_PRO',
+            displayName: 'Strategy 6 Pro',
+            fn: detectStrategy6ProSetup,
+            isPaper: (dynamicState.mode6pro || 'PAPER') === 'PAPER'
+          });
+        }
+      } else if (dynamicState.activeStrategy === 'STRATEGY_6_PRO') {
+        if (!dynamicState.is6proPaused) {
+          strategiesToRun.push({
+            id: '6PRO',
+            name: 'STRATEGY_6_PRO',
+            displayName: 'Strategy 6 Pro',
+            fn: detectStrategy6ProSetup,
+            isPaper: (dynamicState.executionMode || 'PAPER') === 'PAPER'
+          });
+        }
+      } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
+        if (!dynamicState.is5bPaused) {
+          strategiesToRun.push({
+            id: '5B',
+            name: 'STRATEGY_5B',
+            displayName: 'Strategy 5B Enhanced',
+            fn: detectStrategy5BSetup,
+            isPaper: (dynamicState.executionMode || 'LIVE') === 'PAPER'
+          });
+        }
+      }
+
       // 👑 Execution window: evaluate ONLY the most recently closed 5M bar (offset=1)
-      // Never look back into stale bars to avoid firing signals that have already hit SL/TP
       const LOOKBACK_BARS = 1;
       let signalFiredThisScan = false;
 
-      for (let offset = 1; offset <= LOOKBACK_BARS; offset++) {
-        if (ltfCandles.length < offset + 25) break;
+      for (const strat of strategiesToRun) {
+        for (let offset = 1; offset <= LOOKBACK_BARS; offset++) {
+          if (ltfCandles.length < offset + 25) break;
 
-        const completedSlice = ltfCandles.slice(0, ltfCandles.length - (offset - 1) - 1);
-        const setup = detectStrategy5BSetup(completedSlice, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikes, symbol);
-        if (!setup) continue;
+          const completedSlice = ltfCandles.slice(0, ltfCandles.length - (offset - 1) - 1);
+          const setup = strat.fn(completedSlice, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikes, symbol);
+          if (!setup) continue;
 
-        const setupId = `${symbol}_${setup.direction}_${setup.candleEpoch}`;
-        const existingActive = loadActiveTrades();
-        const symbolAlreadyActive = existingActive.some(t => t.symbol === symbol);
+          const setupId = `${symbol}_${setup.direction}_${strat.id}_${setup.candleEpoch}`;
+          const existingActive = loadActiveTrades();
+          const symbolAlreadyActive = existingActive.some(t => t.symbol === symbol && t.strategy === strat.displayName);
 
-        // 👑 COUNTERFACTUAL SHADOW FILTER AUDIT
-        // If setup is blocked by active 1H guard or 24H extreme range, track it silently without broadcasting a signal!
-        if (setup.isBlocked) {
-          const shadowTrades = loadShadowTrades();
-          const alreadyShadowed = shadowTrades.some(t => t.setupId === setupId);
-          if (!alreadyShadowed && !alertedSetups.has(setupId)) {
+          // 👑 COUNTERFACTUAL SHADOW FILTER AUDIT
+          if (setup.isBlocked) {
+            const shadowTrades = loadShadowTrades();
+            const alreadyShadowed = shadowTrades.some(t => t.setupId === setupId);
+            if (!alreadyShadowed && !alertedSetups.has(setupId)) {
+              saveAlertedSetup(setupId);
+              const compRisk = getWeeklyCompoundedRisk();
+              shadowTrades.push({
+                setupId,
+                symbol,
+                type: setup.type,
+                direction: setup.direction,
+                entryPrice: setup.entry,
+                stopLoss: setup.sl,
+                takeProfit: setup.tp,
+                riskUSD: compRisk.riskUSD,
+                rewardUSD: compRisk.rewardUSD,
+                candleEpoch: setup.candleEpoch,
+                triggeredTime: Date.now(),
+                blockedReason: setup.blockedReason,
+                strategy: strat.displayName
+              });
+              saveShadowTrades(shadowTrades);
+              console.log(`  [SHADOW AUDIT] ${symbol.padEnd(12)} | 🛑 Blocked by: ${setup.blockedReason} | Enrolled in shadow tracking`);
+            }
+            break;
+          }
+
+          if (alertedSetups.has(setupId) || symbolAlreadyActive) {
+            if (alertedSetups.has(setupId)) {
+              console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | [${strat.displayName}] Active (already alerted)`);
+            }
+            break;
+          }
+
+          // 👑 Stale Signal Guard
+          const isBullish = setup.direction === 'BUY';
+          const slAlreadyHit = isBullish ? latestPrice <= setup.sl : latestPrice >= setup.sl;
+          const tpAlreadyHit = isBullish ? latestPrice >= setup.tp : latestPrice <= setup.tp;
+          const maxAllowedDrift = (setup.atr || 1.0) * 0.40;
+          const priceDrift = Math.abs(latestPrice - setup.entry);
+
+          if (slAlreadyHit || tpAlreadyHit || priceDrift > maxAllowedDrift) {
+            console.log(`  [${mode}] ${symbol.padEnd(12)} | [${strat.displayName}] Discarding stale setup (live price ${latestPrice.toFixed(2)} already beyond entry ${setup.entry.toFixed(2)})`);
             saveAlertedSetup(setupId);
+            break;
+          }
+
+          // Target / Loss Locks Check
+          const isPaperMode = symConfig.monitorOnly || strat.isPaper;
+          if (!isPaperMode && (dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked || dynamicState.isManuallyPaused)) {
+            console.log(`  [${mode}] ${symbol.padEnd(12)} | [${strat.displayName}] Setup ignored: Locked/Paused state.`);
+            break;
+          }
+
+          // ── NEW SIGNAL — FIRE ALERT ──
+          saveAlertedSetup(setupId);
+          signalFiredThisScan = true;
+
+          if (isPaperMode) {
+            // ── FORWARD TEST / PAPER SANDBOX ($0 REAL RISK) ──
+            const dirEmoji = setup.direction === 'SELL' ? '🔴' : '🟢';
             const compRisk = getWeeklyCompoundedRisk();
-            shadowTrades.push({
+
+            const alertLines = [
+              `🔬 🟡 <b>[MYTRADA FORWARD TEST — ${strat.displayName.toUpperCase()}]</b>`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `<b>Asset:</b> <code>${symbol}</code> (${symConfig.name})`,
+              `<b>Action:</b> ${dirEmoji} <b>${setup.direction} (Paper Forward Test)</b>`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `🎯 <b>Entry:</b> <code>${setup.entry.toFixed(2)}</code>`,
+              `🛡️ <b>Stop Loss:</b> <code>${setup.sl.toFixed(2)}</code>`,
+              `🏆 <b>Take Profit:</b> <code>${setup.tp.toFixed(2)}</code> (1:1.3 R:R Target)`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `🧪 <b>Execution Mode:</b> <code>Paper Sandbox ($0 Real Risk)</code>`,
+              `💵 <b>Live Balance Protected:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`
+            ];
+
+            if (setup.valuationLabel) {
+              alertLines.push(`🏛️ <b>Dealing Range:</b> <code>${setup.valuationLabel}</code>`);
+            }
+            if (setup.liquidityLabel) {
+              alertLines.push(`💧 <b>Liquidity Purge:</b> <code>${setup.liquidityLabel}</code>`);
+            }
+
+            alertLines.push(
+              `📊 <i>Trend: 4H ${setup.htf4hTrend.toUpperCase()} + 1H ${setup.htf1hTrend.toUpperCase()} | ${setup.spikeCountLabel || `${minSpikes} Spikes`}</i>`,
+              `🔬 <i>Tracking live forward outcome to evaluate against backtest metrics.</i>`
+            );
+
+            await sendTelegramMessage(alertLines.join('\n'));
+            console.log(`${YELLOW}${BOLD}   >>> [FORWARD TEST SIGNAL - ${strat.displayName}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
+
+            const activeTrades = loadActiveTrades();
+            activeTrades.push({
               setupId,
               symbol,
               type: setup.type,
-              direction: setup.direction,
               entryPrice: setup.entry,
               stopLoss: setup.sl,
               takeProfit: setup.tp,
-              riskUSD: compRisk.riskUSD,
-              rewardUSD: compRisk.rewardUSD,
+              riskUSD: 0,
+              rewardUSD: 0,
               candleEpoch: setup.candleEpoch,
               triggeredTime: Date.now(),
-              blockedReason: setup.blockedReason
+              isIncubation: true,
+              strategy: strat.displayName
             });
-            saveShadowTrades(shadowTrades);
-            console.log(`  [SHADOW AUDIT] ${symbol.padEnd(12)} | 🛑 Blocked by: ${setup.blockedReason} | Enrolled in shadow tracking`);
+            saveActiveTrades(activeTrades);
+
+            break;
           }
-          break;
-        }
 
-        if (alertedSetups.has(setupId) || symbolAlreadyActive) {
-          if (alertedSetups.has(setupId)) {
-            console.log(`  [${mode}] ${symbol.padEnd(12)} | ${latestPrice.toFixed(2)} | Setup active (already alerted)`);
-          }
-          break;
-        }
-
-        // 👑 Stale Signal & Ghost Trap Guard:
-        // Never fire a signal if live price has already breached Stop Loss or reached Take Profit
-        const isBullish = setup.direction === 'BUY';
-        const slAlreadyHit = isBullish ? latestPrice <= setup.sl : latestPrice >= setup.sl;
-        const tpAlreadyHit = isBullish ? latestPrice >= setup.tp : latestPrice <= setup.tp;
-        const maxAllowedDrift = (setup.atr || 1.0) * 0.40;
-        const priceDrift = Math.abs(latestPrice - setup.entry);
-
-        if (slAlreadyHit || tpAlreadyHit || priceDrift > maxAllowedDrift) {
-          console.log(`  [${mode}] ${symbol.padEnd(12)} | Discarding stale setup (live price ${latestPrice.toFixed(2)} already beyond entry ${setup.entry.toFixed(2)} / SL ${setup.sl.toFixed(2)})`);
-          saveAlertedSetup(setupId); // mark as alerted so it doesn't re-trigger
-          break;
-        }
-
-        // Double check target lock, max loss lock, or pause before sending
-        if (!symConfig.monitorOnly && (dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked || dynamicState.isManuallyPaused)) {
-          console.log(`  [${mode}] ${symbol.padEnd(12)} | Setup ignored: Bot is currently in locked/paused state.`);
-          break;
-        }
-
-        // ── NEW SIGNAL — FIRE ALERT ──
-        saveAlertedSetup(setupId);
-        signalFiredThisScan = true;
-
-        if (symConfig.monitorOnly) {
-          // ── INCUBATION PAIR (PAPER MONITORING — $0 RISK) ──
+          const compRisk = getWeeklyCompoundedRisk();
+          const lotSize = calculateLotSize(symbol, setup.entry, setup.sl, compRisk.riskUSD);
           const dirEmoji = setup.direction === 'SELL' ? '🔴' : '🟢';
+          const riskUSD = compRisk.riskUSD;
+          const rewardUSD = compRisk.rewardUSD.toFixed(2);
+
+          // ── OPTIONAL GEMINI 2.5 FLASH MULTIMODAL AI VISION AUDIT ──
+          let aiAudit = { verdict: 'TAKE', reason: 'Pure Quantitative Momentum Guard Execution', confidence: 1.0 };
+          if (config.ENABLE_AI_VISION) {
+            console.log(`[runner] Auditing ${symbol} setup with Gemini 2.5 Flash Dual-Timeframe Vision...`);
+            aiAudit = await auditTradeWithVision({
+              symbol,
+              direction: setup.direction,
+              entry: setup.entry,
+              tp: setup.tp,
+              sl: setup.sl,
+              candles: ltfCandles,
+              htfCandles: htf1hCandles
+            });
+          }
+          const aiVerdictBadge = aiAudit.verdict === 'TAKE' ? '🟢 <b>TAKE IT (Trade Approved)</b>' : '🔴 <b>LEAVE IT (Avoid Trade)</b>';
+
           const alertLines = [
-            `🔬 🟡 <b>[MYTRADA INCUBATION SIGNAL — PAPER ONLY]</b>`,
+            `👑 ${dirEmoji} <b>[MYTRADA SIGNAL — ${strat.displayName.toUpperCase()}]</b>`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
             `<b>Asset:</b> <code>${symbol}</code> (${symConfig.name})`,
-            `<b>Action:</b> ${dirEmoji} <b>${setup.direction} (Paper Monitor)</b>`,
+            `<b>Action:</b> ${dirEmoji} <b>${setup.direction} (Market)</b>`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
             `🎯 <b>Entry:</b> <code>${setup.entry.toFixed(2)}</code>`,
             `🛡️ <b>Stop Loss:</b> <code>${setup.sl.toFixed(2)}</code>`,
-            `🏆 <b>Take Profit:</b> <code>${setup.tp.toFixed(2)}</code> (1:1.3 R:R Target)`,
+            `🏆 <b>Take Profit:</b> <code>${setup.tp.toFixed(2)}</code> (+$${rewardUSD} USD • 1:1.3 R:R)`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `🧪 <b>Mode:</b> <code>Incubation Sandbox ($0 Capital at Risk)</code>`,
-            `📊 <i>Trend: 4H ${setup.htf4hTrend.toUpperCase()} + 1H ${setup.htf1hTrend.toUpperCase()} | ${setup.spikeCountLabel || `${minSpikes} Spikes`}</i>`,
-            `🔬 <i>Tracking forward outcome for performance footprint audit.</i>`
+            `💰 <b>Lot Size:</b> <code>${lotSize} Lots</code>`,
+            `🛡️ <b>Risk:</b> <code>-$${riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || compRisk.riskPercent).toFixed(1)}%)</code>`,
+            `💵 <b>Account Equity:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`
           ];
 
-          await sendTelegramMessage(alertLines.join('\n'));
-          console.log(`${YELLOW}${BOLD}   >>> [INCUBATION PAPER SIGNAL]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
+          if (setup.valuationLabel) {
+            alertLines.push(`🏛️ <b>Dealing Range:</b> <code>${setup.valuationLabel}</code>`);
+          }
+          if (setup.liquidityLabel) {
+            alertLines.push(`💧 <b>Liquidity Purge:</b> <code>${setup.liquidityLabel}</code>`);
+          }
+
+          alertLines.push(
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `📊 <i>Trend: 4H ${setup.htf4hTrend.toUpperCase()} + 1H ${setup.htf1hTrend.toUpperCase()} | ${setup.spikeCountLabel || `${minSpikes} Spikes`} + ${setup.confirmCount || 2}x 5M Confirmation</i>`
+          );
+
+          if (config.ENABLE_AI_VISION) {
+            alertLines.push(
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `🧠 <b>AI VISION AUDIT:</b> ${aiVerdictBadge} (Confidence: ${(aiAudit.confidence * 100).toFixed(0)}%)`
+            );
+          }
+
+          const alertHtml = alertLines.join('\n');
+
+          await sendTelegramMessage(alertHtml);
+          console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> ${strat.displayName} SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
 
           const activeTrades = loadActiveTrades();
           activeTrades.push({
@@ -1671,102 +2226,34 @@ async function monitorMarket() {
             entryPrice: setup.entry,
             stopLoss: setup.sl,
             takeProfit: setup.tp,
-            riskUSD: 0,
-            rewardUSD: 0,
+            riskUSD: compRisk.riskUSD,
+            rewardUSD: compRisk.rewardUSD,
             candleEpoch: setup.candleEpoch,
             triggeredTime: Date.now(),
-            isIncubation: true
+            strategy: strat.displayName,
+            aiVisionVerdict: aiAudit.verdict,
+            aiVisionReason: aiAudit.reason,
+            aiVisionConfidence: aiAudit.confidence
           });
           saveActiveTrades(activeTrades);
 
+          recordSignal({
+            setupId,
+            symbol,
+            type: setup.type,
+            entryPrice: setup.entry,
+            stopLoss: setup.sl,
+            takeProfit: setup.tp,
+            confluenceScore: 10,
+            strategy: strat.displayName,
+            aiVisionVerdict: aiAudit.verdict,
+            aiVisionReason: aiAudit.reason,
+            aiVisionConfidence: aiAudit.confidence
+          });
+          recordTrigger(setupId);
+
           break;
         }
-
-        const compRisk = getWeeklyCompoundedRisk();
-        const lotSize = calculateLotSize(symbol, setup.entry, setup.sl, compRisk.riskUSD);
-        const dirEmoji = setup.direction === 'SELL' ? '🔴' : '🟢';
-        const riskUSD = compRisk.riskUSD;
-        const rewardUSD = compRisk.rewardUSD.toFixed(2);
-        const candleAgeLabel = offset === 1 ? '5M Close' : `5M Close (${(offset - 1) * 5}m ago)`;
-
-        // ── OPTIONAL GEMINI 2.5 FLASH MULTIMODAL AI VISION AUDIT ──
-        let aiAudit = { verdict: 'TAKE', reason: 'Pure Quantitative Momentum Guard Execution', confidence: 1.0 };
-        if (config.ENABLE_AI_VISION) {
-          console.log(`[runner] Auditing ${symbol} setup with Gemini 2.5 Flash Dual-Timeframe Vision...`);
-          aiAudit = await auditTradeWithVision({
-            symbol,
-            direction: setup.direction,
-            entry: setup.entry,
-            tp: setup.tp,
-            sl: setup.sl,
-            candles: ltfCandles,
-            htfCandles: htf1hCandles
-          });
-        }
-        const aiVerdictBadge = aiAudit.verdict === 'TAKE' ? '🟢 <b>TAKE IT (Trade Approved)</b>' : '🔴 <b>LEAVE IT (Avoid Trade)</b>';
-
-        const alertLines = [
-          `👑 ${dirEmoji} <b>[MYTRADA SIGNAL]</b>`,
-          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `<b>Asset:</b> <code>${symbol}</code> (${symConfig.name})`,
-          `<b>Action:</b> ${dirEmoji} <b>${setup.direction} (Market)</b>`,
-          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `🎯 <b>Entry:</b> <code>${setup.entry.toFixed(2)}</code>`,
-          `🛡️ <b>Stop Loss:</b> <code>${setup.sl.toFixed(2)}</code>`,
-          `🏆 <b>Take Profit:</b> <code>${setup.tp.toFixed(2)}</code> (+$${rewardUSD} USD • 1:1.3 R:R)`,
-          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `💰 <b>Lot Size:</b> <code>${lotSize} Lots</code>`,
-          `🛡️ <b>Risk:</b> <code>-$${riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || compRisk.riskPercent).toFixed(1)}%)</code>`,
-          `💵 <b>Account Equity:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
-          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `📊 <i>Trend: 4H ${setup.htf4hTrend.toUpperCase()} + 1H ${setup.htf1hTrend.toUpperCase()} | ${setup.spikeCountLabel || `${minSpikes} Spikes`} + ${setup.confirmCount || 2}x 5M Confirmation</i>`
-        ];
-
-        if (config.ENABLE_AI_VISION) {
-          alertLines.push(
-            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `🧠 <b>AI VISION AUDIT:</b> ${aiVerdictBadge} (Confidence: ${(aiAudit.confidence * 100).toFixed(0)}%)`
-          );
-        }
-
-        const alertHtml = alertLines.join('\n');
-
-        await sendTelegramMessage(alertHtml);
-        console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> STRATEGY 5B/5C SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
-
-        const activeTrades = loadActiveTrades();
-        activeTrades.push({
-          setupId,
-          symbol,
-          type: setup.type,
-          entryPrice: setup.entry,
-          stopLoss: setup.sl,
-          takeProfit: setup.tp,
-          riskUSD: compRisk.riskUSD,
-          rewardUSD: compRisk.rewardUSD,
-          candleEpoch: setup.candleEpoch,
-          triggeredTime: Date.now(),
-          aiVisionVerdict: aiAudit.verdict,
-          aiVisionReason: aiAudit.reason,
-          aiVisionConfidence: aiAudit.confidence
-        });
-        saveActiveTrades(activeTrades);
-
-        recordSignal({
-          setupId,
-          symbol,
-          type: setup.type,
-          entryPrice: setup.entry,
-          stopLoss: setup.sl,
-          takeProfit: setup.tp,
-          confluenceScore: 10,
-          aiVisionVerdict: aiAudit.verdict,
-          aiVisionReason: aiAudit.reason,
-          aiVisionConfidence: aiAudit.confidence
-        });
-        recordTrigger(setupId);
-
-        break;
       }
 
       if (!signalFiredThisScan) {
@@ -1815,7 +2302,7 @@ async function main() {
 
   if (isTest) {
     console.log("\n🧪 Dispatching Test Telegram Alert...");
-    const testMsg = "🚀 <b>[MYTRADA STRATEGY 5B/5C TEST]</b>\nTelegram Signal Dispatcher & Interactive Command Center connected successfully!\nSend <code>/status</code> to check bot status.";
+    const testMsg = "🚀 <b>[MYTRADA TEST]</b>\nTelegram Signal Dispatcher & Interactive Command Center connected successfully!\nSend <code>/status</code> to check bot status.";
     await sendTelegramMessage(testMsg);
     console.log(`${GREEN}✅ SUCCESS: Test alert sent to Telegram!${RESET}`);
     process.exit(0);
@@ -1839,27 +2326,59 @@ async function main() {
     process.exit(0);
   }
 
+  const compRisk = getWeeklyCompoundedRisk();
   const startupTargetLabel = dynamicState.dailyTargetUSD > 0 ? `$${dynamicState.dailyTargetUSD.toFixed(2)}` : 'None';
   const startupLossLabel = dynamicState.dailyMaxLossUSD > 0 ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)}` : 'None';
-  console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner — Strategy 5B Enhanced${RESET}`);
-  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Pairs (1:1.3 R:R | Target: ${startupTargetLabel} | Loss Floor: ${startupLossLabel} | 35m/45m Cooldowns | Telegram Active)...\n`);
-
   const targetLabel = dynamicState.dailyTargetUSD > 0 ? `$${dynamicState.dailyTargetUSD.toFixed(2)} USD` : 'Disabled';
   const maxLossLabel = dynamicState.dailyMaxLossUSD > 0 ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)} USD` : 'Disabled';
-  await sendTelegramMessage([
-    `🚀 <b>[MYTRADA SYSTEM ONLINE — STRATEGY 5B ENHANCED]</b>`,
-    `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-    `• <b>Strategy:</b> <code>Strategy 5B Enhanced (Value-Zone Momentum Sniper)</code>`,
-    `• <b>Universe:</b> <code>${Object.keys(config.SYMBOLS).length} Elite Pairs</code>`,
-    `• <b>Daily Profit Target:</b> <code>${targetLabel}</code>`,
-    `• <b>Daily Max Loss Floor:</b> <code>${maxLossLabel}</code>`,
-    `• <b>Risk Model:</b> <code>Fixed 1:1.3 R:R (3.0% Risk)</code>`,
-    `• <b>Telegram Control:</b> <b>ACTIVE</b> (Send <code>/help</code> for commands)`,
-    `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
-  ].join('\n'));
+
+  if (dynamicState.activeStrategy === 'NONE') {
+    console.log(`\n👑 ${BOLD}${CYAN}Mytrada Signal Runner — ONLINE IN STANDBY MODE${RESET}`);
+    console.log(`🚀 Waiting for /strategy command on Telegram (/strategy 6pro, /strategy 5b, or /strategy both)...\n`);
+
+    await sendTelegramMessage([
+      `🚀 <b>[MYTRADA SYSTEM ONLINE — STANDBY MODE]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `• <b>Status:</b> 🟡 <b>STANDBY (Awaiting Strategy Launch)</b>`,
+      `• <b>Universe:</b> <code>${Object.keys(config.SYMBOLS).length} Elite Pairs</code>`,
+      `• <b>Account Equity:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
+      `• <b>Daily Profit Target:</b> <code>${targetLabel}</code>`,
+      `• <b>Daily Max Loss Floor:</b> <code>${maxLossLabel}</code>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `💡 <b>Send a command to launch your strategy:</b>`,
+      `• <code>/strategy 6pro</code> — Launch Strategy 6 Pro (Institutional SMC)`,
+      `• <code>/strategy 5b</code> — Launch Strategy 5B Enhanced`,
+      `• <code>/strategy both</code> — Launch Both (5B Live + 6 Pro Paper Sandbox)`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+    ].join('\n'));
+  } else {
+    const isBoth = dynamicState.activeStrategy === 'BOTH';
+    const is6Pro = dynamicState.activeStrategy === 'STRATEGY_6_PRO';
+    const stratDisplayName = isBoth
+      ? 'Dual Engine (5B Live + 6 Pro Paper Sandbox)'
+      : (is6Pro ? 'Strategy 6 Pro (Institutional SMC)' : 'Strategy 5B Enhanced');
+
+    console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner — ${stratDisplayName}${RESET}`);
+    console.log(`🚀 Universe: ${Object.keys(config.SYMBOLS).length} Elite Pairs | Target: ${startupTargetLabel} | Loss Floor: ${startupLossLabel} | Telegram Active...\n`);
+
+    await sendTelegramMessage([
+      `🚀 <b>[MYTRADA SYSTEM ONLINE — ${isBoth ? 'DUAL ENGINE' : (is6Pro ? 'STRATEGY 6 PRO' : 'STRATEGY 5B ENHANCED')}]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `• <b>Strategy:</b> <code>${stratDisplayName}</code>`,
+      `• <b>Universe:</b> <code>${Object.keys(config.SYMBOLS).length} Elite Pairs</code>`,
+      `• <b>Daily Profit Target:</b> <code>${targetLabel}</code>`,
+      `• <b>Daily Max Loss Floor:</b> <code>${maxLossLabel}</code>`,
+      `• <b>Risk Model:</b> <code>Fixed 1:1.3 R:R (3.0% Risk)</code>`,
+      `• <b>Telegram Control:</b> <b>ACTIVE</b> (Send <code>/help</code> for commands)`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+    ].join('\n'));
+  }
 
   // Start Interactive Telegram Inbound Listener in Background
   startTelegramListener(telegramHandlers);
+
+  // Start High-Speed Dedicated Position Monitor (Checks open trades every 3 seconds)
+  setInterval(monitorActivePositionsFast, 3000);
 
   await monitorMarket();
   setInterval(monitorMarket, 30000);

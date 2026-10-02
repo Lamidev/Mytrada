@@ -16,8 +16,37 @@
  *  - /help           : Show available commands
  */
 
+const fs = require('fs');
+const path = require('path');
 const https = require('https');
 const config = require('./config');
+
+const GOLD_STATE_FILE = path.join(__dirname, 'cache', 'gold_state.json');
+const GOLD_TRADES_FILE = path.join(__dirname, 'cache', 'gold_active_trades.json');
+
+function getGoldState() {
+  if (fs.existsSync(GOLD_STATE_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(GOLD_STATE_FILE, 'utf8'));
+    } catch (e) {}
+  }
+  return { mode: 'PAPER', isPaused: false };
+}
+
+function setGoldState(state) {
+  try {
+    fs.writeFileSync(GOLD_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (e) {}
+}
+
+function getGoldTrades() {
+  if (fs.existsSync(GOLD_TRADES_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(GOLD_TRADES_FILE, 'utf8'));
+    } catch (e) {}
+  }
+  return [];
+}
 
 let isPolling = false;
 let lastUpdateId = 0;
@@ -115,19 +144,18 @@ function registerTelegramCommands() {
   if (!botToken) return;
 
   const commands = [
-    { command: 'status', description: "Live balance, today's P&L, target & cooldowns" },
-    { command: 'report', description: "Daily performance summary report" },
+    { command: 'status', description: "Live equity, today's P&L, active engines & state" },
+    { command: 'strategy', description: "Strategy switch: /strategy 6pro | 5b | both | none" },
+    { command: 'mode', description: "Execution mode: /mode paper | live" },
+    { command: 'gold', description: "Gold Scalper status, forward-test & controls" },
     { command: 'trades', description: "Live active positions & distance to TP/SL" },
-    { command: 'target', description: "Set daily profit target (/target 300 or /target off)" },
-    { command: 'maxloss', description: "Set daily max loss floor (/maxloss 200 or /maxloss off)" },
-    { command: 'lock', description: "Lock today's profit & move trades to Breakeven" },
-    { command: 'close', description: "Close specific trade (/close CRASH1000)" },
-    { command: 'closeall', description: "Close all open trades immediately" },
-    { command: 'be', description: "Move open trades to Breakeven ($0 risk)" },
-    { command: 'pause', description: "Pause new signals and entries" },
-    { command: 'resume', description: "Resume active market scanning" },
-    { command: 'risk', description: "Change risk % per trade (/risk 1.5)" },
-    { command: 'help', description: "Show all command options" }
+    { command: 'report', description: "Daily performance summary report" },
+    { command: 'target', description: "Set daily target: /target 250 (or /target off)" },
+    { command: 'maxloss', description: "Set max loss floor: /maxloss 150 (or /maxloss off)" },
+    { command: 'pause', description: "Pause scanning: /pause | /pause 5b | /pause 6pro | /pause gold" },
+    { command: 'resume', description: "Resume scanning: /resume | /resume 5b | /resume 6pro | /resume gold" },
+    { command: 'closeall', description: "Emergency exit: Close all open positions at market" },
+    { command: 'help', description: "Show clean command control center" }
   ];
 
   const payload = JSON.stringify({ commands });
@@ -223,29 +251,161 @@ async function handleCommand(rawText, handlers) {
     case '/start':
     case '/help': {
       const helpMsg = [
-        `👑 <b>[MYTRADA COMMAND CENTER]</b>`,
+        `👑 <b>[MYTRADA CONTROL CENTER]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `<b>Available Remote Commands:</b>`,
-        `• <code>/status</code> ➜ Live equity, P&L, daily target & cooldowns`,
-        `• <code>/report</code> ➜ Daily performance summary report`,
-        `• <code>/trades</code> ➜ Live active positions & distance to TP/SL`,
-        `• <code>/target &lt;amt&gt;</code> ➜ Set daily profit target (e.g. <code>/target 300</code> or <code>/target off</code>)`,
-        `• <code>/maxloss &lt;amt&gt;</code> ➜ Set daily max loss floor (e.g. <code>/maxloss 200</code> or <code>/maxloss off</code>)`,
-        `• <code>/lock</code> ➜ Lock in today's profit & pause until 12:00 AM`,
-        `• <code>/close &lt;pair&gt;</code> ➜ Close specific trade (e.g. <code>/close CRASH1000</code>)`,
-        `• <code>/closeall</code> ➜ Close all open trades immediately`,
-        `• <code>/be</code> ➜ Move open trades to Breakeven ($0 risk)`,
-        `• <code>/pause</code> ➜ Manually pause bot (stays paused until /resume)`,
-        `• <code>/resume</code> ➜ Resume trading immediately`,
-        `• <code>/risk &lt;pct&gt;</code> ➜ Change risk % (e.g. <code>/risk 1.5</code>)`,
-        `• <code>/cooldown &lt;pair&gt; [mins]</code> ➜ Pause pair (e.g. <code>/cooldown BOOM300N 60</code>)`,
+        `📊 <b>MONITORING:</b>`,
+        `• <code>/status</code> ➜ Balance, today's PnL, active engines & locks`,
+        `• <code>/trades</code> ➜ Live open trades & distance to TP/SL`,
+        `• <code>/gold</code> ➜ Gold Flash Scalper status & positions`,
+        `• <code>/report</code> ➜ Today's performance report`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `🏛️ <b>STRATEGY & MODES:</b>`,
+        `• <code>/strategy 6pro</code> ➜ Launch Strategy 6 Pro (Institutional SMC)`,
+        `• <code>/strategy 5b</code> ➜ Launch Strategy 5B Enhanced`,
+        `• <code>/strategy both</code> ➜ Launch Both (5B Live + 6 Pro Paper)`,
+        `• <code>/strategy none</code> ➜ Put bot into Standby (0 entries)`,
+        `• <code>/mode paper</code> | <code>/mode live</code> ➜ Global execution mode`,
+        `• <code>/mode gold paper</code> | <code>/mode gold live</code> ➜ Gold mode`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `🛡️ <b>RISK & SAFETY:</b>`,
+        `• <code>/target 250</code> ➜ Auto-close all & lock profit at +$250 (or <code>/target off</code>)`,
+        `• <code>/maxloss 150</code> ➜ Auto-close all & stop loss floor at -$150 (or <code>/maxloss off</code>)`,
+        `• <code>/be</code> ➜ Move SL on open trades to Breakeven ($0 risk)`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `⚡ <b>CONTROL & EMERGENCY:</b>`,
+        `• <code>/pause</code> | <code>/resume</code> ➜ Global pause/resume`,
+        `• <code>/pause 5b</code> | <code>/pause 6pro</code> | <code>/pause gold</code> ➜ Pause specific engine`,
+        `• <code>/resume 5b</code> | <code>/resume 6pro</code> | <code>/resume gold</code> ➜ Resume engine`,
+        `• <code>/closeall</code> ➜ Close all active trades immediately at market`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
       ].join('\n');
       await sendTelegramMessage(helpMsg);
       break;
     }
 
+    case '/strategy':
+    case '/strat': {
+      if (!arg1) {
+        const cur = handlers.getActiveStrategy ? handlers.getActiveStrategy() : 'BOTH';
+        let label = '⚡ <b>DUAL ENGINE (5B Live + 6 Pro Paper Sandbox)</b>';
+        if (cur === 'STRATEGY_6_PRO') label = '👑 <b>Strategy 6 Pro Only (Institutional SMC Sniper)</b>';
+        else if (cur === 'STRATEGY_5B') label = '🚀 <b>Strategy 5B Only (Value-Zone Momentum Sniper)</b>';
 
+        await sendTelegramMessage([
+          `🏛️ <b>[MYTRADA ACTIVE STRATEGY ENGINE]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `• <b>Current Configuration:</b> ${label}`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `👑 <b>Strategy 6 Pro:</b> 4H+1H Trend + Dealing Range + 5M Sweeps (~3-6 trades/day, 70% WR)`,
+          `🚀 <b>Strategy 5B:</b> Value-Zone Spike Exhaustion Sniper (~10-15 trades/day)`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `💡 <b>Commands:</b>`,
+          `• <code>/strategy both</code> — Run BOTH (5B Live + 6 Pro Paper Sandbox)`,
+          `• <code>/strategy 6pro</code> — Run Strategy 6 Pro exclusively`,
+          `• <code>/strategy 5b</code> — Run Strategy 5B Enhanced exclusively`
+        ].join('\n'));
+        break;
+      }
+      const choice = arg1.toLowerCase();
+      if (choice.includes('both') || choice.includes('all') || choice.includes('dual')) {
+        if (handlers.setActiveStrategy) handlers.setActiveStrategy('BOTH');
+        await sendTelegramMessage([
+          `⚡ <b>[DUAL STRATEGY ENGINE ACTIVATED]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `• 🟢 <b>Strategy 5B:</b> <b>LIVE REAL TRADING</b> (Account Equity)`,
+          `• 🔬 <b>Strategy 6 Pro:</b> <b>PAPER FORWARD TEST</b> ($0 Risk Sandbox)`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `<i>Both engines are actively scanning in parallel. Control each anytime with /pause 5b or /pause 6pro.</i>`
+        ].join('\n'));
+      } else if (choice.includes('6') || choice.includes('pro') || choice.includes('smc')) {
+        if (handlers.setActiveStrategy) handlers.setActiveStrategy('STRATEGY_6_PRO');
+        await sendTelegramMessage(`👑 <b>[STRATEGY SWITCHED ➔ STRATEGY 6 PRO]</b>\nBot is now scanning exclusively with <b>Institutional SMC Liquidity & Valuation Sniper</b>.`);
+      } else if (choice.includes('5') || choice.includes('5b')) {
+        if (handlers.setActiveStrategy) handlers.setActiveStrategy('STRATEGY_5B');
+        await sendTelegramMessage(`🚀 <b>[STRATEGY SWITCHED ➔ STRATEGY 5B ENHANCED]</b>\nBot is now scanning exclusively with <b>Strategy 5B Enhanced</b>.`);
+      } else if (choice.includes('none') || choice.includes('off') || choice.includes('standby')) {
+        if (handlers.setActiveStrategy) handlers.setActiveStrategy('NONE');
+        await sendTelegramMessage(`🟡 <b>[MYTRADA ENGINE IN STANDBY]</b>\nMarket scanning halted. Bot is awaiting your /strategy command.`);
+      } else {
+        await sendTelegramMessage(`⚠️ Unknown strategy option. Use <code>/strategy both</code>, <code>/strategy 6pro</code>, <code>/strategy 5b</code>, or <code>/strategy none</code>.`);
+      }
+      break;
+    }
+
+    case '/mode': {
+      if (!arg1) {
+        const curStrat = handlers.getActiveStrategy ? handlers.getActiveStrategy() : 'BOTH';
+        const curMode = handlers.getExecutionMode ? handlers.getExecutionMode() : 'PAPER';
+        const gState = getGoldState();
+        await sendTelegramMessage([
+          `🧪 <b>[MYTRADA EXECUTION MODES]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `• <b>Boom/Crash Strategy:</b> <code>${curStrat}</code>`,
+          `• <b>Boom/Crash Mode:</b> <code>${curMode}</code>`,
+          `• <b>Gold Scalper Mode:</b> <code>${gState.mode || 'PAPER'} (${gState.isPaused ? '⏸️ PAUSED' : '🟢 ACTIVE'})</code>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `💡 <b>Commands:</b>`,
+          `• <code>/mode paper</code> — Global Boom/Crash Paper Sandbox ($0 risk)`,
+          `• <code>/mode live</code> — Global Boom/Crash Live Real Trading`,
+          `• <code>/mode 5b live</code> | <code>/mode 5b paper</code>`,
+          `• <code>/mode 6pro live</code> | <code>/mode 6pro paper</code>`,
+          `• <code>/mode gold paper</code> | <code>/mode gold live</code>`
+        ].join('\n'));
+        break;
+      }
+      const mChoice = arg1.toLowerCase();
+      const mTarget = arg2 ? arg2.toLowerCase() : null;
+
+      if (mChoice.includes('gold') && mTarget) {
+        const isPaper = mTarget.includes('paper') || mTarget.includes('test');
+        const gState = getGoldState();
+        gState.mode = isPaper ? 'PAPER' : 'LIVE';
+        setGoldState(gState);
+        await sendTelegramMessage(`🥇 <b>Gold Scalper Mode updated to:</b> <code>${isPaper ? '🔬 PAPER FORWARD TEST ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>`);
+      } else if (mChoice.includes('5b') && mTarget) {
+        const isPaper = mTarget.includes('paper') || mTarget.includes('test');
+        if (handlers.setStrategyMode) handlers.setStrategyMode('5b', isPaper ? 'PAPER' : 'LIVE');
+        await sendTelegramMessage(`🚀 <b>Strategy 5B Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>`);
+      } else if (mChoice.includes('6') && mTarget) {
+        const isPaper = mTarget.includes('paper') || mTarget.includes('test');
+        if (handlers.setStrategyMode) handlers.setStrategyMode('6pro', isPaper ? 'PAPER' : 'LIVE');
+        await sendTelegramMessage(`👑 <b>Strategy 6 Pro Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>`);
+      } else if (mChoice.includes('paper') || mChoice.includes('test') || mChoice.includes('sandbox')) {
+        if (handlers.setExecutionMode) handlers.setExecutionMode('PAPER');
+        await sendTelegramMessage(`🔬 <b>[GLOBAL MODE ➔ PAPER SANDBOX]</b>\nAll signals across all strategies will now run as <b>Forward Test Setups ($0 real equity at risk)</b>.`);
+      } else if (mChoice.includes('live') || mChoice.includes('real')) {
+        if (handlers.setExecutionMode) handlers.setExecutionMode('LIVE');
+        await sendTelegramMessage(`🟢 <b>[GLOBAL MODE ➔ LIVE REAL TRADING]</b>\nSignals will now execute with <b>Real Live Account Equity</b>.`);
+      } else {
+        await sendTelegramMessage(`⚠️ Unknown mode command. Use <code>/mode paper</code>, <code>/mode live</code>, <code>/mode 5b live</code>, <code>/mode 6pro paper</code>, or <code>/mode gold paper</code>.`);
+      }
+      break;
+    }
+
+    case '/gold':
+    case '/xauusd': {
+      const gState = getGoldState();
+      const gTrades = getGoldTrades();
+      const isPaper = gState.mode === 'PAPER';
+      const statusBadge = gState.isPaused ? '⏸️ <b>PAUSED</b>' : '🟢 <b>SCANNING (M1 Liquidity Engine)</b>';
+
+      await sendTelegramMessage([
+        `🥇 <b>[MYTRADA GOLD FLASH SCALPER MONITOR]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `• <b>Asset:</b> <code>Gold / USD (frxXAUUSD)</code>`,
+        `• <b>Timeframe:</b> <code>1-Minute (M1 Flash Scalp)</code>`,
+        `• <b>Engine State:</b> ${statusBadge}`,
+        `• <b>Execution Mode:</b> <code>${isPaper ? '🔬 Paper Forward Test ($0 Risk)' : '🟢 Live Real Trading'}</code>`,
+        `• <b>Active Positions:</b> <code>${gTrades.length} Trade(s) Open</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `💡 <b>Commands:</b>`,
+        `• <code>/pause gold</code> — Pause Gold Scalper scanning`,
+        `• <code>/resume gold</code> — Resume Gold Scalper scanning`,
+        `• <code>/mode gold paper</code> — Forward Test Gold ($0 Risk)`,
+        `• <code>/mode gold live</code> — Live Real Trading on Gold`
+      ].join('\n'));
+      break;
+    }
 
     case '/report': {
       if (handlers.getDailyReport) {
@@ -348,18 +508,44 @@ async function handleCommand(rawText, handlers) {
 
     case '/pause':
     case '/stop': {
-      if (handlers.pauseBot) {
-        handlers.pauseBot();
-        await sendTelegramMessage(`⏸️ <b>[MYTRADA MANUAL PAUSE]</b>\nAll new signals and trading paused.\nSend <code>/resume</code> to restart scanning.`);
+      const pTarget = arg1 ? arg1.toLowerCase() : 'all';
+      if (pTarget.includes('gold') || pTarget.includes('xau')) {
+        const gState = getGoldState();
+        gState.isPaused = true;
+        setGoldState(gState);
+        await sendTelegramMessage(`⏸️ <b>[GOLD FLASH SCALPER PAUSED]</b>\nGold M1 daemon paused. Boom & Crash scanners remain active.`);
+      } else if (pTarget.includes('5b')) {
+        if (handlers.pauseStrategy) handlers.pauseStrategy('5b');
+        await sendTelegramMessage(`⏸️ <b>[STRATEGY 5B PAUSED]</b>\nStrategy 5B signal engine paused. Strategy 6 Pro remains active.`);
+      } else if (pTarget.includes('6') || pTarget.includes('pro')) {
+        if (handlers.pauseStrategy) handlers.pauseStrategy('6pro');
+        await sendTelegramMessage(`⏸️ <b>[STRATEGY 6 PRO PAUSED]</b>\nStrategy 6 Pro signal engine paused. Strategy 5B remains active.`);
+      } else {
+        if (handlers.pauseBot) handlers.pauseBot();
+        await sendTelegramMessage(`⏸️ <b>[MYTRADA GLOBAL PAUSE]</b>\nAll strategy engines and scanning paused.\nSend <code>/resume</code> to restart.`);
       }
       break;
     }
 
     case '/resume':
     case '/unpause': {
-      if (handlers.resumeBot) {
-        const res = handlers.resumeBot();
-        await sendTelegramMessage(`▶️ <b>[MYTRADA TRADING RESUMED]</b>\nBot is now actively scanning <b>${res.symbolsCount} Elite Pairs</b>.`);
+      const rTarget = arg1 ? arg1.toLowerCase() : 'all';
+      if (rTarget.includes('gold') || rTarget.includes('xau')) {
+        const gState = getGoldState();
+        gState.isPaused = false;
+        setGoldState(gState);
+        await sendTelegramMessage(`▶️ <b>[GOLD FLASH SCALPER RESUMED]</b>\nGold M1 daemon is now actively scanning.`);
+      } else if (rTarget.includes('5b')) {
+        if (handlers.resumeStrategy) handlers.resumeStrategy('5b');
+        await sendTelegramMessage(`▶️ <b>[STRATEGY 5B RESUMED]</b>\nStrategy 5B is now actively scanning.`);
+      } else if (rTarget.includes('6') || rTarget.includes('pro')) {
+        if (handlers.resumeStrategy) handlers.resumeStrategy('6pro');
+        await sendTelegramMessage(`▶️ <b>[STRATEGY 6 PRO RESUMED]</b>\nStrategy 6 Pro is now actively scanning.`);
+      } else {
+        if (handlers.resumeBot) {
+          const res = handlers.resumeBot();
+          await sendTelegramMessage(`▶️ <b>[MYTRADA ALL ENGINES RESUMED]</b>\nBot is now actively scanning <b>${res.symbolsCount} Elite Pairs</b> across all active strategies.`);
+        }
       }
       break;
     }
