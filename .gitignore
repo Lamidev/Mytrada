@@ -1,6 +1,8 @@
 node_modules/
 .env
 cache/
-data/
+data/*
+!data/trades_master_backtest_archive.json
+!data/trades_master_backtest_archive.csv
 __pycache__/
 scratch/

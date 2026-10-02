@@ -10,11 +10,17 @@ const path = require('path');
 const config = require('./config');
 
 const CACHE_DIR = path.join(__dirname, 'cache');
+const DATA_DIR = path.join(__dirname, 'data');
 const TRADE_HISTORY_FILE = path.join(CACHE_DIR, 'trade_history.json');
+const MASTER_BACKTEST_JSON = path.join(DATA_DIR, 'trades_master_backtest_archive.json');
+const MASTER_BACKTEST_CSV = path.join(DATA_DIR, 'trades_master_backtest_archive.csv');
 
-// Ensure cache directory exists
+// Ensure directories exist
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 function loadTradeHistory() {
@@ -34,6 +40,82 @@ function saveTradeHistory(history) {
     fs.writeFileSync(TRADE_HISTORY_FILE, JSON.stringify(history, null, 2), 'utf8');
   } catch (e) {
     console.warn("[reportManager] Error saving trade history:", e.message);
+  }
+}
+
+/**
+ * Appends or updates closed trade in the permanent Master Backtesting Archive (JSON & CSV)
+ */
+function appendTradeToMasterArchive(trade) {
+  try {
+    let archive = [];
+    if (fs.existsSync(MASTER_BACKTEST_JSON)) {
+      try {
+        archive = JSON.parse(fs.readFileSync(MASTER_BACKTEST_JSON, 'utf8'));
+      } catch (e) {
+        archive = [];
+      }
+    }
+
+    const key = trade.setupId || `${trade.symbol}_${trade.type}_${trade.closedTime || trade.signalTime || Date.now()}`;
+    const dateStr = trade.closedTime ? trade.closedTime.slice(0, 10) : (trade.signalTime ? trade.signalTime.slice(0, 10) : new Date().toISOString().slice(0, 10));
+    const timeStr = trade.closedTime || trade.signalTime || new Date().toISOString();
+
+    const entryRecord = {
+      setupId: key,
+      date: dateStr,
+      time: timeStr,
+      symbol: trade.symbol,
+      type: trade.type === 'BUY' || trade.type === 'bullish' ? 'BUY' : 'SELL',
+      entryPrice: trade.entryPrice !== undefined ? trade.entryPrice : 0,
+      stopLoss: trade.stopLoss !== undefined ? trade.stopLoss : 0,
+      takeProfit: trade.takeProfit !== undefined ? trade.takeProfit : 0,
+      exitPrice: trade.exitPrice !== undefined ? trade.exitPrice : 0,
+      outcome: trade.outcome || 'UNKNOWN',
+      pnlUSD: trade.pnlUSD !== undefined ? trade.pnlUSD : 0,
+      pnlR: trade.pnlR !== undefined ? trade.pnlR : (trade.outcome === 'WIN' ? 1.3 : (trade.outcome === 'LOSS' ? -1.0 : 0)),
+      confluenceScore: trade.confluenceScore !== undefined ? trade.confluenceScore : 10,
+      strategy: trade.strategy || "Strategy 5B Enhanced"
+    };
+
+    const idx = archive.findIndex(t => t.setupId === key);
+    if (idx >= 0) {
+      archive[idx] = { ...archive[idx], ...entryRecord };
+    } else {
+      archive.push(entryRecord);
+    }
+
+    // Save JSON
+    fs.writeFileSync(MASTER_BACKTEST_JSON, JSON.stringify(archive, null, 2), 'utf8');
+
+    // Update CSV
+    const headers = [
+      "setupId", "date", "time", "symbol", "type",
+      "entryPrice", "stopLoss", "takeProfit", "exitPrice",
+      "outcome", "pnlUSD", "pnlR", "confluenceScore", "strategy"
+    ];
+    const csvRows = [headers.join(",")];
+    for (const t of archive) {
+      csvRows.push([
+        `"${t.setupId || ''}"`,
+        `"${t.date || ''}"`,
+        `"${t.time || ''}"`,
+        `"${t.symbol || ''}"`,
+        `"${t.type || ''}"`,
+        t.entryPrice || 0,
+        t.stopLoss || 0,
+        t.takeProfit || 0,
+        t.exitPrice || 0,
+        `"${t.outcome || ''}"`,
+        t.pnlUSD || 0,
+        t.pnlR || 0,
+        t.confluenceScore || 0,
+        `"${t.strategy || ''}"`
+      ].join(","));
+    }
+    fs.writeFileSync(MASTER_BACKTEST_CSV, csvRows.join("\n"), 'utf8');
+  } catch (err) {
+    console.warn("[reportManager] Error appending trade to master backtest archive:", err.message);
   }
 }
 
@@ -162,6 +244,9 @@ function recordClose(setupId, outcome, exitPrice, pnlUSD, pnlR, aiVisionVerdict)
     trade.pnlR = pnlR;
     if (aiVisionVerdict) trade.aiVisionVerdict = aiVisionVerdict;
     saveTradeHistory(history);
+
+    // Persist permanently to Master Backtesting Archive (JSON & CSV)
+    appendTradeToMasterArchive(trade);
   }
 }
 
@@ -501,24 +586,6 @@ function formatReportTelegramHTML(report) {
     lines.push(`🏆 <b>This Week's Target TP (1.3R):</b> <code>+$${newWeekTP.toFixed(2)} USD / win</code>`);
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
     lines.push(`🚀 <i>Position sizes locked for the upcoming week's trading sessions!</i>`);
-    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
-  }
-
-  // ── SHADOW FILTER AUDIT SUMMARY (COUNTERFACTUAL ANALYSIS) ──
-  const shadowHistory = loadShadowHistory();
-  const shadowTargetDate = report.targetDateStr || new Date().toISOString().split('T')[0];
-  const shadowToday = shadowHistory.filter(s => getDateString(s.time) === shadowTargetDate);
-  if (shadowToday.length > 0) {
-    const savedLosses = shadowToday.filter(s => s.outcome === 'SAVED_LOSS');
-    const missedWins = shadowToday.filter(s => s.outcome === 'MISSED_WIN');
-    const totalSavedUSD = savedLosses.reduce((acc, s) => acc + (s.savedUSD || 0), 0);
-    const totalMissedUSD = missedWins.reduce((acc, s) => acc + (s.missedUSD || 0), 0);
-    const netFilterAdvantage = totalSavedUSD - totalMissedUSD;
-
-    lines.push(`🛡️ <b>FILTER GUARD AUDIT (COUNTERFACTUAL ANALYSIS):</b>`);
-    lines.push(`• <b>Setups Blocked Today:</b> <code>${shadowToday.length} Setups</code>`);
-    lines.push(`• <b>Prevented Losses:</b> <code>${savedLosses.length} Trades (+$${totalSavedUSD.toFixed(2)} USD Saved)</code>`);
-    lines.push(`📈 <b>Net Guard Advantage:</b> <code>${netFilterAdvantage >= 0 ? '+' : ''}$${netFilterAdvantage.toFixed(2)} USD Preserved</code>`);
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
   }
 

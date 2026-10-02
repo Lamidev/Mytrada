@@ -142,6 +142,9 @@ function loadDynamicState() {
   const defaultTarget = config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.DEFAULT_DAILY_PROFIT_TARGET_USD !== undefined
     ? config.CIRCUIT_BREAKER.DEFAULT_DAILY_PROFIT_TARGET_USD
     : 0.0;
+  const defaultMaxLoss = config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.DEFAULT_DAILY_MAX_LOSS_USD !== undefined
+    ? config.CIRCUIT_BREAKER.DEFAULT_DAILY_MAX_LOSS_USD
+    : 0.0;
 
   if (fs.existsSync(DYNAMIC_STATE_FILE)) {
     try {
@@ -150,12 +153,19 @@ function loadDynamicState() {
         data.date = today;
         data.dailyTargetLocked = false;
         data.dailyTargetUSD = defaultTarget;
+        data.dailyLossLocked = false;
+        data.dailyMaxLossUSD = defaultMaxLoss;
         saveDynamicState(data);
       }
       // If dailyTargetUSD in cached file is still the old 250 default, reset to defaultTarget (0)
       if (data.dailyTargetUSD === 250 || data.dailyTargetUSD === undefined) {
         data.dailyTargetUSD = defaultTarget;
         data.dailyTargetLocked = false;
+        saveDynamicState(data);
+      }
+      if (data.dailyMaxLossUSD === undefined) {
+        data.dailyMaxLossUSD = defaultMaxLoss;
+        data.dailyLossLocked = false;
         saveDynamicState(data);
       }
       return data;
@@ -168,6 +178,8 @@ function loadDynamicState() {
     date: today,
     dailyTargetUSD: defaultTarget,
     dailyTargetLocked: false,
+    dailyMaxLossUSD: defaultMaxLoss,
+    dailyLossLocked: false,
     isManuallyPaused: false,
     customRiskPercent: null,
     portfolioConsecutiveLosses: 0,
@@ -372,6 +384,7 @@ async function closeTradeManually(symbol, skipTargetCheck = false) {
   saveActiveTrades(updatedTrades);
   if (!skipTargetCheck) {
     await checkDailyTargetLock();
+    await checkDailyMaxLossLock();
   }
 
   const newBalance = getCurrentAccountBalance();
@@ -457,6 +470,51 @@ async function checkDailyTargetLock() {
   }
 }
 
+async function checkDailyMaxLossLock() {
+  const todayStr = getLocalDateStr();
+  if (!dynamicState || dynamicState.date !== todayStr) {
+    dynamicState = loadDynamicState();
+  }
+
+  if (dynamicState.dailyLossLocked || !dynamicState.dailyMaxLossUSD || dynamicState.dailyMaxLossUSD <= 0) {
+    return;
+  }
+
+  const todayReport = generateDailyReport(todayStr);
+  // Trigger ONLY if NET Realized PnL today drops below starting balance by dailyMaxLossUSD
+  if (todayReport.netUSD <= -dynamicState.dailyMaxLossUSD) {
+    dynamicState.dailyLossLocked = true;
+    saveDynamicState(dynamicState);
+
+    const closeRes = await closeAllTradesManually();
+    const finalReport = generateDailyReport(todayStr);
+
+    const alertLines = [
+      `🛑 🛡️ <b>[MYTRADA DAILY MAX LOSS SHIELD ACTIVATED]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `💸 <b>Final Realized Today:</b> <code>-$${Math.abs(finalReport.netUSD).toFixed(2)} USD (${finalReport.netR >= 0 ? '+' : ''}${finalReport.netR.toFixed(1)}R)</code>`,
+      `🛡️ <b>Max Loss Floor:</b> <code>-$${dynamicState.dailyMaxLossUSD.toFixed(2)} USD</code>`,
+      `📊 <b>Today's Record:</b> <code>${finalReport.wins}W / ${finalReport.losses}L (${finalReport.winRate}% WR)</code>`,
+      `💵 <b>Preserved Account Equity:</b> <code>$${finalReport.newBalance.toFixed(2)} USD</code>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `✂️ <b>All active positions closed at market to eliminate floating risk.</b>`,
+      `🛑 <b>Status:</b> <b>TRADING HALTED FOR THE DAY (Capital Preserved)</b>`
+    ];
+
+    if (closeRes.success && closeRes.results && closeRes.results.length > 0) {
+      alertLines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+      alertLines.push(`📂 <b>POSITIONS CLOSED AT SHIELD:</b>`);
+      alertLines.push(...closeRes.results);
+    }
+
+    alertLines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+    alertLines.push(`⏳ <i>Zero market exposure. Bot will automatically reset & resume tomorrow at 12:00 AM UTC. Send /resume to override now.</i>`);
+
+    await sendTelegramMessage(alertLines.join('\n'));
+    console.log(`\n🛑 [LOSS SHIELD HIT] Daily max loss floor (-$${dynamicState.dailyMaxLossUSD}) reached! Trading locked for remainder of day.\n`);
+  }
+}
+
 // ── TELEGRAM INBOUND COMMAND HANDLERS ──
 const telegramHandlers = {
   getStatus: async () => {
@@ -480,6 +538,7 @@ const telegramHandlers = {
     let stateBadge = '🟢 <b>ACTIVE & SCANNING</b>';
     if (dynamicState.isManuallyPaused) stateBadge = '⏸️ <b>MANUALLY PAUSED (/resume to restart)</b>';
     else if (dynamicState.dailyTargetLocked) stateBadge = '🎯 <b>DAILY TARGET LOCKED (Resumes 12 AM)</b>';
+    else if (dynamicState.dailyLossLocked) stateBadge = '🛑 <b>DAILY MAX LOSS LOCKED (Resumes 12 AM)</b>';
     else if (dynamicState.portfolioPauseUntil && now < dynamicState.portfolioPauseUntil) {
       const rem = Math.ceil((dynamicState.portfolioPauseUntil - now) / 60000);
       stateBadge = `⚠️ <b>PORTFOLIO COOLDOWN (${rem}m remaining)</b>`;
@@ -490,6 +549,10 @@ const telegramHandlers = {
       ? `$${dynamicState.dailyTargetUSD.toFixed(2)} USD ${dynamicState.dailyTargetLocked ? '🔒 (HIT)' : `(Need: $${Math.max(0, dynamicState.dailyTargetUSD - report.netUSD).toFixed(2)})`}`
       : 'Disabled (Full Session)';
 
+    const maxLossStatus = (dynamicState.dailyMaxLossUSD && dynamicState.dailyMaxLossUSD > 0)
+      ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)} USD ${dynamicState.dailyLossLocked ? '🛑 (HIT)' : `(Remaining Buffer: $${Math.max(0, dynamicState.dailyMaxLossUSD + report.netUSD).toFixed(2)})`}`
+      : 'Disabled (No Floor)';
+
     const lines = [
       `👑 <b>[MYTRADA LIVE STATUS MONITOR]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -498,6 +561,7 @@ const telegramHandlers = {
       `📈 <b>Today's Realized PnL:</b> <code>${pnlSign}$${Math.abs(report.netUSD).toFixed(2)} USD (${pnlSign}${report.netR.toFixed(1)}R)</code>`,
       `📊 <b>Today's Record:</b> <code>${report.wins} Wins / ${report.losses} Losses (${report.winRate}% WR)</code>`,
       `🎯 <b>Daily Profit Target:</b> <code>${targetStatus}</code>`,
+      `🛡️ <b>Daily Max Loss Floor:</b> <code>${maxLossStatus}</code>`,
       `🛡️ <b>Risk Per Trade:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0).toFixed(1)}%)</code>`,
       `📂 <b>Active Positions:</b> <code>${activeTrades.length} Trade(s)</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -564,6 +628,26 @@ const telegramHandlers = {
     return { alreadyHit, todayNet: finalReport.netUSD };
   },
 
+  getDailyMaxLoss: () => {
+    return dynamicState.dailyMaxLossUSD || 0;
+  },
+
+  setDailyMaxLoss: async (val) => {
+    dynamicState.dailyMaxLossUSD = val;
+    dynamicState.dailyLossLocked = false;
+    const todayStr = getLocalDateStr();
+    const report = generateDailyReport(todayStr);
+    let alreadyHit = false;
+    if (val > 0 && report.netUSD <= -val) {
+      dynamicState.dailyLossLocked = true;
+      alreadyHit = true;
+      await closeAllTradesManually();
+    }
+    saveDynamicState(dynamicState);
+    const finalReport = generateDailyReport(todayStr);
+    return { alreadyHit, todayNet: finalReport.netUSD };
+  },
+
   lockDailyProfit: async () => {
     dynamicState.dailyTargetLocked = true;
     saveDynamicState(dynamicState);
@@ -586,10 +670,29 @@ const telegramHandlers = {
     dynamicState.isManuallyPaused = false;
     dynamicState.dailyTargetLocked = false;
     dynamicState.dailyTargetUSD = 0; // Clear target so it does not immediately re-lock
+    dynamicState.dailyLossLocked = false;
+    dynamicState.dailyMaxLossUSD = 0; // Clear max loss so it does not immediately re-lock
     dynamicState.portfolioPauseUntil = 0;
-    // Clear all symbol cooldowns to give a completely fresh session
+    dynamicState.portfolioConsecutiveLosses = 0;
+
     const today = getLocalDateStr();
-    circuitBreakerState = { date: today, symbols: {} };
+    if (!circuitBreakerState || circuitBreakerState.date !== today) {
+      circuitBreakerState = loadCircuitBreakerState();
+    }
+
+    // Unpause symbols that have not breached their daily limit,
+    // but PRESERVE dailyLosses and keep symbols with >= MAX_DAILY_LOSSES halted for the day!
+    const maxLosses = config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2;
+    if (circuitBreakerState.symbols) {
+      for (const sym of Object.keys(circuitBreakerState.symbols)) {
+        const rec = circuitBreakerState.symbols[sym];
+        if (rec.dailyLosses < maxLosses) {
+          rec.pauseUntil = 0;
+          rec.consecutiveLosses = 0;
+        }
+      }
+    }
+
     saveCircuitBreakerState(circuitBreakerState);
     saveDynamicState(dynamicState);
     return { symbolsCount: Object.keys(config.SYMBOLS).length };
@@ -1007,6 +1110,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
   if (changed) {
     saveActiveTrades(updatedTrades);
     await checkDailyTargetLock();
+    await checkDailyMaxLossLock();
   }
 }
 
@@ -1053,20 +1157,7 @@ async function checkShadowTradesForSymbol(symbol, ltfCandles) {
         savedUSD: trade.riskUSD || 65.0
       });
 
-      const auditAlert = [
-        `🛡️ 🟢 <b>[MYTRADA SHADOW AUDIT — LOSS PREVENTED]</b>`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `<b>Asset:</b> <code>${trade.symbol}</code> (${trade.direction})`,
-        `🎯 <b>Blocked Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
-        `🛡️ <b>Would-be SL Hit:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💰 <b>Capital Preserved:</b> <code>+$${(trade.riskUSD || 65.0).toFixed(2)} USD Saved!</code>`,
-        `🛑 <b>Filter Guard:</b> <code>${trade.blockedReason}</code>`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `✅ <i>The filter successfully saved your capital from this loss!</i>`
-      ].join('\n');
-
-      await sendTelegramMessage(auditAlert);
+      // Shadow outcome logged silently without sending Telegram message
       console.log(`\n🛡️ [SHADOW AUDIT] ${trade.symbol} blocked setup hit Stop Loss. Filter saved $${(trade.riskUSD || 65.0).toFixed(2)}!\n`);
 
       updatedShadows = updatedShadows.filter(t => t.setupId !== trade.setupId);
@@ -1088,20 +1179,7 @@ async function checkShadowTradesForSymbol(symbol, ltfCandles) {
         missedUSD: trade.rewardUSD || 84.50
       });
 
-      const auditAlert = [
-        `⚠️ 🟡 <b>[MYTRADA SHADOW AUDIT — MISSED WIN]</b>`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `<b>Asset:</b> <code>${trade.symbol}</code> (${trade.direction})`,
-        `🎯 <b>Blocked Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code>`,
-        `🏆 <b>Would-be TP Hit:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💸 <b>Missed Profit:</b> <code>-$${(trade.rewardUSD || 84.50).toFixed(2)} USD (+1.3R)</code>`,
-        `🛑 <b>Filter Guard:</b> <code>${trade.blockedReason}</code>`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `ℹ️ <i>Logged for algorithmic optimization and strategy calibration.</i>`
-      ].join('\n');
-
-      await sendTelegramMessage(auditAlert);
+      // Shadow outcome logged silently without sending Telegram message
       console.log(`\n⚠️ [SHADOW AUDIT] ${trade.symbol} blocked setup hit Take Profit. Missed: +$${(trade.rewardUSD || 84.50).toFixed(2)}.\n`);
 
       updatedShadows = updatedShadows.filter(t => t.setupId !== trade.setupId);
@@ -1235,17 +1313,8 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const tp = entry - (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
-    // 👑 Active 1H Candle Momentum Guard (Shadow Tracking)
     let isBlocked = false;
     let blockedReason = null;
-
-    if (config.USE_ACTIVE_1H_CANDLE_GUARD) {
-      const active1h = htf1hCandles[htf1hCandles.length - 1];
-      if (active1h && active1h.close > active1h.open) {
-        isBlocked = true;
-        blockedReason = 'Active 1H Candle Guard (Active 1H candle is Bullish/Green)';
-      }
-    }
 
     return {
       direction: 'SELL',
@@ -1344,17 +1413,8 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const tp = entry + (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
-    // 👑 Active 1H Candle Momentum Guard (Shadow Tracking)
     let isBlocked = false;
     let blockedReason = null;
-
-    if (config.USE_ACTIVE_1H_CANDLE_GUARD) {
-      const active1h = htf1hCandles[htf1hCandles.length - 1];
-      if (active1h && active1h.close < active1h.open) {
-        isBlocked = true;
-        blockedReason = 'Active 1H Candle Guard (Active 1H candle is Bearish/Red)';
-      }
-    }
 
     return {
       direction: 'BUY',
@@ -1430,8 +1490,9 @@ async function monitorMarket() {
   // 2. Automated Check for Sunday Midnight Weekly Performance Report
   await checkAndSendWeeklyReport();
 
-  // 3. Check for Daily Profit Target Reach
+  // 3. Check for Daily Profit Target & Max Loss Shield Reach
   await checkDailyTargetLock();
+  await checkDailyMaxLossLock();
 
   const nowMs = Date.now();
 
@@ -1571,8 +1632,8 @@ async function monitorMarket() {
           break;
         }
 
-        // Double check target lock or pause before sending
-        if (!symConfig.monitorOnly && (dynamicState.dailyTargetLocked || dynamicState.isManuallyPaused)) {
+        // Double check target lock, max loss lock, or pause before sending
+        if (!symConfig.monitorOnly && (dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked || dynamicState.isManuallyPaused)) {
           console.log(`  [${mode}] ${symbol.padEnd(12)} | Setup ignored: Bot is currently in locked/paused state.`);
           break;
         }
@@ -1779,16 +1840,19 @@ async function main() {
   }
 
   const startupTargetLabel = dynamicState.dailyTargetUSD > 0 ? `$${dynamicState.dailyTargetUSD.toFixed(2)}` : 'None';
+  const startupLossLabel = dynamicState.dailyMaxLossUSD > 0 ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)}` : 'None';
   console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner — Strategy 5B Enhanced${RESET}`);
-  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Pairs (1:1.3 R:R | Target: ${startupTargetLabel} | 35m/45m Cooldowns | Portfolio Breakers | Telegram Command Center Active)...\n`);
+  console.log(`🚀 Monitoring ${Object.keys(config.SYMBOLS).length} Elite Pairs (1:1.3 R:R | Target: ${startupTargetLabel} | Loss Floor: ${startupLossLabel} | 35m/45m Cooldowns | Telegram Active)...\n`);
 
   const targetLabel = dynamicState.dailyTargetUSD > 0 ? `$${dynamicState.dailyTargetUSD.toFixed(2)} USD` : 'Disabled';
+  const maxLossLabel = dynamicState.dailyMaxLossUSD > 0 ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)} USD` : 'Disabled';
   await sendTelegramMessage([
     `🚀 <b>[MYTRADA SYSTEM ONLINE — STRATEGY 5B ENHANCED]</b>`,
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
     `• <b>Strategy:</b> <code>Strategy 5B Enhanced (Value-Zone Momentum Sniper)</code>`,
     `• <b>Universe:</b> <code>${Object.keys(config.SYMBOLS).length} Elite Pairs</code>`,
     `• <b>Daily Profit Target:</b> <code>${targetLabel}</code>`,
+    `• <b>Daily Max Loss Floor:</b> <code>${maxLossLabel}</code>`,
     `• <b>Risk Model:</b> <code>Fixed 1:1.3 R:R (3.0% Risk)</code>`,
     `• <b>Telegram Control:</b> <b>ACTIVE</b> (Send <code>/help</code> for commands)`,
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`

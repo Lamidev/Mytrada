@@ -57,8 +57,6 @@ module.exports = {
   VALUE_ZONE_MAX_ATR_DIST: 2.5,         // 👑 Value Zone Guard: rejects overbought ceiling buys or oversold floor sells
   MIN_CANDLE0_DISPLACEMENT_RATIO: 0.20, // 👑 Price action confirmation: C0 recovery body must be >= 20% of preceding spike
 
-  // Anti-Climax & Momentum Guards (Strategy 5B Enhanced)
-  USE_ACTIVE_1H_CANDLE_GUARD: false,    // Disabled: Rely on Daily+4H+1H 50 EMA Triple Confluence and circuit breakers
 
   // Institutional Responsive Tiered Circuit Breakers & Daily Targets
   CIRCUIT_BREAKER: {
@@ -69,7 +67,8 @@ module.exports = {
     MAX_DAILY_LOSSES_PER_SYMBOL: 2,      // 👑 2 Daily Losses = Halted on symbol for remainder of day
     PORTFOLIO_CONSECUTIVE_LOSS_LIMIT: 3, // 👑 3 Consecutive Losses across ANY pairs = 60m Portfolio-wide Cooldown
     PORTFOLIO_LOSS_PAUSE_MINS: 60,       // 60-minute portfolio pause duration
-    DEFAULT_DAILY_PROFIT_TARGET_USD: 0   // 👑 Default daily profit target disabled (0) — set dynamically via Telegram /target <amt>
+    DEFAULT_DAILY_PROFIT_TARGET_USD: 0,  // 👑 Default daily profit target disabled (0) — set dynamically via Telegram /target <amt>
+    DEFAULT_DAILY_MAX_LOSS_USD: 0        // 👑 Default daily max loss shield disabled (0) — set dynamically via Telegram /maxloss <amt>
   },
 
   // Bot Settings & Modes
