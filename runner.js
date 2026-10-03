@@ -1575,24 +1575,22 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
   return null;
 }
 
-// ── STRATEGY 6 PRO: INSTITUTIONAL SMC LIQUIDITY & VALUATION ENGINE ──
+// ── STRATEGY 6 PRO: GOD'S EYE ELITE (ADAPTIVE SMC & VALUE-ZONE ENGINE) ──
 function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
   if (!ltfCandles || !htf1hCandles || ltfCandles.length < 35 || htf1hCandles.length < 55) return null;
 
-  // 1. 1H 50 EMA Intermediate Trend
+  // 1. 1H & 4H Trend Alignment (Macro Structure Flow)
   const htf1hCloses = htf1hCandles.map(c => c.close);
   const htf1hEMA = calculateEMA(htf1hCloses, 50);
   const last1hClose = htf1hCloses[htf1hCloses.length - 1];
-  const last1hOpen  = htf1hCandles[htf1hCandles.length - 1].open;
   const last1hEma   = htf1hEMA[htf1hEMA.length - 1];
   if (!last1hEma) return null;
   const htf1hTrend  = last1hClose > last1hEma ? 'bullish' : 'bearish';
 
-  // 1H Chop Clearance Filter (>0.08%)
-  const h1ClearancePct = (Math.abs(last1hClose - last1hEma) / last1hEma) * 100;
-  if (config.USE_HTF_CHOP_FILTER && h1ClearancePct < 0.08) return null;
+  // 1H Trend Strength Filter (Avoid dead flat chop)
+  const h1DistancePct = (Math.abs(last1hClose - last1hEma) / last1hEma) * 100;
+  if (h1DistancePct < 0.10) return null;
 
-  // 2. 4H 50 EMA Macro Trend
   let htf4hTrend = 'N/A';
   if (htf4hCandles && htf4hCandles.length >= 55) {
     const htf4hCloses = htf4hCandles.map(c => c.close);
@@ -1602,7 +1600,6 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
     htf4hTrend        = last4hClose > last4hEma ? 'bullish' : 'bearish';
   }
 
-  // 3. Daily 50 EMA Macro Trend
   let dailyTrend = 'N/A';
   if (dailyCandles && dailyCandles.length >= 30) {
     const dailyCloses = dailyCandles.map(c => c.close);
@@ -1614,7 +1611,7 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
     }
   }
 
-  // 4. 1H Dealing Range (Premium vs Discount Valuation)
+  // 2. 1H Dealing Range (Extreme Ceiling & Floor Boundary Guard)
   const rangeLookback = Math.min(50, htf1hCandles.length);
   const rangeSlice = htf1hCandles.slice(htf1hCandles.length - rangeLookback);
   const rangeHigh = Math.max(...rangeSlice.map(c => c.high));
@@ -1623,12 +1620,10 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
   const latestPrice = ltfCandles[ltfCandles.length - 1].close;
   const dealingRangePct = rangeSpan > 0 ? ((latestPrice - rangeLow) / rangeSpan) * 100 : 50;
 
-  // 5. 5M Swing Liquidity Detection (BSL / SSL)
-  const confirmCount = (symbol && config.SYMBOLS[symbol] && config.SYMBOLS[symbol].confirm_candles) || config.CONFIRMATION_CANDLES || 2;
-  const minSpikes = minSpikesRequired || config.MIN_SPIKES || 2;
+  const atr = calculateATR(ltfCandles, 14);
+  if (!atr || atr === 0) return null;
 
-  const swingLookback = Math.min(60, ltfCandles.length - confirmCount - 2);
-  const swingSlice = ltfCandles.slice(ltfCandles.length - confirmCount - swingLookback, ltfCandles.length - confirmCount - 1);
+  const swingSlice = ltfCandles.slice(-30, -2);
   const localSwingHigh = swingSlice.length > 0 ? Math.max(...swingSlice.map(c => c.high)) : 0;
   const localSwingLow  = swingSlice.length > 0 ? Math.min(...swingSlice.map(c => c.low)) : Infinity;
 
@@ -1638,67 +1633,48 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
 
-    // Active 1H Candle Guard (Reject if 1H bar is green expansion)
-    if (last1hClose > last1hOpen) return null;
+    // Guard against shorting at rock-bottom floor (<35% dealing range)
+    if (dealingRangePct < 35.0) return null;
 
-    // Premium Valuation Guard: Must be in Premium (>=50% of Dealing Range)
-    if (dealingRangePct < 50.0) return null;
-
-    // Multi-Candle Confirmation (Red candles)
-    let hasConfirm = true;
-    const confirmCandles = [];
-    for (let cIdx = 0; cIdx < confirmCount; cIdx++) {
-      const c = ltfCandles[ltfCandles.length - 1 - cIdx];
-      if (!c || c.close >= c.open) { hasConfirm = false; break; }
-      confirmCandles.push(c);
-    }
-    if (!hasConfirm || confirmCandles.length < confirmCount) return null;
-
-    const c0 = confirmCandles[0];
+    // 5M Confirmation Candle (Red close)
+    const c0 = ltfCandles[ltfCandles.length - 1];
+    if (!c0 || c0.close >= c0.open) return null;
     const c0Range = c0.high - c0.low;
     const c0Body = Math.abs(c0.close - c0.open);
     const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
     if (bodyRatio < 0.40) return null;
 
-    const atr = calculateATR(ltfCandles, 14);
-    if (!atr || atr === 0) return null;
-
     // Spike Cluster
-    const s0 = ltfCandles[ltfCandles.length - 1 - confirmCount];
+    const s0 = ltfCandles[ltfCandles.length - 2];
     if (!s0 || s0.close <= s0.open) return null;
+
     const spikeCandles = [s0];
     const s0Range = s0.high - s0.low;
 
     for (let s = 1; s <= 2; s++) {
-      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
+      const c = ltfCandles[ltfCandles.length - 2 - s];
       if (c && c.close > c.open) spikeCandles.push(c);
       else break;
     }
 
-    const spikePeak = Math.max(...confirmCandles.map(c => c.high), ...spikeCandles.map(c => c.high));
+    const spikePeak = Math.max(c0.high, ...spikeCandles.map(c => c.high));
     const spikeClusterRange = spikePeak - Math.min(...spikeCandles.map(c => c.low));
 
     const isSingleMonster = spikeCandles.length === 1 && s0Range >= (atr * 1.50);
     const isMultiCluster = spikeCandles.length >= 2 && spikeClusterRange >= (atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20));
     if (!isSingleMonster && !isMultiCluster) return null;
 
-    // Liquidity Sweep Guard (BSL Purge)
-    const sweptLiquidity = spikePeak >= localSwingHigh;
-    if (!sweptLiquidity) return null;
+    // Quality Displacement: C0 body must be at least 25% of spike range
+    if (c0Body < (s0Range * 0.25)) return null;
 
-    // Proximity to 5M 50 EMA Value Zone
+    // Confluence: (A) BSL Liquidity Sweep OR (B) 5M 50 EMA Value Zone Touch
     const ltfCloses = ltfCandles.map(c => c.close);
     const ltfEMA = calculateEMA(ltfCloses, 50);
     const lastLtfEma = ltfEMA && ltfEMA.length > 0 ? ltfEMA[ltfEMA.length - 1] : null;
-    const maxAtrDist = (config.VALUE_ZONE_MAX_ATR_DIST || 2.5) * atr;
-    if (lastLtfEma && (lastLtfEma - spikePeak) > maxAtrDist) return null;
 
-    // Displacement
-    const lastBoomSpike = spikeCandles[0];
-    const lastSpikeRange = Math.abs(lastBoomSpike.close - lastBoomSpike.open);
-    const totalRecoveryBody = confirmCandles.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0);
-    const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
-    if (totalRecoveryBody < (lastSpikeRange * minDisplacementRatio)) return null;
+    const isSweep = spikePeak >= localSwingHigh;
+    const isValueZone = lastLtfEma && Math.abs(spikePeak - lastLtfEma) <= (atr * 1.8);
+    if (!isSweep && !isValueZone) return null;
 
     const entry = c0.close;
     const sl = spikePeak + (atr * 1.5);
@@ -1721,13 +1697,12 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
       slDist,
       atr,
       refPrice: spikePeak,
-      h1ClearancePct,
       bodyRatio,
       candleEpoch,
-      confirmCount,
+      confirmCount: 1,
       spikeCountLabel: isSingleMonster ? '1 Monster Spike' : `${spikeCandles.length} Spikes`,
-      valuationLabel: `Premium (${dealingRangePct.toFixed(0)}% Range)`,
-      liquidityLabel: `BSL Sweep (${localSwingHigh.toFixed(2)})`,
+      valuationLabel: isSweep ? `BSL Liquidity Sweep (${dealingRangePct.toFixed(0)}% Range)` : `50 EMA Value Zone (${dealingRangePct.toFixed(0)}% Range)`,
+      liquidityLabel: isSweep ? `BSL Sweep (${localSwingHigh.toFixed(2)})` : `50 EMA Mitigation`,
       isBlocked: false,
       blockedReason: null
     };
@@ -1739,67 +1714,48 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
 
-    // Active 1H Candle Guard (Reject if 1H bar is red dump)
-    if (last1hClose < last1hOpen) return null;
+    // Guard against buying at extreme high ceiling (>65% dealing range)
+    if (dealingRangePct > 65.0) return null;
 
-    // Discount Valuation Guard: Must be in Discount (<=50% of Dealing Range)
-    if (dealingRangePct > 50.0) return null;
-
-    // Multi-Candle Confirmation (Green candles)
-    let hasConfirm = true;
-    const confirmCandles = [];
-    for (let cIdx = 0; cIdx < confirmCount; cIdx++) {
-      const c = ltfCandles[ltfCandles.length - 1 - cIdx];
-      if (!c || c.close <= c.open) { hasConfirm = false; break; }
-      confirmCandles.push(c);
-    }
-    if (!hasConfirm || confirmCandles.length < confirmCount) return null;
-
-    const c0 = confirmCandles[0];
+    // 5M Confirmation Candle (Green close)
+    const c0 = ltfCandles[ltfCandles.length - 1];
+    if (!c0 || c0.close <= c0.open) return null;
     const c0Range = c0.high - c0.low;
     const c0Body = Math.abs(c0.close - c0.open);
     const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
     if (bodyRatio < 0.40) return null;
 
-    const atr = calculateATR(ltfCandles, 14);
-    if (!atr || atr === 0) return null;
-
     // Crash Cluster
-    const s0 = ltfCandles[ltfCandles.length - 1 - confirmCount];
+    const s0 = ltfCandles[ltfCandles.length - 2];
     if (!s0 || s0.close >= s0.open) return null;
+
     const crashCandles = [s0];
     const s0Range = s0.high - s0.low;
 
     for (let s = 1; s <= 2; s++) {
-      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
+      const c = ltfCandles[ltfCandles.length - 2 - s];
       if (c && c.close < c.open) crashCandles.push(c);
       else break;
     }
 
-    const crashTrough = Math.min(...confirmCandles.map(c => c.low), ...crashCandles.map(c => c.low));
+    const crashTrough = Math.min(c0.low, ...crashCandles.map(c => c.low));
     const crashClusterRange = Math.max(...crashCandles.map(c => c.high)) - crashTrough;
 
     const isSingleMonster = crashCandles.length === 1 && s0Range >= (atr * 1.50);
     const isMultiCluster = crashCandles.length >= 2 && crashClusterRange >= (atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20));
     if (!isSingleMonster && !isMultiCluster) return null;
 
-    // Liquidity Sweep Guard (SSL Purge)
-    const sweptLiquidity = crashTrough <= localSwingLow;
-    if (!sweptLiquidity) return null;
+    // Quality Displacement: C0 body must be at least 25% of crash spike range
+    if (c0Body < (s0Range * 0.25)) return null;
 
-    // Proximity to 5M 50 EMA Value Zone
+    // Confluence: (A) SSL Liquidity Sweep OR (B) 5M 50 EMA Value Zone Touch
     const ltfCloses = ltfCandles.map(c => c.close);
     const ltfEMA = calculateEMA(ltfCloses, 50);
     const lastLtfEma = ltfEMA && ltfEMA.length > 0 ? ltfEMA[ltfEMA.length - 1] : null;
-    const maxAtrDist = (config.VALUE_ZONE_MAX_ATR_DIST || 2.5) * atr;
-    if (lastLtfEma && (crashTrough - lastLtfEma) > maxAtrDist) return null;
 
-    // Displacement
-    const lastCrashSpike = crashCandles[0];
-    const lastSpikeRange = Math.abs(lastCrashSpike.close - lastCrashSpike.open);
-    const totalRecoveryBody = confirmCandles.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0);
-    const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
-    if (totalRecoveryBody < (lastSpikeRange * minDisplacementRatio)) return null;
+    const isSweep = crashTrough <= localSwingLow;
+    const isValueZone = lastLtfEma && Math.abs(crashTrough - lastLtfEma) <= (atr * 1.8);
+    if (!isSweep && !isValueZone) return null;
 
     const entry = c0.close;
     const sl = crashTrough - (atr * 1.5);
@@ -1822,13 +1778,12 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
       slDist,
       atr,
       refPrice: crashTrough,
-      h1ClearancePct,
       bodyRatio,
       candleEpoch,
-      confirmCount,
+      confirmCount: 1,
       spikeCountLabel: isSingleMonster ? '1 Monster Spike' : `${crashCandles.length} Spikes`,
-      valuationLabel: `Discount (${dealingRangePct.toFixed(0)}% Range)`,
-      liquidityLabel: `SSL Sweep (${localSwingLow.toFixed(2)})`,
+      valuationLabel: isSweep ? `SSL Liquidity Sweep (${dealingRangePct.toFixed(0)}% Range)` : `50 EMA Value Zone (${dealingRangePct.toFixed(0)}% Range)`,
+      liquidityLabel: isSweep ? `SSL Sweep (${localSwingLow.toFixed(2)})` : `50 EMA Mitigation`,
       isBlocked: false,
       blockedReason: null
     };
