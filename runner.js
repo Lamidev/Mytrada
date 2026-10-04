@@ -354,7 +354,7 @@ async function updatePairHealthOnLiveClose(symbol, outcome) {
         `📊 <b>Pair Record:</b> <code>${rec.totalRealWins}W / ${rec.totalRealLosses}L (${rec.weeklyNetR >= 0 ? '+' : ''}${rec.weeklyNetR.toFixed(1)}R)</code>`,
         `💵 <b>Live Account Balance Protected:</b> <code>$${getCurrentAccountBalance().toFixed(2)} USD</code>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💡 <i>Bot will safely forward-test this pair in paper sandbox until it scores 2 consecutive paper wins, or send /unquarantine ${symbol} to override.</i>`
+        `💡 <i>Bot will safely forward-test this pair in paper sandbox until it scores 1 winning paper setup, or send /unquarantine ${symbol} to override.</i>`
       ].join('\n');
 
       await sendTelegramMessage(alertMsg);
@@ -371,7 +371,7 @@ async function updatePairHealthOnPaperClose(symbol, outcome) {
 
   if (outcome === 'WIN') {
     rec.consecutivePaperWins = (rec.consecutivePaperWins || 0) + 1;
-    if (rec.consecutivePaperWins >= 2) {
+    if (rec.consecutivePaperWins >= 1) {
       // 🏆 Proof-of-Health Achieved: Restore to Live Trading!
       rec.isQuarantined = false;
       rec.consecutiveLosses = 0;
@@ -385,14 +385,14 @@ async function updatePairHealthOnPaperClose(symbol, outcome) {
         `🏆 🟢 <b>[PAIR GRADUATION: RESTORED TO LIVE]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-        `<b>Achievement:</b> <code>2 Consecutive Winning Paper Setups (+2.6R)</code>`,
+        `<b>Achievement:</b> <code>1 Winning Paper Setup (+1.3R)</code>`,
         `<b>Action:</b> <b>Restored to Live Real Trading Universe!</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🚀 <i>Market structure & trend clarity have stabilized. Real execution re-enabled.</i>`
       ].join('\n');
 
       await sendTelegramMessage(alertMsg);
-      console.log(`\n🏆 [PAIR GRADUATION] ${symbol} achieved 2 consecutive paper wins -> Restored to Live Trading!\n`);
+      console.log(`\n🏆 [PAIR GRADUATION] ${symbol} achieved 1 winning paper trade -> Restored to Live Trading!\n`);
     }
   } else if (outcome === 'LOSS') {
     rec.consecutivePaperWins = 0;
@@ -444,7 +444,7 @@ function formatHealthTelegramHTML() {
       statusText = 'Permanent Sandbox';
     } else if (rec.isQuarantined) {
       badge = '🔴 <b>QUARANTINED</b>';
-      statusText = `Paper Mode (${rec.consecutivePaperWins || 0}/2 Wins to Graduate)`;
+      statusText = `Paper Mode (${rec.consecutivePaperWins || 0}/1 Win to Graduate)`;
       quarantinedCount++;
     } else if (rec.consecutiveLosses === 1) {
       badge = '🟡 <b>PROBATION</b>';
@@ -2109,7 +2109,9 @@ async function monitorMarket() {
   }
 
   // Check if daily profit target is locked for the rest of the day
-  if (dynamicState.dailyTargetLocked) {
+  const hasPaperEngineActive = (dynamicState.activeStrategy === 'BOTH' && !dynamicState.is6proPaused) || (dynamicState.activeStrategy === 'STRATEGY_6_PRO' && dynamicState.mode6pro === 'PAPER');
+
+  if (dynamicState.dailyTargetLocked && !hasPaperEngineActive) {
     console.log(`\n🎯 [DAILY TARGET LOCKED] Profit target reached! Paused until midnight. Monitoring active positions...`);
     for (const sym of Object.keys(config.SYMBOLS)) {
       const ltf = await getCandles(sym, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
@@ -2122,7 +2124,7 @@ async function monitorMarket() {
   }
 
   // Check if portfolio is in global consecutive loss cooldown
-  if (dynamicState.portfolioPauseUntil && nowMs < dynamicState.portfolioPauseUntil) {
+  if (dynamicState.portfolioPauseUntil && nowMs < dynamicState.portfolioPauseUntil && !hasPaperEngineActive) {
     const remMins = Math.ceil((dynamicState.portfolioPauseUntil - nowMs) / 60000);
     console.log(`\n⚠️ [PORTFOLIO COOLDOWN] 3 consecutive losses hit across bot. Paused for ${remMins}m more. Monitoring active positions...`);
     for (const sym of Object.keys(config.SYMBOLS)) {
