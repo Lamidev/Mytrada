@@ -303,15 +303,15 @@ async function updatePairHealthOnLiveClose(symbol, outcome) {
     rec.totalRealLosses = (rec.totalRealLosses || 0) + 1;
 
     // 🛡️ SMART 2-LOSS AUTO-QUARANTINE RULES:
-    // Rule 1: 2 consecutive losses with negative/zero net R ➔ Instant Demotion
+    // Rule 1: 2 consecutive losses with thin/negative profit buffer (< 1.0R) ➔ Instant Demotion (Locks in profit & prevents flip to negative)
     // Rule 2: 3 consecutive losses (hard safety floor for all pairs) ➔ Instant Demotion
-    const isNegativeOrBreakEven = rec.weeklyNetR <= 0.0;
-    const shouldQuarantine = (rec.consecutiveLosses >= 2 && isNegativeOrBreakEven) || (rec.consecutiveLosses >= 3);
+    const isBufferThin = rec.weeklyNetR < 1.0;
+    const shouldQuarantine = (rec.consecutiveLosses >= 2 && isBufferThin) || (rec.consecutiveLosses >= 3);
 
     if (shouldQuarantine && !rec.isQuarantined) {
       rec.isQuarantined = true;
-      rec.quarantineReason = (rec.consecutiveLosses >= 2 && isNegativeOrBreakEven)
-        ? `2 Consecutive Losses with Negative Weekly Net R (${rec.weeklyNetR >= 0 ? '+' : ''}${rec.weeklyNetR.toFixed(1)}R)`
+      rec.quarantineReason = (rec.consecutiveLosses >= 2 && isBufferThin)
+        ? `2 Consecutive Losses with Thin Profit Buffer (${rec.weeklyNetR >= 0 ? '+' : ''}${rec.weeklyNetR.toFixed(1)}R < 1.0R)`
         : `3 Consecutive Losses (Hard Safety Floor)`;
       rec.quarantinedAt = new Date().toISOString();
       rec.consecutivePaperWins = 0;
