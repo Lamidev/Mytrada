@@ -46,6 +46,7 @@ const ALERTED_SETUPS_FILE = path.join(CACHE_DIR, 'alerted_setups.json');
 const ACTIVE_TRADES_FILE = path.join(CACHE_DIR, 'active_trades.json');
 const SHADOW_TRADES_FILE = path.join(CACHE_DIR, 'shadow_trades.json');
 const CIRCUIT_BREAKER_FILE = path.join(CACHE_DIR, 'circuit_breaker_state.json');
+const PAIR_HEALTH_FILE = path.join(CACHE_DIR, 'pair_health_state.json');
 const DYNAMIC_STATE_FILE = path.join(CACHE_DIR, 'dynamic_state.json');
 const LAST_REPORT_DATE_FILE = path.join(CACHE_DIR, 'last_daily_report_date.json');
 
@@ -250,6 +251,197 @@ function saveCircuitBreakerState(state) {
 }
 
 let circuitBreakerState = loadCircuitBreakerState();
+
+// ── SMART PAIR HEALTH & AUTO-QUARANTINE MANAGER ──
+function loadPairHealthState() {
+  if (fs.existsSync(PAIR_HEALTH_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(PAIR_HEALTH_FILE, 'utf8'));
+    } catch (e) {
+      console.warn("[runner] Warning loading pair health state:", e.message);
+    }
+  }
+  return {};
+}
+
+function savePairHealthState(state) {
+  try {
+    fs.writeFileSync(PAIR_HEALTH_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (e) {
+    console.warn("[runner] Warning saving pair health state:", e.message);
+  }
+}
+
+let pairHealthState = loadPairHealthState();
+
+function getPairHealth(symbol) {
+  if (!pairHealthState[symbol]) {
+    pairHealthState[symbol] = {
+      symbol,
+      consecutiveLosses: 0,
+      consecutivePaperWins: 0,
+      weeklyNetR: 0.0,
+      isQuarantined: false,
+      quarantineReason: null,
+      quarantinedAt: null,
+      totalRealWins: 0,
+      totalRealLosses: 0
+    };
+  }
+  return pairHealthState[symbol];
+}
+
+async function updatePairHealthOnLiveClose(symbol, outcome) {
+  const rec = getPairHealth(symbol);
+  if (outcome === 'WIN') {
+    rec.consecutiveLosses = 0;
+    rec.weeklyNetR = (rec.weeklyNetR || 0) + 1.3;
+    rec.totalRealWins = (rec.totalRealWins || 0) + 1;
+  } else if (outcome === 'LOSS') {
+    rec.consecutiveLosses = (rec.consecutiveLosses || 0) + 1;
+    rec.weeklyNetR = (rec.weeklyNetR || 0) - 1.0;
+    rec.totalRealLosses = (rec.totalRealLosses || 0) + 1;
+
+    // 🛡️ SMART 2-LOSS AUTO-QUARANTINE RULES:
+    // Rule 1: 2 consecutive losses with negative/zero net R ➔ Instant Demotion
+    // Rule 2: 3 consecutive losses (hard safety floor for all pairs) ➔ Instant Demotion
+    const isNegativeOrBreakEven = rec.weeklyNetR <= 0.0;
+    const shouldQuarantine = (rec.consecutiveLosses >= 2 && isNegativeOrBreakEven) || (rec.consecutiveLosses >= 3);
+
+    if (shouldQuarantine && !rec.isQuarantined) {
+      rec.isQuarantined = true;
+      rec.quarantineReason = (rec.consecutiveLosses >= 2 && isNegativeOrBreakEven)
+        ? `2 Consecutive Losses with Negative Weekly Net R (${rec.weeklyNetR >= 0 ? '+' : ''}${rec.weeklyNetR.toFixed(1)}R)`
+        : `3 Consecutive Losses (Hard Safety Floor)`;
+      rec.quarantinedAt = new Date().toISOString();
+      rec.consecutivePaperWins = 0;
+
+      savePairHealthState(pairHealthState);
+
+      const alertMsg = [
+        `⚠️ 🛡️ <b>[MYTRADA AUTO-QUARANTINE ACTIVATED]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+        `<b>Trigger:</b> <code>${rec.quarantineReason}</code>`,
+        `<b>Action:</b> <b>Demoted to Paper Test Mode ($0 Real Risk)</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `📊 <b>Pair Record:</b> <code>${rec.totalRealWins}W / ${rec.totalRealLosses}L (${rec.weeklyNetR >= 0 ? '+' : ''}${rec.weeklyNetR.toFixed(1)}R)</code>`,
+        `💵 <b>Live Account Balance Protected:</b> <code>$${getCurrentAccountBalance().toFixed(2)} USD</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `💡 <i>Bot will safely forward-test this pair in paper sandbox until it scores 2 consecutive paper wins, or send /unquarantine ${symbol} to override.</i>`
+      ].join('\n');
+
+      await sendTelegramMessage(alertMsg);
+      console.log(`\n⚠️ [AUTO-QUARANTINE] ${symbol} demoted to Paper Mode: ${rec.quarantineReason}\n`);
+    }
+  }
+
+  savePairHealthState(pairHealthState);
+}
+
+async function updatePairHealthOnPaperClose(symbol, outcome) {
+  const rec = getPairHealth(symbol);
+  if (!rec.isQuarantined) return;
+
+  if (outcome === 'WIN') {
+    rec.consecutivePaperWins = (rec.consecutivePaperWins || 0) + 1;
+    if (rec.consecutivePaperWins >= 2) {
+      // 🏆 Proof-of-Health Achieved: Restore to Live Trading!
+      rec.isQuarantined = false;
+      rec.consecutiveLosses = 0;
+      rec.consecutivePaperWins = 0;
+      rec.quarantineReason = null;
+      rec.quarantinedAt = null;
+
+      savePairHealthState(pairHealthState);
+
+      const alertMsg = [
+        `🏆 🟢 <b>[PAIR GRADUATION: RESTORED TO LIVE]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+        `<b>Achievement:</b> <code>2 Consecutive Winning Paper Setups (+2.6R)</code>`,
+        `<b>Action:</b> <b>Restored to Live Real Trading Universe!</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `🚀 <i>Market structure & trend clarity have stabilized. Real execution re-enabled.</i>`
+      ].join('\n');
+
+      await sendTelegramMessage(alertMsg);
+      console.log(`\n🏆 [PAIR GRADUATION] ${symbol} achieved 2 consecutive paper wins -> Restored to Live Trading!\n`);
+    }
+  } else if (outcome === 'LOSS') {
+    rec.consecutivePaperWins = 0;
+  }
+
+  savePairHealthState(pairHealthState);
+}
+
+function manualSetQuarantine(symbol, isQuarantined, reason = 'Manual update via Telegram') {
+  if (!config.SYMBOLS[symbol]) {
+    return { success: false, error: `Symbol ${symbol} not in configured universe.` };
+  }
+  const rec = getPairHealth(symbol);
+  rec.isQuarantined = isQuarantined;
+  if (isQuarantined) {
+    rec.quarantineReason = reason;
+    rec.quarantinedAt = new Date().toISOString();
+    rec.consecutivePaperWins = 0;
+  } else {
+    rec.consecutiveLosses = 0;
+    rec.consecutivePaperWins = 0;
+    rec.quarantineReason = null;
+    rec.quarantinedAt = null;
+  }
+  savePairHealthState(pairHealthState);
+  return { success: true };
+}
+
+function formatHealthTelegramHTML() {
+  const symbols = Object.keys(config.SYMBOLS);
+  const lines = [
+    `🏥 <b>[MYTRADA MULTI-PAIR HEALTH SCORECARD]</b>`,
+    `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+  ];
+
+  let liveCount = 0;
+  let quarantinedCount = 0;
+
+  for (const sym of symbols) {
+    const symConfig = config.SYMBOLS[sym];
+    const rec = getPairHealth(sym);
+    const isIncub = symConfig.monitorOnly;
+
+    let badge = '🟢 <b>HEALTHY</b>';
+    let statusText = 'Live Trading';
+
+    if (isIncub) {
+      badge = '🔬 <b>INCUBATION</b>';
+      statusText = 'Permanent Sandbox';
+    } else if (rec.isQuarantined) {
+      badge = '🔴 <b>QUARANTINED</b>';
+      statusText = `Paper Mode (${rec.consecutivePaperWins || 0}/2 Wins to Graduate)`;
+      quarantinedCount++;
+    } else if (rec.consecutiveLosses === 1) {
+      badge = '🟡 <b>PROBATION</b>';
+      statusText = `1 Loss (Watching)`;
+      liveCount++;
+    } else {
+      liveCount++;
+    }
+
+    const netR = rec.weeklyNetR || 0.0;
+    const rSign = netR >= 0 ? '+' : '';
+
+    lines.push(`• <b>${sym}:</b> ${badge}`);
+    lines.push(`  ├ <b>Status:</b> <code>${statusText}</code>`);
+    lines.push(`  └ <b>Weekly Net:</b> <code>${rSign}${netR.toFixed(1)}R (${rec.totalRealWins || 0}W / ${rec.totalRealLosses || 0}L)</code>`);
+  }
+
+  lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+  lines.push(`📊 <b>Summary:</b> <code>${liveCount} Live Pairs | ${quarantinedCount} Quarantined</code>`);
+  lines.push(`💡 <i>Use /quarantine &lt;sym&gt; or /unquarantine &lt;sym&gt; to manage.</i>`);
+
+  return lines.join('\n');
+}
 
 function isSymbolInCooldown(symbol) {
   if (!config.CIRCUIT_BREAKER || !config.CIRCUIT_BREAKER.ENABLED) return { inCooldown: false };
@@ -869,6 +1061,18 @@ const telegramHandlers = {
     }
 
     return lines.join('\n');
+  },
+
+  getHealth: async () => {
+    return formatHealthTelegramHTML();
+  },
+
+  quarantinePair: (symbol, reason) => {
+    return manualSetQuarantine(symbol, true, reason);
+  },
+
+  unquarantinePair: (symbol) => {
+    return manualSetQuarantine(symbol, false);
   }
 };
 
@@ -1072,6 +1276,8 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           pnlUSD: compRisk.rewardUSD
         });
 
+        await updatePairHealthOnPaperClose(symbol, 'WIN');
+
         const tpAlert = [
           `🔬 🟢 <b>[MYTRADA INCUBATION OUTCOME — TP HIT (+1.3R)]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -1103,6 +1309,8 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           pnlUSD: -compRisk.riskUSD
         });
 
+        await updatePairHealthOnPaperClose(symbol, 'LOSS');
+
         const slAlert = [
           `🔬 🔴 <b>[MYTRADA INCUBATION OUTCOME — SL HIT (-1.0R)]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -1129,6 +1337,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
       const pnlUsd = trade.rewardUSD || compRisk.rewardUSD;
 
       recordSymbolTradeOutcome(symbol, 'WIN');
+      await updatePairHealthOnLiveClose(symbol, 'WIN');
       recordClose(trade.setupId, 'WIN', trade.takeProfit, pnlUsd, 1.3, trade.aiVisionVerdict);
       const updatedBalance = getCurrentAccountBalance();
 
@@ -1178,6 +1387,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         await sendTelegramMessage(beAlert);
       } else {
         recordSymbolTradeOutcome(symbol, 'LOSS');
+        await updatePairHealthOnLiveClose(symbol, 'LOSS');
         recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0, trade.aiVisionVerdict);
         const updatedBalance = getCurrentAccountBalance();
 
@@ -1940,6 +2150,9 @@ async function monitorMarket() {
 
       const latestPrice = ltfCandles[ltfCandles.length - 1].close;
 
+      const symHealth = getPairHealth(symbol);
+      const isQuarantined = symHealth.isQuarantined === true;
+
       // Build active strategies for this scan
       const strategiesToRun = [];
       if (isBoth) {
@@ -1947,9 +2160,9 @@ async function monitorMarket() {
           strategiesToRun.push({
             id: '5B',
             name: 'STRATEGY_5B',
-            displayName: 'Strategy 5B Enhanced',
+            displayName: isQuarantined ? 'Strategy 5B (Quarantined Paper)' : 'Strategy 5B Enhanced',
             fn: detectStrategy5BSetup,
-            isPaper: (dynamicState.mode5b || 'LIVE') === 'PAPER'
+            isPaper: isQuarantined || (dynamicState.mode5b || 'LIVE') === 'PAPER'
           });
         }
         if (!dynamicState.is6proPaused) {
@@ -1976,9 +2189,9 @@ async function monitorMarket() {
           strategiesToRun.push({
             id: '5B',
             name: 'STRATEGY_5B',
-            displayName: 'Strategy 5B Enhanced',
+            displayName: isQuarantined ? 'Strategy 5B (Quarantined Paper)' : 'Strategy 5B Enhanced',
             fn: detectStrategy5BSetup,
-            isPaper: (dynamicState.executionMode || 'LIVE') === 'PAPER'
+            isPaper: isQuarantined || (dynamicState.executionMode || 'LIVE') === 'PAPER'
           });
         }
       }
@@ -2076,6 +2289,13 @@ async function monitorMarket() {
               `🧪 <b>Execution Mode:</b> <code>Paper Sandbox ($0 Real Risk)</code>`,
               `💵 <b>Live Balance Protected:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`
             ];
+
+            if (isQuarantined) {
+              alertLines.push(
+                `🛡️ <b>Quarantine Reason:</b> <code>${symHealth.quarantineReason}</code>`,
+                `⏳ <b>Graduation Progress:</b> <code>${symHealth.consecutivePaperWins || 0} / 2 Paper Wins</code>`
+              );
+            }
 
             if (setup.valuationLabel) {
               alertLines.push(`🏛️ <b>Dealing Range:</b> <code>${setup.valuationLabel}</code>`);

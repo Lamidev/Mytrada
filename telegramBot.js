@@ -255,6 +255,7 @@ async function handleCommand(rawText, handlers) {
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `📊 <b>MONITORING:</b>`,
         `• <code>/status</code> ➜ Balance, today's PnL, active engines & locks`,
+        `• <code>/health</code> ➜ Multi-pair health scorecard & quarantine status`,
         `• <code>/trades</code> ➜ Live open trades & distance to TP/SL`,
         `• <code>/gold</code> ➜ Gold Flash Scalper status & positions`,
         `• <code>/report</code> ➜ Today's performance report`,
@@ -267,9 +268,11 @@ async function handleCommand(rawText, handlers) {
         `• <code>/mode paper</code> | <code>/mode live</code> ➜ Global execution mode`,
         `• <code>/mode gold paper</code> | <code>/mode gold live</code> ➜ Gold mode`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `🛡️ <b>RISK & SAFETY:</b>`,
+        `🛡️ <b>RISK & QUARANTINE:</b>`,
         `• <code>/target 250</code> ➜ Auto-close all & lock profit at +$250 (or <code>/target off</code>)`,
         `• <code>/maxloss 150</code> ➜ Auto-close all & stop loss floor at -$150 (or <code>/maxloss off</code>)`,
+        `• <code>/quarantine BOOM300N</code> ➜ Move pair to Paper Mode ($0 risk)`,
+        `• <code>/unquarantine BOOM300N</code> ➜ Restore pair to Live Trading`,
         `• <code>/be</code> ➜ Move SL on open trades to Breakeven ($0 risk)`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `⚡ <b>CONTROL & EMERGENCY:</b>`,
@@ -610,6 +613,52 @@ async function handleCommand(rawText, handlers) {
       if (handlers.moveToBreakeven) {
         const count = handlers.moveToBreakeven();
         await sendTelegramMessage(`🛡️ <b>Breakeven Guard:</b> Moved Stop Loss to entry price for <b>${count} active position(s)</b>.`);
+      }
+      break;
+    }
+
+    case '/health':
+    case '/scorecard': {
+      if (handlers.getHealth) {
+        const healthHtml = await handlers.getHealth();
+        await sendTelegramMessage(healthHtml);
+      }
+      break;
+    }
+
+    case '/quarantine':
+    case '/isolate': {
+      if (!arg1) {
+        await sendTelegramMessage(`⚠️ Please specify symbol. Example: <code>/quarantine BOOM300N</code>`);
+        break;
+      }
+      const sym = arg1.toUpperCase();
+      const reason = arg2 ? args.slice(2).join(' ') : 'Manual quarantine via Telegram';
+      if (handlers.quarantinePair) {
+        const res = handlers.quarantinePair(sym, reason);
+        if (res && res.success) {
+          await sendTelegramMessage(`🚨 <b>[PAIR QUARANTINED]</b>\n<code>${sym}</code> demoted to <b>Paper Test Mode ($0 Real Risk)</b>.\nReason: <i>${reason}</i>`);
+        } else {
+          await sendTelegramMessage(`⚠️ Error quarantining pair: ${res ? res.error : 'Unknown'}`);
+        }
+      }
+      break;
+    }
+
+    case '/unquarantine':
+    case '/restore': {
+      if (!arg1) {
+        await sendTelegramMessage(`⚠️ Please specify symbol. Example: <code>/unquarantine BOOM300N</code>`);
+        break;
+      }
+      const sym = arg1.toUpperCase();
+      if (handlers.unquarantinePair) {
+        const res = handlers.unquarantinePair(sym);
+        if (res && res.success) {
+          await sendTelegramMessage(`🏆 🟢 <b>[PAIR RESTORED TO LIVE]</b>\n<code>${sym}</code> is now restored to <b>Live Real Trading</b>! Consecutive loss counters reset.`);
+        } else {
+          await sendTelegramMessage(`⚠️ Error restoring pair: ${res ? res.error : 'Unknown'}`);
+        }
       }
       break;
     }
