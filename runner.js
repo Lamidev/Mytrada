@@ -256,12 +256,38 @@ let circuitBreakerState = loadCircuitBreakerState();
 function loadPairHealthState() {
   if (fs.existsSync(PAIR_HEALTH_FILE)) {
     try {
-      return JSON.parse(fs.readFileSync(PAIR_HEALTH_FILE, 'utf8'));
+      const state = JSON.parse(fs.readFileSync(PAIR_HEALTH_FILE, 'utf8'));
+      if (state && Object.keys(state).length > 0) return state;
     } catch (e) {
       console.warn("[runner] Warning loading pair health state:", e.message);
     }
   }
-  return {};
+  const defaultState = {
+    "BOOM300N": {
+      symbol: "BOOM300N",
+      consecutiveLosses: 2,
+      consecutivePaperWins: 0,
+      weeklyNetR: -4.8,
+      isQuarantined: true,
+      quarantineReason: "Pre-quarantined for New Week (29% WR last week — Needs 2 paper wins to graduate)",
+      quarantinedAt: new Date().toISOString(),
+      totalRealWins: 4,
+      totalRealLosses: 10
+    },
+    "BOOM900": {
+      symbol: "BOOM900",
+      consecutiveLosses: 2,
+      consecutivePaperWins: 0,
+      weeklyNetR: -3.5,
+      isQuarantined: true,
+      quarantineReason: "Pre-quarantined for New Week (29% WR last week — Needs 2 paper wins to graduate)",
+      quarantinedAt: new Date().toISOString(),
+      totalRealWins: 5,
+      totalRealLosses: 10
+    }
+  };
+  savePairHealthState(defaultState);
+  return defaultState;
 }
 
 function savePairHealthState(state) {
