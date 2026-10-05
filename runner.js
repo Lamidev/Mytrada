@@ -1029,6 +1029,10 @@ const telegramHandlers = {
     dynamicState.activeStrategy = strat;
     dynamicState.is5bPaused = false;
     dynamicState.is6proPaused = false;
+    if (strat === 'BOTH') {
+      dynamicState.mode5b = 'LIVE';
+      dynamicState.mode6pro = 'PAPER';
+    }
     saveDynamicState(dynamicState);
   },
 
