@@ -4,5 +4,6 @@ cache/
 data/*
 !data/trades_master_backtest_archive.json
 !data/trades_master_backtest_archive.csv
+!data/godeyes_memory.json
 __pycache__/
 scratch/

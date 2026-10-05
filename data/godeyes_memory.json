@@ -1,0 +1,964 @@
+{
+  "BOOM500": {
+    "name": "Boom 500 Index",
+    "mode": "BOOM",
+    "pdh": 0,
+    "pdl": 0,
+    "rangeSpan": 0,
+    "trendRegime": "BEARISH_MOMENTUM",
+    "healthRating": "🔬 PENDING LIVE TRADES",
+    "stats": {
+      "wins": 0,
+      "losses": 0,
+      "breakevens": 0,
+      "totalTrades": 0,
+      "winRate": 0,
+      "netR": 0,
+      "netUSD": 0
+    },
+    "recentTrades": []
+  },
+  "BOOM300N": {
+    "name": "Boom 300 Index",
+    "mode": "BOOM",
+    "pdh": 411.42,
+    "pdl": 394.97,
+    "rangeSpan": 16.44999999999999,
+    "trendRegime": "BEARISH_MOMENTUM",
+    "healthRating": "⚠️ HIGH-EXHAUSTION SENSITIVITY",
+    "stats": {
+      "wins": 2,
+      "losses": 5,
+      "breakevens": 0,
+      "totalTrades": 7,
+      "winRate": 28.6,
+      "netR": -2.4,
+      "netUSD": -156.52
+    },
+    "recentTrades": [
+      {
+        "date": "2026-09-28",
+        "type": "SELL",
+        "entry": 394.97,
+        "exit": 399.25,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-09-29",
+        "type": "SELL",
+        "entry": 397.36,
+        "exit": 401.27,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-09-29",
+        "type": "SELL",
+        "entry": 399.97,
+        "exit": 396.08,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-02",
+        "type": "SELL",
+        "entry": 404.61,
+        "exit": 408.17,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-02",
+        "type": "SELL",
+        "entry": 406.62,
+        "exit": 401.63,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-03",
+        "type": "SELL",
+        "entry": 407.61,
+        "exit": 410.88,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-03",
+        "type": "SELL",
+        "entry": 408.1,
+        "exit": 411.42,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      }
+    ]
+  },
+  "BOOM900": {
+    "name": "Boom 900 Index",
+    "mode": "BOOM",
+    "pdh": 8980,
+    "pdl": 8680,
+    "rangeSpan": 300,
+    "trendRegime": "BEARISH_MOMENTUM",
+    "healthRating": "🟡 ACTIVE",
+    "stats": {
+      "wins": 8,
+      "losses": 9,
+      "breakevens": 1,
+      "totalTrades": 18,
+      "winRate": 47.1,
+      "netR": 1.4,
+      "netUSD": 211.82
+    },
+    "recentTrades": [
+      {
+        "date": "2026-09-28",
+        "type": "SELL",
+        "entry": 9045.34,
+        "exit": 9057.62,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-09-28",
+        "type": "SELL",
+        "entry": 9053.56,
+        "exit": 9067.14,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-09-28",
+        "type": "SELL",
+        "entry": 9055.5,
+        "exit": 9055.5,
+        "outcome": "BREAKEVEN",
+        "rMultiple": 0
+      },
+      {
+        "date": "2026-09-29",
+        "type": "SELL",
+        "entry": 8893.62,
+        "exit": 8907.77,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-09-29",
+        "type": "SELL",
+        "entry": 8893.28,
+        "exit": 8880.86,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "SELL",
+        "entry": 8886.7,
+        "exit": 8871.8,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "SELL",
+        "entry": 8886.09,
+        "exit": 8897.48,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-09-30",
+        "type": "SELL",
+        "entry": 8824.25,
+        "exit": 8835.26,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-09-30",
+        "type": "SELL",
+        "entry": 8876.01,
+        "exit": 8861.88,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-01",
+        "type": "SELL",
+        "entry": 8609.88,
+        "exit": 8623.45,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-02",
+        "type": "SELL",
+        "entry": 8549.2,
+        "exit": 8559.3,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-02",
+        "type": "SELL",
+        "entry": 8563.56,
+        "exit": 8575.77,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-04",
+        "type": "SELL",
+        "entry": 8728.08,
+        "exit": 8713.68,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-04",
+        "type": "SELL",
+        "entry": 8724.44,
+        "exit": 8710.16,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-04",
+        "type": "SELL",
+        "entry": 8722.8,
+        "exit": 8735.74,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-05",
+        "type": "SELL",
+        "entry": 8740.16,
+        "exit": 8725.68,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-05",
+        "type": "SELL",
+        "entry": 8738.22,
+        "exit": 8724.31,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-05",
+        "type": "SELL",
+        "entry": 8736.08,
+        "exit": 8721.27,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      }
+    ],
+    "lastUpdated": 1791226991253
+  },
+  "BOOM600": {
+    "name": "Boom 600 Index",
+    "mode": "BOOM",
+    "pdh": 5229.67,
+    "pdl": 5096.01,
+    "rangeSpan": 133.65999999999985,
+    "trendRegime": "BEARISH_MOMENTUM",
+    "healthRating": "🟡 ACTIVE",
+    "stats": {
+      "wins": 6,
+      "losses": 6,
+      "breakevens": 0,
+      "totalTrades": 12,
+      "winRate": 50,
+      "netR": 1.8,
+      "netUSD": 149.74
+    },
+    "recentTrades": [
+      {
+        "date": "2026-09-28",
+        "type": "SELL",
+        "entry": 5126.76,
+        "exit": 5111.92,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-28",
+        "type": "SELL",
+        "entry": 5106.51,
+        "exit": 5096.01,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "SELL",
+        "entry": 5105.11,
+        "exit": 5115.39,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-01",
+        "type": "SELL",
+        "entry": 5219.47,
+        "exit": 5229.67,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-02",
+        "type": "SELL",
+        "entry": 5189.34,
+        "exit": 5198.5,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-02",
+        "type": "SELL",
+        "entry": 5213.17,
+        "exit": 5201.09,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-03",
+        "type": "SELL",
+        "entry": 5209.71,
+        "exit": 5220,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-03",
+        "type": "SELL",
+        "entry": 5214.93,
+        "exit": 5201.24,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-03",
+        "type": "SELL",
+        "entry": 5207.85,
+        "exit": 5218.71,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-04",
+        "type": "SELL",
+        "entry": 5213.64,
+        "exit": 5200.47,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-04",
+        "type": "SELL",
+        "entry": 5202.59,
+        "exit": 5211.28,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-05",
+        "type": "SELL",
+        "entry": 5183.47,
+        "exit": 5172.63,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      }
+    ]
+  },
+  "BOOM1000": {
+    "name": "Boom 1000 Index",
+    "mode": "BOOM",
+    "pdh": 0,
+    "pdl": 0,
+    "rangeSpan": 0,
+    "trendRegime": "BEARISH_MOMENTUM",
+    "healthRating": "🔬 PENDING LIVE TRADES",
+    "stats": {
+      "wins": 0,
+      "losses": 0,
+      "breakevens": 0,
+      "totalTrades": 0,
+      "winRate": 0,
+      "netR": 0,
+      "netUSD": 0
+    },
+    "recentTrades": []
+  },
+  "BOOM150N": {
+    "name": "Boom 150 Index",
+    "mode": "BOOM",
+    "pdh": 0,
+    "pdl": 0,
+    "rangeSpan": 0,
+    "trendRegime": "BEARISH_MOMENTUM",
+    "healthRating": "🔬 INCUBATION SANDBOX",
+    "stats": {
+      "wins": 0,
+      "losses": 0,
+      "breakevens": 0,
+      "totalTrades": 0,
+      "winRate": 0,
+      "netR": 0,
+      "netUSD": 0
+    },
+    "recentTrades": []
+  },
+  "CRASH300N": {
+    "name": "Crash 300 Index",
+    "mode": "CRASH",
+    "pdh": 2900.63,
+    "pdl": 2498.07,
+    "rangeSpan": 402.55999999999995,
+    "trendRegime": "BULLISH_MOMENTUM",
+    "healthRating": "👑 ELITE MVP RUNNER",
+    "stats": {
+      "wins": 8,
+      "losses": 2,
+      "breakevens": 0,
+      "totalTrades": 10,
+      "winRate": 80,
+      "netR": 8.4,
+      "netUSD": 570.13
+    },
+    "recentTrades": [
+      {
+        "date": "2026-09-28",
+        "type": "BUY",
+        "entry": 2498.07,
+        "exit": 2524.45,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-28",
+        "type": "BUY",
+        "entry": 2505.24,
+        "exit": 2536.08,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 2570.85,
+        "exit": 2600.05,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 2742.28,
+        "exit": 2717.5,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 2759.16,
+        "exit": 2793.12,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 2732,
+        "exit": 2705.15,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-09-30",
+        "type": "BUY",
+        "entry": 2842.42,
+        "exit": 2876.5,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-30",
+        "type": "BUY",
+        "entry": 2842.76,
+        "exit": 2875.91,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-30",
+        "type": "BUY",
+        "entry": 2871.25,
+        "exit": 2900.63,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-05",
+        "type": "BUY",
+        "entry": 2613.05,
+        "exit": 2643.71,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      }
+    ]
+  },
+  "CRASH500": {
+    "name": "Crash 500 Index",
+    "mode": "CRASH",
+    "pdh": 3150,
+    "pdl": 3090,
+    "rangeSpan": 60,
+    "trendRegime": "BULLISH_MOMENTUM",
+    "healthRating": "👑 ELITE MVP RUNNER",
+    "stats": {
+      "wins": 11,
+      "losses": 3,
+      "breakevens": 0,
+      "totalTrades": 14,
+      "winRate": 78.6,
+      "netR": 10.5,
+      "netUSD": 693.49
+    },
+    "recentTrades": [
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 3116.6,
+        "exit": 3126.89,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 3127.6,
+        "exit": 3135.83,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 3125.51,
+        "exit": 3136.62,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 3140.24,
+        "exit": 3148.18,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-30",
+        "type": "BUY",
+        "entry": 3222.8,
+        "exit": 3231.22,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-30",
+        "type": "BUY",
+        "entry": 3236.91,
+        "exit": 3246.65,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-30",
+        "type": "BUY",
+        "entry": 3237.28,
+        "exit": 3245.76,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-01",
+        "type": "BUY",
+        "entry": 3207.33,
+        "exit": 3199.57,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-02",
+        "type": "BUY",
+        "entry": 3207.29,
+        "exit": 3216.06,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-02",
+        "type": "BUY",
+        "entry": 3210.93,
+        "exit": 3219.89,
+        "outcome": "WIN",
+        "rMultiple": 1.33
+      },
+      {
+        "date": "2026-10-03",
+        "type": "BUY",
+        "entry": 3200.66,
+        "exit": 3194.27,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-03",
+        "type": "BUY",
+        "entry": 3200.55,
+        "exit": 3208.85,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-03",
+        "type": "BUY",
+        "entry": 3207.79,
+        "exit": 3201.42,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-05",
+        "type": "BUY",
+        "entry": 3224.18,
+        "exit": 3227.5,
+        "outcome": "WIN",
+        "rMultiple": 0.48
+      },
+      {
+        "setupId": "TEST_CRASH500_BUY_99999",
+        "date": "2026-10-05T19:03:11.255Z",
+        "type": "bullish",
+        "entryPrice": 3125.51,
+        "exitPrice": 3136.62,
+        "outcome": "WIN",
+        "rMultiple": 1.3,
+        "rangePct": null,
+        "spikes": null
+      }
+    ],
+    "lastUpdated": 1791226991249
+  },
+  "CRASH600": {
+    "name": "Crash 600 Index",
+    "mode": "CRASH",
+    "pdh": 23126.03,
+    "pdl": 23048.05,
+    "rangeSpan": 77.97999999999956,
+    "trendRegime": "BULLISH_MOMENTUM",
+    "healthRating": "⚠️ HIGH-EXHAUSTION SENSITIVITY",
+    "stats": {
+      "wins": 0,
+      "losses": 2,
+      "breakevens": 0,
+      "totalTrades": 2,
+      "winRate": 0,
+      "netR": -2,
+      "netUSD": -197.62
+    },
+    "recentTrades": [
+      {
+        "date": "2026-10-04",
+        "type": "BUY",
+        "entry": 23087.33,
+        "exit": 23048.05,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-04",
+        "type": "BUY",
+        "entry": 23126.03,
+        "exit": 23083.9,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      }
+    ]
+  },
+  "CRASH900": {
+    "name": "Crash 900 Index",
+    "mode": "CRASH",
+    "pdh": 16960,
+    "pdl": 16330,
+    "rangeSpan": 630,
+    "trendRegime": "BULLISH_MOMENTUM",
+    "healthRating": "🟡 ACTIVE",
+    "stats": {
+      "wins": 5,
+      "losses": 6,
+      "breakevens": 0,
+      "totalTrades": 11,
+      "winRate": 45.5,
+      "netR": 0.5,
+      "netUSD": -34.55
+    },
+    "recentTrades": [
+      {
+        "date": "2026-10-01",
+        "type": "BUY",
+        "entry": 16331.63,
+        "exit": 16358.97,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-01",
+        "type": "BUY",
+        "entry": 16396.34,
+        "exit": 16373.36,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-01",
+        "type": "BUY",
+        "entry": 16409.5,
+        "exit": 16386.43,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-02",
+        "type": "BUY",
+        "entry": 16478.54,
+        "exit": 16505.84,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-03",
+        "type": "BUY",
+        "entry": 16716.66,
+        "exit": 16749.58,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-03",
+        "type": "BUY",
+        "entry": 16752.23,
+        "exit": 16780.75,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-03",
+        "type": "BUY",
+        "entry": 16800.05,
+        "exit": 16777.55,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-03",
+        "type": "BUY",
+        "entry": 16775.5,
+        "exit": 16808.01,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-03",
+        "type": "BUY",
+        "entry": 16821.64,
+        "exit": 16798.08,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-04",
+        "type": "BUY",
+        "entry": 16952.02,
+        "exit": 16932.36,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-04",
+        "type": "BUY",
+        "entry": 16955.76,
+        "exit": 16931.36,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      }
+    ],
+    "lastUpdated": 1791226991246
+  },
+  "CRASH1000": {
+    "name": "Crash 1000 Index",
+    "mode": "CRASH",
+    "pdh": 6183.82,
+    "pdl": 6006.43,
+    "rangeSpan": 177.38999999999942,
+    "trendRegime": "BULLISH_MOMENTUM",
+    "healthRating": "🟢 CONSISTENT PERFORMER",
+    "stats": {
+      "wins": 10,
+      "losses": 5,
+      "breakevens": 0,
+      "totalTrades": 15,
+      "winRate": 66.7,
+      "netR": 6.8,
+      "netUSD": 446.55
+    },
+    "recentTrades": [
+      {
+        "date": "2026-09-28",
+        "type": "BUY",
+        "entry": 6006.43,
+        "exit": 6016.03,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-28",
+        "type": "BUY",
+        "entry": 6010.39,
+        "exit": 6020.77,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 6081.96,
+        "exit": 6090.43,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 6073.96,
+        "exit": 6065.7,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 6086.56,
+        "exit": 6094.62,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-09-29",
+        "type": "BUY",
+        "entry": 6075.31,
+        "exit": 6076.48,
+        "outcome": "WIN",
+        "rMultiple": 0.15
+      },
+      {
+        "date": "2026-09-30",
+        "type": "BUY",
+        "entry": 6041.3,
+        "exit": 6033.65,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-01",
+        "type": "BUY",
+        "entry": 6127.17,
+        "exit": 6138.21,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-01",
+        "type": "BUY",
+        "entry": 6140.6,
+        "exit": 6132.97,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-01",
+        "type": "BUY",
+        "entry": 6137.65,
+        "exit": 6146.1,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-01",
+        "type": "BUY",
+        "entry": 6145.86,
+        "exit": 6153.93,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-02",
+        "type": "BUY",
+        "entry": 6175.37,
+        "exit": 6183.82,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-03",
+        "type": "BUY",
+        "entry": 6163.56,
+        "exit": 6155.5,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      },
+      {
+        "date": "2026-10-03",
+        "type": "BUY",
+        "entry": 6153.09,
+        "exit": 6161.66,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-03",
+        "type": "BUY",
+        "entry": 6160.58,
+        "exit": 6153.42,
+        "outcome": "LOSS",
+        "rMultiple": -1
+      }
+    ]
+  },
+  "CRASH150N": {
+    "name": "Crash 150 Index",
+    "mode": "CRASH",
+    "pdh": 0,
+    "pdl": 0,
+    "rangeSpan": 0,
+    "trendRegime": "BULLISH_MOMENTUM",
+    "healthRating": "🔬 INCUBATION SANDBOX",
+    "stats": {
+      "wins": 0,
+      "losses": 0,
+      "breakevens": 0,
+      "totalTrades": 0,
+      "winRate": 0,
+      "netR": 0,
+      "netUSD": 0
+    },
+    "recentTrades": []
+  }
+}

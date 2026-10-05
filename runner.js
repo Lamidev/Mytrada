@@ -32,6 +32,11 @@ const {
   loadIncubationHistory,
   recordIncubationOutcome
 } = require('./reportManager');
+const {
+  evaluateMacroExhaustion,
+  recordGodEyesOutcome,
+  runMidnightGitSync
+} = require('./godeyesMemory');
 
 // ANSI Color Codes
 const RESET  = "\x1b[0m";
@@ -680,23 +685,39 @@ async function checkDailyTargetLock() {
   }
 
   const todayReport = generateDailyReport(todayStr);
-  if (todayReport.netUSD >= dynamicState.dailyTargetUSD) {
+  const targetThreshold = dynamicState.dailyTargetUSD * 0.90;
+  const remainingNeeded = dynamicState.dailyTargetUSD - todayReport.netUSD;
+  const riskPct = dynamicState.customRiskPercent || 2.5;
+  const currentBal = todayReport.newBalance || 3000;
+  const standardRiskUSD = currentBal * (riskPct / 100);
+
+  const isExactTargetReached = todayReport.netUSD >= dynamicState.dailyTargetUSD;
+  const isNearTargetSecured = todayReport.netUSD >= targetThreshold && remainingNeeded <= (standardRiskUSD * 1.3);
+
+  if (isExactTargetReached || isNearTargetSecured) {
     dynamicState.dailyTargetLocked = true;
     saveDynamicState(dynamicState);
 
-    // 👑 Option A: Auto-close ALL active positions at current market to bank floating profit & eliminate all open risk
+    // 👑 Auto-close ALL active positions at current market to bank floating profit & eliminate all open risk
     const closeRes = await closeAllTradesManually();
     const finalReport = generateDailyReport(todayStr);
 
+    const isNearLock = !isExactTargetReached && finalReport.netUSD < dynamicState.dailyTargetUSD;
+    const title = isNearLock 
+      ? `🎯 🛡️ <b>[MYTRADA TARGET ZONE SECURED (90%+ ACHIEVED)]</b>`
+      : `🎯 🟢 <b>[MYTRADA DAILY PROFIT TARGET REACHED!]</b>`;
+
     const alertLines = [
-      `🎯 🟢 <b>[MYTRADA DAILY PROFIT TARGET REACHED!]</b>`,
+      title,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `💰 <b>Final Realized Today:</b> <code>+$${finalReport.netUSD.toFixed(2)} USD (${finalReport.netR >= 0 ? '+' : ''}${finalReport.netR.toFixed(1)}R)</code>`,
-      `🎯 <b>Target Goal:</b> <code>+$${dynamicState.dailyTargetUSD.toFixed(2)} USD</code>`,
+      `🎯 <b>Target Goal:</b> <code>+$${dynamicState.dailyTargetUSD.toFixed(2)} USD</code>` + (isNearLock ? ` <i>(${((finalReport.netUSD / dynamicState.dailyTargetUSD) * 100).toFixed(1)}% bagged)</i>` : ``),
       `📊 <b>Today's Record:</b> <code>${finalReport.wins}W / ${finalReport.losses}L (${finalReport.winRate}% WR)</code>`,
       `💵 <b>Final Account Equity:</b> <code>$${finalReport.newBalance.toFixed(2)} USD</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-      `✂️ <b>All active positions closed at market to lock in 100% of profits.</b>`,
+      isNearLock 
+        ? `🛡️ <b>Asymmetric Target Protection:</b> Remaining gap ($${Math.max(0, dynamicState.dailyTargetUSD - finalReport.netUSD).toFixed(2)}) is smaller than 1 trade risk ($${standardRiskUSD.toFixed(2)}). Profit bagged & protected!`
+        : `✂️ <b>All active positions closed at market to lock in 100% of profits.</b>`,
       `🔒 <b>Status:</b> <b>TRADING HALTED FOR THE DAY (0 Open Risk)</b>`
     ];
 
@@ -710,7 +731,7 @@ async function checkDailyTargetLock() {
     alertLines.push(`⏳ <i>Zero market exposure. Bot will automatically reset & resume tomorrow at 12:00 AM UTC. Send /resume to override now.</i>`);
 
     await sendTelegramMessage(alertLines.join('\n'));
-    console.log(`\n🎯 [TARGET HIT] Daily profit target (+$${dynamicState.dailyTargetUSD}) achieved! All active trades closed and trading locked for remainder of day.\n`);
+    console.log(`\n🎯 [TARGET HIT] Daily profit target (+$${dynamicState.dailyTargetUSD}) achieved or secured at 90%+! All active trades closed and trading locked for remainder of day.\n`);
   }
 }
 
@@ -827,6 +848,7 @@ const telegramHandlers = {
       `🛡️ <b>Daily Max Loss Floor:</b> <code>${maxLossStatus}</code>`,
       `🛡️ <b>Risk Per Trade:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0).toFixed(1)}%)</code>`,
       `🏛️ <b>Strategy Configuration:</b> ${stratBadge}`,
+      `🧠 <b>GodEyes Memory Brain:</b> 🟢 <b>ACTIVE (15%/85% Armor + Multi-Day Anchors)</b>`,
       `📂 <b>Active Positions:</b> <code>${posLabel}</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `🤖 <b>Engine State:</b> ${stateBadge}`
@@ -1310,6 +1332,15 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           rMultiple: 1.3,
           pnlUSD: compRisk.rewardUSD
         });
+        recordGodEyesOutcome({
+          setupId: trade.setupId,
+          symbol: trade.symbol,
+          type: trade.type,
+          entryPrice: trade.entryPrice,
+          exitPrice: trade.takeProfit,
+          outcome: 'WIN',
+          rMultiple: 1.3
+        });
 
         await updatePairHealthOnPaperClose(symbol, 'WIN');
 
@@ -1342,6 +1373,15 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           outcome: 'LOSS',
           rMultiple: -1.0,
           pnlUSD: -compRisk.riskUSD
+        });
+        recordGodEyesOutcome({
+          setupId: trade.setupId,
+          symbol: trade.symbol,
+          type: trade.type,
+          entryPrice: trade.entryPrice,
+          exitPrice: trade.stopLoss,
+          outcome: 'LOSS',
+          rMultiple: -1.0
         });
 
         await updatePairHealthOnPaperClose(symbol, 'LOSS');
@@ -1820,221 +1860,26 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
   return null;
 }
 
-// ── STRATEGY 6 PRO: GOD'S EYE ELITE (ADAPTIVE SMC & VALUE-ZONE ENGINE) ──
+// ── STRATEGY 6 PRO: GODEYES INSTITUTIONAL SMC MEMORY BRAIN ──
 function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
-  if (!ltfCandles || !htf1hCandles || ltfCandles.length < 35 || htf1hCandles.length < 55) return null;
+  // 1. Evaluate baseline spike exhaustion & 5M confirmation trigger (identical to 5B so it's a true A/B twin)
+  const baseSetup = detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol);
+  if (!baseSetup) return null;
 
-  // 1. 1H & 4H Trend Alignment (Macro Structure Flow)
-  const htf1hCloses = htf1hCandles.map(c => c.close);
-  const htf1hEMA = calculateEMA(htf1hCloses, 50);
-  const last1hClose = htf1hCloses[htf1hCloses.length - 1];
-  const last1hEma   = htf1hEMA[htf1hEMA.length - 1];
-  if (!last1hEma) return null;
-  const htf1hTrend  = last1hClose > last1hEma ? 'bullish' : 'bearish';
+  // 2. Evaluate GodEyes 15% / 85% Macro Exhaustion Guard (using multi-day anchors)
+  const exhaustion = evaluateMacroExhaustion(symbol, baseSetup.entry, baseSetup.direction, htf1hCandles);
 
-  // 1H Trend Strength Filter (Avoid dead flat chop)
-  const h1DistancePct = (Math.abs(last1hClose - last1hEma) / last1hEma) * 100;
-  if (h1DistancePct < 0.10) return null;
+  const isBlocked = exhaustion.isExhausted;
+  const blockedReason = exhaustion.reason;
 
-  let htf4hTrend = 'N/A';
-  if (htf4hCandles && htf4hCandles.length >= 55) {
-    const htf4hCloses = htf4hCandles.map(c => c.close);
-    const htf4hEMA    = calculateEMA(htf4hCloses, 50);
-    const last4hClose = htf4hCloses[htf4hCloses.length - 1];
-    const last4hEma   = htf4hEMA[htf4hEMA.length - 1];
-    htf4hTrend        = last4hClose > last4hEma ? 'bullish' : 'bearish';
-  }
-
-  let dailyTrend = 'N/A';
-  if (dailyCandles && dailyCandles.length >= 30) {
-    const dailyCloses = dailyCandles.map(c => c.close);
-    const dailyEMA    = calculateEMA(dailyCloses, Math.min(50, dailyCloses.length - 1));
-    if (dailyEMA.length > 0) {
-      const lastDailyClose = dailyCloses[dailyCloses.length - 1];
-      const lastDailyEma   = dailyEMA[dailyEMA.length - 1];
-      dailyTrend           = lastDailyClose > lastDailyEma ? 'bullish' : 'bearish';
-    }
-  }
-
-  // 2. 1H Dealing Range (Extreme Ceiling & Floor Boundary Guard)
-  const rangeLookback = Math.min(50, htf1hCandles.length);
-  const rangeSlice = htf1hCandles.slice(htf1hCandles.length - rangeLookback);
-  const rangeHigh = Math.max(...rangeSlice.map(c => c.high));
-  const rangeLow = Math.min(...rangeSlice.map(c => c.low));
-  const rangeSpan = rangeHigh - rangeLow;
-  const latestPrice = ltfCandles[ltfCandles.length - 1].close;
-  const dealingRangePct = rangeSpan > 0 ? ((latestPrice - rangeLow) / rangeSpan) * 100 : 50;
-
-  const atr = calculateATR(ltfCandles, 14);
-  if (!atr || atr === 0) return null;
-
-  const swingSlice = ltfCandles.slice(-30, -2);
-  const localSwingHigh = swingSlice.length > 0 ? Math.max(...swingSlice.map(c => c.high)) : 0;
-  const localSwingLow  = swingSlice.length > 0 ? Math.min(...swingSlice.map(c => c.low)) : Infinity;
-
-  // ── CASE 1: SELL (BOOM) ──
-  if (mode === 'BOOM') {
-    if (htf1hTrend !== 'bearish') return null;
-    if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
-    if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
-
-    // Guard against shorting at rock-bottom floor (<35% dealing range)
-    if (dealingRangePct < 35.0) return null;
-
-    // 5M Confirmation Candle (Red close)
-    const c0 = ltfCandles[ltfCandles.length - 1];
-    if (!c0 || c0.close >= c0.open) return null;
-    const c0Range = c0.high - c0.low;
-    const c0Body = Math.abs(c0.close - c0.open);
-    const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
-    if (bodyRatio < 0.40) return null;
-
-    // Spike Cluster
-    const s0 = ltfCandles[ltfCandles.length - 2];
-    if (!s0 || s0.close <= s0.open) return null;
-
-    const spikeCandles = [s0];
-    const s0Range = s0.high - s0.low;
-
-    for (let s = 1; s <= 2; s++) {
-      const c = ltfCandles[ltfCandles.length - 2 - s];
-      if (c && c.close > c.open) spikeCandles.push(c);
-      else break;
-    }
-
-    const spikePeak = Math.max(c0.high, ...spikeCandles.map(c => c.high));
-    const spikeClusterRange = spikePeak - Math.min(...spikeCandles.map(c => c.low));
-
-    const isSingleMonster = spikeCandles.length === 1 && s0Range >= (atr * 1.50);
-    const isMultiCluster = spikeCandles.length >= 2 && spikeClusterRange >= (atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20));
-    if (!isSingleMonster && !isMultiCluster) return null;
-
-    // Quality Displacement: C0 body must be at least 25% of spike range
-    if (c0Body < (s0Range * 0.25)) return null;
-
-    // Confluence: (A) BSL Liquidity Sweep OR (B) 5M 50 EMA Value Zone Touch
-    const ltfCloses = ltfCandles.map(c => c.close);
-    const ltfEMA = calculateEMA(ltfCloses, 50);
-    const lastLtfEma = ltfEMA && ltfEMA.length > 0 ? ltfEMA[ltfEMA.length - 1] : null;
-
-    const isSweep = spikePeak >= localSwingHigh;
-    const isValueZone = lastLtfEma && Math.abs(spikePeak - lastLtfEma) <= (atr * 1.8);
-    if (!isSweep && !isValueZone) return null;
-
-    const entry = c0.close;
-    const sl = spikePeak + (atr * 1.5);
-    const slDist = sl - entry;
-    if (slDist <= 0) return null;
-
-    const tp = entry - (slDist * (config.REWARD_RATIO || 1.3));
-    const candleEpoch = c0.epoch || c0.time;
-
-    return {
-      direction: 'SELL',
-      type: 'bearish',
-      strategy: 'Strategy 6 Pro',
-      htf4hTrend,
-      htf1hTrend,
-      dailyTrend,
-      entry,
-      sl,
-      tp,
-      slDist,
-      atr,
-      refPrice: spikePeak,
-      bodyRatio,
-      candleEpoch,
-      confirmCount: 1,
-      spikeCountLabel: isSingleMonster ? '1 Monster Spike' : `${spikeCandles.length} Spikes`,
-      valuationLabel: isSweep ? `BSL Liquidity Sweep (${dealingRangePct.toFixed(0)}% Range)` : `50 EMA Value Zone (${dealingRangePct.toFixed(0)}% Range)`,
-      liquidityLabel: isSweep ? `BSL Sweep (${localSwingHigh.toFixed(2)})` : `50 EMA Mitigation`,
-      isBlocked: false,
-      blockedReason: null
-    };
-  }
-
-  // ── CASE 2: BUY (CRASH) ──
-  if (mode === 'CRASH') {
-    if (htf1hTrend !== 'bullish') return null;
-    if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
-    if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
-
-    // Guard against buying at extreme high ceiling (>65% dealing range)
-    if (dealingRangePct > 65.0) return null;
-
-    // 5M Confirmation Candle (Green close)
-    const c0 = ltfCandles[ltfCandles.length - 1];
-    if (!c0 || c0.close <= c0.open) return null;
-    const c0Range = c0.high - c0.low;
-    const c0Body = Math.abs(c0.close - c0.open);
-    const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
-    if (bodyRatio < 0.40) return null;
-
-    // Crash Cluster
-    const s0 = ltfCandles[ltfCandles.length - 2];
-    if (!s0 || s0.close >= s0.open) return null;
-
-    const crashCandles = [s0];
-    const s0Range = s0.high - s0.low;
-
-    for (let s = 1; s <= 2; s++) {
-      const c = ltfCandles[ltfCandles.length - 2 - s];
-      if (c && c.close < c.open) crashCandles.push(c);
-      else break;
-    }
-
-    const crashTrough = Math.min(c0.low, ...crashCandles.map(c => c.low));
-    const crashClusterRange = Math.max(...crashCandles.map(c => c.high)) - crashTrough;
-
-    const isSingleMonster = crashCandles.length === 1 && s0Range >= (atr * 1.50);
-    const isMultiCluster = crashCandles.length >= 2 && crashClusterRange >= (atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20));
-    if (!isSingleMonster && !isMultiCluster) return null;
-
-    // Quality Displacement: C0 body must be at least 25% of crash spike range
-    if (c0Body < (s0Range * 0.25)) return null;
-
-    // Confluence: (A) SSL Liquidity Sweep OR (B) 5M 50 EMA Value Zone Touch
-    const ltfCloses = ltfCandles.map(c => c.close);
-    const ltfEMA = calculateEMA(ltfCloses, 50);
-    const lastLtfEma = ltfEMA && ltfEMA.length > 0 ? ltfEMA[ltfEMA.length - 1] : null;
-
-    const isSweep = crashTrough <= localSwingLow;
-    const isValueZone = lastLtfEma && Math.abs(crashTrough - lastLtfEma) <= (atr * 1.8);
-    if (!isSweep && !isValueZone) return null;
-
-    const entry = c0.close;
-    const sl = crashTrough - (atr * 1.5);
-    const slDist = entry - sl;
-    if (slDist <= 0) return null;
-
-    const tp = entry + (slDist * (config.REWARD_RATIO || 1.3));
-    const candleEpoch = c0.epoch || c0.time;
-
-    return {
-      direction: 'BUY',
-      type: 'bullish',
-      strategy: 'Strategy 6 Pro',
-      htf4hTrend,
-      htf1hTrend,
-      dailyTrend,
-      entry,
-      sl,
-      tp,
-      slDist,
-      atr,
-      refPrice: crashTrough,
-      bodyRatio,
-      candleEpoch,
-      confirmCount: 1,
-      spikeCountLabel: isSingleMonster ? '1 Monster Spike' : `${crashCandles.length} Spikes`,
-      valuationLabel: isSweep ? `SSL Liquidity Sweep (${dealingRangePct.toFixed(0)}% Range)` : `50 EMA Value Zone (${dealingRangePct.toFixed(0)}% Range)`,
-      liquidityLabel: isSweep ? `SSL Sweep (${localSwingLow.toFixed(2)})` : `50 EMA Mitigation`,
-      isBlocked: false,
-      blockedReason: null
-    };
-  }
-
-  return null;
+  return {
+    ...baseSetup,
+    strategy: 'Strategy 6 Pro',
+    valuationLabel: `Macro Range: ${exhaustion.rangePct.toFixed(1)}% (SMC Dealing Zone)`,
+    liquidityLabel: `SMC Anchor (PDH/PDL Range)`,
+    isBlocked,
+    blockedReason
+  };
 }
 
 // ── MAIN MONITOR CYCLE ──
@@ -2059,6 +1904,8 @@ async function monitorMarket() {
       console.log(`✅ [12:00 AM MIDNIGHT REPORT] Daily Report for ${yesterdayDateStr} dispatched to Telegram successfully!\n`);
       // Brief pause to guarantee Telegram chat ordering (Report first, Banner second)
       await new Promise(resolve => setTimeout(resolve, 2000));
+      // 👑 Automated midnight GitHub archive sync
+      await runMidnightGitSync(yesterdayDateStr);
     }
 
     // 👑 2. Load dynamic state for the new day

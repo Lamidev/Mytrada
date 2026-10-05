@@ -145,6 +145,7 @@ function registerTelegramCommands() {
 
   const commands = [
     { command: 'status', description: "Live equity, today's P&L, active engines & state" },
+    { command: 'memory', description: "GodEyes Institutional SMC Memory Brain & Macro Anchors" },
     { command: 'strategy', description: "Strategy switch: /strategy 6pro | 5b | both | none" },
     { command: 'mode', description: "Execution mode: /mode paper | live" },
     { command: 'gold', description: "Gold Scalper status, forward-test & controls" },
@@ -255,6 +256,7 @@ async function handleCommand(rawText, handlers) {
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `📊 <b>MONITORING:</b>`,
         `• <code>/status</code> ➜ Balance, today's PnL, active engines & locks`,
+        `• <code>/memory</code> ➜ GodEyes Neural Memory Brain & Macro Anchors`,
         `• <code>/health</code> ➜ Multi-pair health scorecard & quarantine status`,
         `• <code>/trades</code> ➜ Live open trades & distance to TP/SL`,
         `• <code>/gold</code> ➜ Gold Flash Scalper status & positions`,
@@ -415,6 +417,39 @@ async function handleCommand(rawText, handlers) {
         const reportHtml = handlers.getDailyReport(arg1);
         await sendTelegramMessage(reportHtml);
       }
+      break;
+    }
+
+    case '/memory':
+    case '/godeyes': {
+      const { loadMemory } = require('./godeyesMemory');
+      const memory = loadMemory();
+      const pairs = Object.keys(memory);
+
+      const lines = [
+        `🧠 <b>[MYTRADA GODEYES NEURAL MEMORY LEDGER]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `• <b>Cognitive Status:</b> 🟢 <b>ACTIVE & STREAMING</b>`,
+        `• <b>Exhaustion Armor:</b> <code>15% Floor / 85% Ceiling</code>`,
+        `• <b>Tracked Assets in Brain:</b> <code>${pairs.length} Elite Pairs</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `📊 <b>MULTI-SESSION PAIR INTELLIGENCE (8-DAY):</b>`
+      ];
+
+      for (const sym of pairs) {
+        const p = memory[sym];
+        const s = p.stats || { wins: 0, losses: 0, winRate: 0, netR: 0 };
+        const rating = p.healthRating || 'ACTIVE';
+        lines.push(`• <b>${sym}</b> [${rating}]`);
+        lines.push(`  ├ <b>8-Day Record:</b> <code>${s.wins}W / ${s.losses}L (${s.winRate}% WR • +${s.netR}R)</code>`);
+        lines.push(`  └ <b>Macro Range:</b> <code>${(p.pdl || 0).toFixed(2)} ➔ ${(p.pdh || 0).toFixed(2)} (${(p.rangeSpan || 0).toFixed(2)} pts)</code>`);
+      }
+
+      lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+      lines.push(`🛡️ <i>Guards: Climax Reversal Traps Auto-Blocked in 6 Pro Sandbox.</i>`);
+      lines.push(`📦 <i>Cloud Sync: Automated GitHub push at 00:05 UTC.</i>`);
+
+      await sendTelegramMessage(lines.join('\n'));
       break;
     }
 

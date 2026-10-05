@@ -2174,5 +2174,21 @@
     "pnlR": -1,
     "confluenceScore": 10,
     "strategy": "Strategy 5B Enhanced"
+  },
+  {
+    "setupId": "BOOM300N_SELL_1790949600000",
+    "date": "2026-10-05",
+    "time": "2026-10-05T18:57:27.436Z",
+    "symbol": "BOOM300N",
+    "type": "SELL",
+    "entryPrice": 405.087,
+    "stopLoss": 408.60534855698535,
+    "takeProfit": 400.513146875919,
+    "exitPrice": 408.60534855698535,
+    "outcome": "LOSS",
+    "pnlUSD": -54.99,
+    "pnlR": -1,
+    "confluenceScore": 10,
+    "strategy": "Strategy 5B Enhanced"
   }
 ]
