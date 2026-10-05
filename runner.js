@@ -156,6 +156,8 @@ function loadDynamicState() {
         data.dailyTargetUSD = defaultTarget;
         data.dailyLossLocked = false;
         data.dailyMaxLossUSD = defaultMaxLoss;
+        data.portfolioConsecutiveLosses = 0;
+        data.portfolioPauseUntil = 0;
         saveDynamicState(data);
       }
       if (data.dailyTargetUSD === 250 || data.dailyTargetUSD === undefined) {
@@ -544,10 +546,11 @@ function recordSymbolTradeOutcome(symbol, outcome) {
     if (dynamicState.portfolioConsecutiveLosses >= maxPortfolioLosses) {
       const pauseMins = config.CIRCUIT_BREAKER.PORTFOLIO_LOSS_PAUSE_MINS || 60;
       dynamicState.portfolioPauseUntil = now + (pauseMins * 60 * 1000);
+      dynamicState.portfolioConsecutiveLosses = 0; // Reset counter so subsequent trades don't keep firing immediately
       sendTelegramMessage([
         `⚠️ 🛡️ <b>[MYTRADA PORTFOLIO CIRCUIT BREAKER]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `<b>Trigger:</b> <code>${dynamicState.portfolioConsecutiveLosses} consecutive losses</code> hit across portfolio.`,
+        `<b>Trigger:</b> <code>${maxPortfolioLosses} consecutive losses</code> hit across portfolio.`,
         `<b>Action:</b> Entire bot paused for <b>${pauseMins} minutes</b> to let market turbulence settle.`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<i>Active positions will continue monitoring to TP/SL. Send /resume to override.</i>`
@@ -807,6 +810,12 @@ const telegramHandlers = {
       stratBadge = `🚀 <b>Strategy 5B Enhanced</b> (${mode5bLabel})`;
     }
 
+    const liveTradesCount = activeTrades.filter(t => !t.isIncubation).length;
+    const paperTradesCount = activeTrades.filter(t => t.isIncubation).length;
+    const posLabel = paperTradesCount > 0 
+      ? `${liveTradesCount} Live | ${paperTradesCount} Paper`
+      : `${liveTradesCount} Trade(s)`;
+
     const lines = [
       `👑 <b>[MYTRADA LIVE STATUS MONITOR]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -818,7 +827,7 @@ const telegramHandlers = {
       `🛡️ <b>Daily Max Loss Floor:</b> <code>${maxLossStatus}</code>`,
       `🛡️ <b>Risk Per Trade:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0).toFixed(1)}%)</code>`,
       `🏛️ <b>Strategy Configuration:</b> ${stratBadge}`,
-      `📂 <b>Active Positions:</b> <code>${activeTrades.length} Trade(s)</code>`,
+      `📂 <b>Active Positions:</b> <code>${posLabel}</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `🤖 <b>Engine State:</b> ${stateBadge}`
     ];

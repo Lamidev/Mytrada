@@ -627,10 +627,24 @@ function getCurrentAccountBalance() {
  * Returns active weekly compounded trade risk, reward target, and account balance.
  * Trade risk is fixed based on the Weekly Anchor Balance set at the start of each week.
  */
-function getWeeklyCompoundedRisk() {
+function getWeeklyCompoundedRisk(customPercent = null) {
   const anchorBalance = getWeeklyAnchorBalance();
   const liveBalance = getCurrentAccountBalance();
-  const riskPercent = config.RISK_PERCENT || 3.0;
+  let riskPercent = config.RISK_PERCENT || 3.0;
+
+  if (customPercent && typeof customPercent === 'number' && customPercent > 0) {
+    riskPercent = customPercent;
+  } else {
+    const dynamicStatePath = path.join(CACHE_DIR, 'dynamic_state.json');
+    if (fs.existsSync(dynamicStatePath)) {
+      try {
+        const ds = JSON.parse(fs.readFileSync(dynamicStatePath, 'utf8'));
+        if (ds && typeof ds.customRiskPercent === 'number' && ds.customRiskPercent > 0) {
+          riskPercent = ds.customRiskPercent;
+        }
+      } catch (e) {}
+    }
+  }
   
   if (!config.DYNAMIC_RISK_COMPOUNDING) {
     const fallbackRisk = config.RISK_AMOUNT_USD || 3.0;
