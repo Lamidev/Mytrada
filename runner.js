@@ -388,18 +388,29 @@ async function updatePairHealthOnPaperClose(symbol, outcome) {
 
       savePairHealthState(pairHealthState);
 
+      const cbRec = circuitBreakerState.symbols && circuitBreakerState.symbols[symbol];
+      const isDailyLocked = cbRec && cbRec.dailyLosses >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2);
+
+      const actionLine = isDailyLocked
+        ? `<b>Action:</b> <b>Restored for Tomorrow Morning!</b>`
+        : `<b>Action:</b> <b>Restored to Live Real Trading Universe!</b>`;
+
+      const noteLine = isDailyLocked
+        ? `🛡️ <i>Proof of health achieved! Cleared for Live trading upon 12:00 AM UTC rollover (today's daily 2-loss limit shields real balance until then).</i>`
+        : `🚀 <i>Market structure & trend clarity have stabilized. Real execution re-enabled.</i>`;
+
       const alertMsg = [
         `🏆 🟢 <b>[PAIR GRADUATION: RESTORED TO LIVE]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
         `<b>Achievement:</b> <code>1 Winning Paper Setup (+1.3R)</code>`,
-        `<b>Action:</b> <b>Restored to Live Real Trading Universe!</b>`,
+        actionLine,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `🚀 <i>Market structure & trend clarity have stabilized. Real execution re-enabled.</i>`
+        noteLine
       ].join('\n');
 
       await sendTelegramMessage(alertMsg);
-      console.log(`\n🏆 [PAIR GRADUATION] ${symbol} achieved 1 winning paper trade -> Restored to Live Trading!\n`);
+      console.log(`\n🏆 [PAIR GRADUATION] ${symbol} achieved 1 winning paper trade -> Restored to Live Trading${isDailyLocked ? ' (active tomorrow after rollover)' : ''}!\n`);
     }
   } else if (outcome === 'LOSS') {
     rec.consecutivePaperWins = 0;
@@ -520,23 +531,30 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false) {
 
   if (outcome === 'WIN') {
     rec.consecutiveLosses = 0;
-    if (!isPaper) dynamicState.portfolioConsecutiveLosses = 0;
+    dynamicState.portfolioConsecutiveLosses = 0;
 
     // 👑 Institutional Post-Win Breathing Room: pause symbol to prevent immediate tail-end re-entry
     const postWinMins = config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 35;
     rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (postWinMins * 60 * 1000));
   } else if (outcome === 'LOSS') {
     rec.consecutiveLosses = (rec.consecutiveLosses || 0) + 1;
-    if (!isPaper) {
-      rec.dailyLosses = (rec.dailyLosses || 0) + 1;
-      dynamicState.portfolioConsecutiveLosses = (dynamicState.portfolioConsecutiveLosses || 0) + 1;
-    }
+    rec.dailyLosses = (rec.dailyLosses || 0) + 1;
+    dynamicState.portfolioConsecutiveLosses = (dynamicState.portfolioConsecutiveLosses || 0) + 1;
 
     // Symbol-Level Responsive Tiered Circuit Breakers:
     if (rec.dailyLosses >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2)) {
       const endOfDay = new Date();
       endOfDay.setUTCHours(23, 59, 59, 999);
       rec.pauseUntil = endOfDay.getTime();
+      sendTelegramMessage([
+        `🛑 🛡️ <b>[SYMBOL DAILY LOSS LIMIT REACHED]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+        `<b>Trigger:</b> <code>${rec.dailyLosses} losses today</code> (${isPaper ? 'Paper Sandbox' : 'Live Trading'}).`,
+        `<b>Action:</b> Trading paused on <b>${symbol}</b> until <b>12:00 AM UTC</b> to protect performance.`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `<i>Remaining healthy pairs will continue scanning normally.</i>`
+      ].join('\n')).catch(() => null);
     } else if (rec.consecutiveLosses >= 2) {
       const tier2Mins = config.CIRCUIT_BREAKER.TIER_2_PAUSE_MINS || 60;
       rec.pauseUntil = now + (tier2Mins * 60 * 1000);
@@ -547,18 +565,18 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false) {
 
     // Portfolio-Wide Consecutive Loss Breaker (e.g. 3 consecutive losses across ANY pairs):
     const maxPortfolioLosses = config.CIRCUIT_BREAKER.PORTFOLIO_CONSECUTIVE_LOSS_LIMIT || 3;
-    if (!isPaper && dynamicState.portfolioConsecutiveLosses >= maxPortfolioLosses) {
+    if (dynamicState.portfolioConsecutiveLosses >= maxPortfolioLosses) {
       const pauseMins = config.CIRCUIT_BREAKER.PORTFOLIO_LOSS_PAUSE_MINS || 60;
       dynamicState.portfolioPauseUntil = now + (pauseMins * 60 * 1000);
       dynamicState.portfolioConsecutiveLosses = 0; // Reset counter so subsequent trades don't keep firing immediately
       sendTelegramMessage([
         `⚠️ 🛡️ <b>[MYTRADA PORTFOLIO CIRCUIT BREAKER]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `<b>Trigger:</b> <code>${maxPortfolioLosses} consecutive losses</code> hit across portfolio.`,
+        `<b>Trigger:</b> <code>${maxPortfolioLosses} consecutive losses</code> hit across portfolio (${isPaper ? 'Paper Sandbox' : 'Live Trading'}).`,
         `<b>Action:</b> Entire bot paused for <b>${pauseMins} minutes</b> to let market turbulence settle.`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<i>Active positions will continue monitoring to TP/SL. Send /resume to override.</i>`
-      ].join('\n'));
+      ].join('\n')).catch(() => null);
     }
   }
 
@@ -1985,7 +2003,7 @@ async function monitorMarket() {
   }
 
   // Check if portfolio is in global consecutive loss cooldown
-  if (dynamicState.portfolioPauseUntil && nowMs < dynamicState.portfolioPauseUntil && !hasPaperEngineActive) {
+  if (dynamicState.portfolioPauseUntil && nowMs < dynamicState.portfolioPauseUntil) {
     const remMins = Math.ceil((dynamicState.portfolioPauseUntil - nowMs) / 60000);
     console.log(`\n⚠️ [PORTFOLIO COOLDOWN] 3 consecutive losses hit across bot. Paused for ${remMins}m more. Monitoring active positions...`);
     for (const sym of Object.keys(config.SYMBOLS)) {
