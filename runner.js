@@ -479,11 +479,8 @@ function formatHealthTelegramHTML() {
 function isSymbolInCooldown(symbol) {
   if (!config.CIRCUIT_BREAKER || !config.CIRCUIT_BREAKER.ENABLED) return { inCooldown: false };
   
-  // Refresh state if date has rolled over to a new day
-  const today = new Date().toISOString().slice(0, 10);
-  if (!circuitBreakerState || circuitBreakerState.date !== today) {
-    circuitBreakerState = loadCircuitBreakerState();
-  }
+  // Always load fresh state from disk to guarantee instant cross-monitor synchronization
+  circuitBreakerState = loadCircuitBreakerState();
 
   const rec = circuitBreakerState.symbols && circuitBreakerState.symbols[symbol];
   if (!rec) return { inCooldown: false };
@@ -504,7 +501,7 @@ function isSymbolInCooldown(symbol) {
   return { inCooldown: false };
 }
 
-function recordSymbolTradeOutcome(symbol, outcome) {
+function recordSymbolTradeOutcome(symbol, outcome, isPaper = false) {
   const today = new Date().toISOString().slice(0, 10);
   if (!circuitBreakerState || circuitBreakerState.date !== today) {
     circuitBreakerState = loadCircuitBreakerState();
@@ -523,15 +520,17 @@ function recordSymbolTradeOutcome(symbol, outcome) {
 
   if (outcome === 'WIN') {
     rec.consecutiveLosses = 0;
-    dynamicState.portfolioConsecutiveLosses = 0;
+    if (!isPaper) dynamicState.portfolioConsecutiveLosses = 0;
 
     // 👑 Institutional Post-Win Breathing Room: pause symbol to prevent immediate tail-end re-entry
     const postWinMins = config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 35;
     rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (postWinMins * 60 * 1000));
   } else if (outcome === 'LOSS') {
     rec.consecutiveLosses = (rec.consecutiveLosses || 0) + 1;
-    rec.dailyLosses = (rec.dailyLosses || 0) + 1;
-    dynamicState.portfolioConsecutiveLosses = (dynamicState.portfolioConsecutiveLosses || 0) + 1;
+    if (!isPaper) {
+      rec.dailyLosses = (rec.dailyLosses || 0) + 1;
+      dynamicState.portfolioConsecutiveLosses = (dynamicState.portfolioConsecutiveLosses || 0) + 1;
+    }
 
     // Symbol-Level Responsive Tiered Circuit Breakers:
     if (rec.dailyLosses >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2)) {
@@ -548,7 +547,7 @@ function recordSymbolTradeOutcome(symbol, outcome) {
 
     // Portfolio-Wide Consecutive Loss Breaker (e.g. 3 consecutive losses across ANY pairs):
     const maxPortfolioLosses = config.CIRCUIT_BREAKER.PORTFOLIO_CONSECUTIVE_LOSS_LIMIT || 3;
-    if (dynamicState.portfolioConsecutiveLosses >= maxPortfolioLosses) {
+    if (!isPaper && dynamicState.portfolioConsecutiveLosses >= maxPortfolioLosses) {
       const pauseMins = config.CIRCUIT_BREAKER.PORTFOLIO_LOSS_PAUSE_MINS || 60;
       dynamicState.portfolioPauseUntil = now + (pauseMins * 60 * 1000);
       dynamicState.portfolioConsecutiveLosses = 0; // Reset counter so subsequent trades don't keep firing immediately
@@ -1347,6 +1346,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         });
 
         await updatePairHealthOnPaperClose(symbol, 'WIN');
+        recordSymbolTradeOutcome(symbol, 'WIN', true);
 
         const tpAlert = [
           `🔬 🟢 <b>[MYTRADA INCUBATION OUTCOME — TP HIT (+1.3R)]</b>`,
@@ -1389,6 +1389,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         });
 
         await updatePairHealthOnPaperClose(symbol, 'LOSS');
+        recordSymbolTradeOutcome(symbol, 'LOSS', true);
 
         const slAlert = [
           `🔬 🔴 <b>[MYTRADA INCUBATION OUTCOME — SL HIT (-1.0R)]</b>`,
@@ -2044,7 +2045,8 @@ async function monitorMarket() {
       // Build active strategies for this scan
       const strategiesToRun = [];
       if (isBoth) {
-        if (!dynamicState.is5bPaused) {
+        const is5bBlockedByLock = (dynamicState.mode5b === 'LIVE') && (dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked);
+        if (!dynamicState.is5bPaused && !is5bBlockedByLock) {
           strategiesToRun.push({
             id: '5B',
             name: 'STRATEGY_5B',
