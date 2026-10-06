@@ -2045,14 +2045,19 @@ async function monitorMarket() {
       // Build active strategies for this scan
       const strategiesToRun = [];
       if (isBoth) {
-        const is5bBlockedByLock = (dynamicState.mode5b === 'LIVE') && (dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked);
-        if (!dynamicState.is5bPaused && !is5bBlockedByLock) {
+        const is5bLocked = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
+        if (!dynamicState.is5bPaused) {
+          const is5bPaper = is5bLocked || isQuarantined || (dynamicState.mode5b || 'LIVE') === 'PAPER';
+          let displayName = 'Strategy 5B Enhanced';
+          if (is5bLocked) displayName = 'Strategy 5B (Target-Locked Paper)';
+          else if (isQuarantined) displayName = 'Strategy 5B (Quarantined Paper)';
+
           strategiesToRun.push({
             id: '5B',
             name: 'STRATEGY_5B',
-            displayName: isQuarantined ? 'Strategy 5B (Quarantined Paper)' : 'Strategy 5B Enhanced',
+            displayName,
             fn: detectStrategy5BSetup,
-            isPaper: isQuarantined || (dynamicState.mode5b || 'LIVE') === 'PAPER'
+            isPaper: is5bPaper
           });
         }
         if (!dynamicState.is6proPaused) {
@@ -2075,13 +2080,19 @@ async function monitorMarket() {
           });
         }
       } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
+        const is5bLocked = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
         if (!dynamicState.is5bPaused) {
+          const is5bPaper = is5bLocked || isQuarantined || (dynamicState.executionMode || 'LIVE') === 'PAPER';
+          let displayName = 'Strategy 5B Enhanced';
+          if (is5bLocked) displayName = 'Strategy 5B (Target-Locked Paper)';
+          else if (isQuarantined) displayName = 'Strategy 5B (Quarantined Paper)';
+
           strategiesToRun.push({
             id: '5B',
             name: 'STRATEGY_5B',
-            displayName: isQuarantined ? 'Strategy 5B (Quarantined Paper)' : 'Strategy 5B Enhanced',
+            displayName,
             fn: detectStrategy5BSetup,
-            isPaper: isQuarantined || (dynamicState.executionMode || 'LIVE') === 'PAPER'
+            isPaper: is5bPaper
           });
         }
       }
