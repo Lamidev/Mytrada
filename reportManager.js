@@ -185,6 +185,46 @@ function recordIncubationOutcome(outcomeData) {
 }
 
 /**
+ * 🎓 Incubation Graduation Engine (3-Gate Proof of Edge)
+ * Evaluates whether an incubation pair has met the criteria to graduate to Live:
+ *  - Gate 1: Minimum 5 completed paper trades
+ *  - Gate 2: Win Rate >= 60.0%
+ *  - Gate 3: Spans at least 2 distinct trading calendar days
+ */
+function checkIncubationGraduation(symbol) {
+  const history = loadIncubationHistory();
+  const symbolTrades = history.filter(t => t.symbol === symbol && (t.outcome === 'WIN' || t.outcome === 'LOSS'));
+  
+  const total = symbolTrades.length;
+  const wins = symbolTrades.filter(t => t.outcome === 'WIN').length;
+  const losses = symbolTrades.filter(t => t.outcome === 'LOSS').length;
+  const winRate = total > 0 ? (wins / total) * 100 : 0;
+
+  // Distinct trading dates (YYYY-MM-DD)
+  const distinctDays = new Set(
+    symbolTrades.map(t => (t.time ? t.time.slice(0, 10) : new Date().toISOString().slice(0, 10)))
+  );
+
+  const gate1Passed = total >= 5;
+  const gate2Passed = winRate >= 60.0;
+  const gate3Passed = distinctDays.size >= 2;
+  const allPassed = gate1Passed && gate2Passed && gate3Passed;
+
+  return {
+    symbol,
+    total,
+    wins,
+    losses,
+    winRate: winRate.toFixed(1),
+    daysCount: distinctDays.size,
+    gate1Passed,
+    gate2Passed,
+    gate3Passed,
+    allPassed
+  };
+}
+
+/**
  * Records a new signal in history
  */
 function recordSignal(signalData) {
@@ -727,5 +767,6 @@ module.exports = {
   loadShadowHistory,
   recordShadowOutcome,
   loadIncubationHistory,
-  recordIncubationOutcome
+  recordIncubationOutcome,
+  checkIncubationGraduation
 };

@@ -97,9 +97,9 @@
   "BOOM900": {
     "name": "Boom 900 Index",
     "mode": "BOOM",
-    "pdh": 8980,
-    "pdl": 8680,
-    "rangeSpan": 300,
+    "pdh": 8680.611,
+    "pdl": 8457.502,
+    "rangeSpan": 223.10900000000038,
     "trendRegime": "BEARISH_MOMENTUM",
     "healthRating": "🟡 ACTIVE",
     "stats": {
@@ -257,14 +257,14 @@
         "rMultiple": 1.3
       }
     ],
-    "lastUpdated": 1791226991253
+    "lastUpdated": 1791366944657
   },
   "BOOM600": {
     "name": "Boom 600 Index",
     "mode": "BOOM",
-    "pdh": 5241.58,
+    "pdh": 5226.41,
     "pdl": 5103.545,
-    "rangeSpan": 138.03499999999985,
+    "rangeSpan": 122.86499999999978,
     "trendRegime": "BEARISH_MOMENTUM",
     "healthRating": "🟡 ACTIVE",
     "stats": {
@@ -374,7 +374,7 @@
         "rMultiple": 1.3
       }
     ],
-    "lastUpdated": 1791350251718
+    "lastUpdated": 1791366947082
   },
   "BOOM1000": {
     "name": "Boom 1000 Index",
@@ -417,9 +417,9 @@
   "CRASH300N": {
     "name": "Crash 300 Index",
     "mode": "CRASH",
-    "pdh": 2900.63,
-    "pdl": 2498.07,
-    "rangeSpan": 402.55999999999995,
+    "pdh": 2854.607,
+    "pdl": 2505.031,
+    "rangeSpan": 349.576,
     "trendRegime": "BULLISH_MOMENTUM",
     "healthRating": "👑 ELITE MVP RUNNER",
     "stats": {
@@ -520,7 +520,8 @@
         "outcome": "WIN",
         "rMultiple": 1.3
       }
-    ]
+    ],
+    "lastUpdated": 1791366944673
   },
   "CRASH500": {
     "name": "Crash 500 Index",
@@ -669,9 +670,9 @@
   "CRASH600": {
     "name": "Crash 600 Index",
     "mode": "CRASH",
-    "pdh": 23126.03,
-    "pdl": 23048.05,
-    "rangeSpan": 77.97999999999956,
+    "pdh": 23517.16,
+    "pdl": 22971.225,
+    "rangeSpan": 545.9350000000013,
     "trendRegime": "BULLISH_MOMENTUM",
     "healthRating": "⚠️ HIGH-EXHAUSTION SENSITIVITY",
     "stats": {
@@ -700,7 +701,8 @@
         "outcome": "LOSS",
         "rMultiple": -1
       }
-    ]
+    ],
+    "lastUpdated": 1791366944666
   },
   "CRASH900": {
     "name": "Crash 900 Index",

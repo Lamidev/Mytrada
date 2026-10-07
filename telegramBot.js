@@ -154,6 +154,8 @@ function registerTelegramCommands() {
     { command: 'target', description: "Set daily target: /target 250 (or /target off)" },
     { command: 'maxloss', description: "Set max loss floor: /maxloss 150 (or /maxloss off)" },
     { command: 'pause', description: "Pause scanning: /pause | /pause 5b | /pause 6pro | /pause gold" },
+    { command: 'stopall', description: "Halt all engines: /stopall (stops 5b, 6pro, gold, live & paper)" },
+    { command: 'resumeall', description: "Resume all engines: /resumeall (resumes 5b, 6pro, gold)" },
     { command: 'resume', description: "Resume scanning: /resume | /resume 5b | /resume 6pro | /resume gold" },
     { command: 'closeall', description: "Emergency exit: Close all open positions at market" },
     { command: 'help', description: "Show clean command control center" }
@@ -270,17 +272,20 @@ async function handleCommand(rawText, handlers) {
         `• <code>/mode paper</code> | <code>/mode live</code> ➜ Global execution mode`,
         `• <code>/mode gold paper</code> | <code>/mode gold live</code> ➜ Gold mode`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `🛡️ <b>RISK & QUARANTINE:</b>`,
+        `🛡️ <b>RISK, QUARANTINE & GRADUATION:</b>`,
         `• <code>/target 250</code> ➜ Auto-close all & lock profit at +$250 (or <code>/target off</code>)`,
         `• <code>/maxloss 150</code> ➜ Auto-close all & stop loss floor at -$150 (or <code>/maxloss off</code>)`,
+        `• <code>/promote CRASH150N</code> ➜ Graduate incubation pair to Live Trading`,
+        `• <code>/demote CRASH150N</code> ➜ Demote pair back to Incubation Sandbox`,
         `• <code>/quarantine BOOM300N</code> ➜ Move pair to Paper Mode ($0 risk)`,
         `• <code>/unquarantine BOOM300N</code> ➜ Restore pair to Live Trading`,
         `• <code>/be</code> ➜ Move SL on open trades to Breakeven ($0 risk)`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `⚡ <b>CONTROL & EMERGENCY:</b>`,
-        `• <code>/pause</code> | <code>/resume</code> ➜ Global pause/resume`,
+        `• <code>/stopall</code> (or <code>/halt</code>, <code>/pause</code>) ➜ Emergency complete halt: stops all strategies (Live & Paper) & Gold`,
+        `• <code>/resumeall</code> (or <code>/resume</code>) ➜ Resume all strategy engines and scanners`,
         `• <code>/pause 5b</code> | <code>/pause 6pro</code> | <code>/pause gold</code> ➜ Pause specific engine`,
-        `• <code>/resume 5b</code> | <code>/resume 6pro</code> | <code>/resume gold</code> ➜ Resume engine`,
+        `• <code>/resume 5b</code> | <code>/resume 6pro</code> | <code>/resume gold</code> ➜ Resume specific engine`,
         `• <code>/closeall</code> ➜ Close all active trades immediately at market`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
       ].join('\n');
@@ -553,8 +558,11 @@ async function handleCommand(rawText, handlers) {
     }
 
     case '/pause':
-    case '/stop': {
-      const pTarget = arg1 ? arg1.toLowerCase() : 'all';
+    case '/pauseall':
+    case '/stop':
+    case '/stopall':
+    case '/halt': {
+      const pTarget = (command === '/stopall' || command === '/pauseall' || command === '/halt') ? 'all' : (arg1 ? arg1.toLowerCase() : 'all');
       if (pTarget.includes('gold') || pTarget.includes('xau')) {
         const gState = getGoldState();
         gState.isPaused = true;
@@ -567,15 +575,30 @@ async function handleCommand(rawText, handlers) {
         if (handlers.pauseStrategy) handlers.pauseStrategy('6pro');
         await sendTelegramMessage(`⏸️ <b>[STRATEGY 6 PRO PAUSED]</b>\nStrategy 6 Pro signal engine paused. Strategy 5B remains active.`);
       } else {
+        const gState = getGoldState();
+        gState.isPaused = true;
+        setGoldState(gState);
         if (handlers.pauseBot) handlers.pauseBot();
-        await sendTelegramMessage(`⏸️ <b>[MYTRADA GLOBAL PAUSE]</b>\nAll strategy engines and scanning paused.\nSend <code>/resume</code> to restart.`);
+        await sendTelegramMessage([
+          `🛑 <b>[MYTRADA COMPLETE STOP — ALL ENGINES HALTED]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `• <b>Strategy 5B:</b> ⏸️ HALTED (Live & Paper)`,
+          `• <b>Strategy 6 Pro:</b> ⏸️ HALTED (Live & Paper)`,
+          `• <b>Gold Flash Scalper:</b> ⏸️ HALTED (M1 Daemon)`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `🔒 <b>All scanning stopped.</b> Zero new trades will be taken across all modes.`,
+          `🛡️ Existing open positions continue to be monitored until TP/SL.`,
+          `▶️ Send <code>/resume</code> or <code>/resumeall</code> to restart all scanners.`
+        ].join('\n'));
       }
       break;
     }
 
     case '/resume':
+    case '/resumeall':
+    case '/startall':
     case '/unpause': {
-      const rTarget = arg1 ? arg1.toLowerCase() : 'all';
+      const rTarget = (command === '/resumeall' || command === '/startall') ? 'all' : (arg1 ? arg1.toLowerCase() : 'all');
       if (rTarget.includes('gold') || rTarget.includes('xau')) {
         const gState = getGoldState();
         gState.isPaused = false;
@@ -588,9 +611,20 @@ async function handleCommand(rawText, handlers) {
         if (handlers.resumeStrategy) handlers.resumeStrategy('6pro');
         await sendTelegramMessage(`▶️ <b>[STRATEGY 6 PRO RESUMED]</b>\nStrategy 6 Pro is now actively scanning.`);
       } else {
+        const gState = getGoldState();
+        gState.isPaused = false;
+        setGoldState(gState);
         if (handlers.resumeBot) {
           const res = handlers.resumeBot();
-          await sendTelegramMessage(`▶️ <b>[MYTRADA ALL ENGINES RESUMED]</b>\nBot is now actively scanning <b>${res.symbolsCount} Elite Pairs</b> across all active strategies.`);
+          await sendTelegramMessage([
+            `▶️ 🟢 <b>[MYTRADA ALL ENGINES RESUMED]</b>`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `• <b>Strategy 5B:</b> 🟢 ACTIVE & SCANNING`,
+            `• <b>Strategy 6 Pro:</b> 🟢 ACTIVE & SCANNING`,
+            `• <b>Gold Flash Scalper:</b> 🟢 ACTIVE & SCANNING`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `🚀 Actively scanning <b>${res.symbolsCount} Elite Pairs</b> across all strategies.`
+          ].join('\n'));
         }
       }
       break;
@@ -701,6 +735,57 @@ async function handleCommand(rawText, handlers) {
           await sendTelegramMessage(`🏆 🟢 <b>[PAIR RESTORED TO LIVE]</b>\n<code>${sym}</code> is now restored to <b>Live Real Trading</b>! Consecutive loss counters reset.`);
         } else {
           await sendTelegramMessage(`⚠️ Error restoring pair: ${res ? res.error : 'Unknown'}`);
+        }
+      }
+      break;
+    }
+
+    case '/promote':
+    case '/graduate': {
+      if (!arg1) {
+        await sendTelegramMessage(`⚠️ Please specify symbol. Example: <code>/promote CRASH150N</code>`);
+        break;
+      }
+      const sym = arg1.toUpperCase();
+      if (handlers.promotePair) {
+        const res = handlers.promotePair(sym);
+        if (res && res.success) {
+          await sendTelegramMessage([
+            `🎓 🟢 <b>[PAIR OFFICIALLY PROMOTED TO LIVE TRADING]</b>`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `<b>Asset:</b> <code>${sym}</code> (${res.name || sym})`,
+            `<b>Status:</b> <b>GRADUATED FROM INCUBATION</b>`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `🛡️ <b>Live Safety Net:</b> If this pair takes 2 consecutive losses on its live run, it will automatically demote back to Incubation Sandbox.`,
+            `🚀 <i>Pair will now execute signals with Real Live Capital.</i>`
+          ].join('\n'));
+        } else {
+          await sendTelegramMessage(`⚠️ Error promoting pair: ${res ? res.error : 'Unknown'}`);
+        }
+      }
+      break;
+    }
+
+    case '/demote': {
+      if (!arg1) {
+        await sendTelegramMessage(`⚠️ Please specify symbol. Example: <code>/demote CRASH150N</code>`);
+        break;
+      }
+      const sym = arg1.toUpperCase();
+      const reason = arg2 ? args.slice(2).join(' ') : 'Manual demotion via Telegram';
+      if (handlers.demotePair) {
+        const res = handlers.demotePair(sym, reason);
+        if (res && res.success) {
+          await sendTelegramMessage([
+            `🔬 🟡 <b>[PAIR DEMOTED TO INCUBATION SANDBOX]</b>`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `<b>Asset:</b> <code>${sym}</code> (${res.name || sym})`,
+            `<b>Status:</b> <b>MONITOR-ONLY PAPER FORWARD TEST ($0 RISK)</b>`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `Reason: <i>${reason}</i>`
+          ].join('\n'));
+        } else {
+          await sendTelegramMessage(`⚠️ Error demoting pair: ${res ? res.error : 'Unknown'}`);
         }
       }
       break;

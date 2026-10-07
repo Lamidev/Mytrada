@@ -30,7 +30,8 @@ const {
   loadShadowHistory,
   recordShadowOutcome,
   loadIncubationHistory,
-  recordIncubationOutcome
+  recordIncubationOutcome,
+  checkIncubationGraduation
 } = require('./reportManager');
 const {
   evaluateMacroExhaustion,
@@ -1163,6 +1164,36 @@ const telegramHandlers = {
 
   unquarantinePair: (symbol) => {
     return manualSetQuarantine(symbol, false);
+  },
+
+  promotePair: (symbol) => {
+    if (!config.SYMBOLS[symbol]) {
+      return { success: false, error: `Symbol ${symbol} not in configured universe.` };
+    }
+    config.SYMBOLS[symbol].monitorOnly = false;
+    const rec = getPairHealth(symbol);
+    rec.isQuarantined = false;
+    rec.consecutiveLosses = 0;
+    rec.consecutivePaperWins = 0;
+    rec.quarantineReason = null;
+    rec.quarantinedAt = null;
+    rec.isPromoted = true;
+    savePairHealthState(pairHealthState);
+    return { success: true, name: config.SYMBOLS[symbol].name };
+  },
+
+  demotePair: (symbol, reason = 'Demoted back to Incubation Sandbox') => {
+    if (!config.SYMBOLS[symbol]) {
+      return { success: false, error: `Symbol ${symbol} not in configured universe.` };
+    }
+    config.SYMBOLS[symbol].monitorOnly = true;
+    const rec = getPairHealth(symbol);
+    rec.isQuarantined = true;
+    rec.quarantineReason = reason;
+    rec.quarantinedAt = new Date().toISOString();
+    rec.isPromoted = false;
+    savePairHealthState(pairHealthState);
+    return { success: true, name: config.SYMBOLS[symbol].name };
   }
 };
 
@@ -1392,6 +1423,29 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
 
         await sendTelegramMessage(tpAlert);
 
+        // 🎓 Auto-evaluate Incubation Graduation (3-Gate Proof of Edge)
+        try {
+          const grad = checkIncubationGraduation(symbol);
+          if (grad.allPassed) {
+            const gradAlert = [
+              `🎓 👑 <b>[INCUBATION GRADUATION ACHIEVED: ${symbol}]</b>`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+              `<b>Achievement:</b> All 3 Incubation Gates Passed!`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `✅ <b>Gate 1 (Min 5 Trades):</b> <code>${grad.total} Trades Completed</code>`,
+              `✅ <b>Gate 2 (≥60% Win Rate):</b> <code>${grad.winRate}% WR (${grad.wins}W / ${grad.losses}L)</code>`,
+              `✅ <b>Gate 3 (Multi-Day Proof):</b> <code>${grad.daysCount} Distinct Trading Days</code>`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `🚀 <i>Pair has proven statistical edge in forward sandbox!</i>`,
+              `💡 <b>To promote to Live Trading, send:</b> <code>/promote ${symbol}</code>`
+            ].join('\n');
+            await sendTelegramMessage(gradAlert);
+          }
+        } catch (e) {
+          console.warn('[runner] Graduation check error:', e.message);
+        }
+
         updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
         changed = true;
         continue;
@@ -1434,6 +1488,27 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         ].join('\n');
 
         await sendTelegramMessage(slAlert);
+
+        // 🎓 Auto-evaluate Incubation Graduation (SL could still qualify if overall WR >= 60%)
+        try {
+          const grad = checkIncubationGraduation(symbol);
+          if (grad.allPassed) {
+            const gradAlert = [
+              `🎓 👑 <b>[INCUBATION GRADUATION ACHIEVED: ${symbol}]</b>`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+              `<b>Achievement:</b> All 3 Incubation Gates Passed!`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `✅ <b>Gate 1 (Min 5 Trades):</b> <code>${grad.total} Trades Completed</code>`,
+              `✅ <b>Gate 2 (≥60% Win Rate):</b> <code>${grad.winRate}% WR (${grad.wins}W / ${grad.losses}L)</code>`,
+              `✅ <b>Gate 3 (Multi-Day Proof):</b> <code>${grad.daysCount} Distinct Trading Days</code>`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `🚀 <i>Pair has proven statistical edge in forward sandbox!</i>`,
+              `💡 <b>To promote to Live Trading, send:</b> <code>/promote ${symbol}</code>`
+            ].join('\n');
+            await sendTelegramMessage(gradAlert);
+          }
+        } catch (e) {}
 
         updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
         changed = true;
@@ -2000,7 +2075,11 @@ async function monitorMarket() {
   }
 
   // Check if daily profit target is locked for the rest of the day
-  const hasPaperEngineActive = (dynamicState.activeStrategy === 'BOTH' && !dynamicState.is6proPaused) || (dynamicState.activeStrategy === 'STRATEGY_6_PRO' && dynamicState.mode6pro === 'PAPER');
+  const hasPaperEngineActive = !dynamicState.isManuallyPaused && (
+    (dynamicState.activeStrategy === 'BOTH' && (!dynamicState.is5bPaused || !dynamicState.is6proPaused)) ||
+    (dynamicState.activeStrategy === 'STRATEGY_6_PRO' && !dynamicState.is6proPaused) ||
+    (dynamicState.activeStrategy === 'STRATEGY_5B' && !dynamicState.is5bPaused)
+  );
 
   if (dynamicState.dailyTargetLocked && !hasPaperEngineActive) {
     console.log(`\n🎯 [DAILY TARGET LOCKED] Profit target reached! Paused until midnight. Monitoring active positions...`);
@@ -2091,22 +2170,32 @@ async function monitorMarket() {
           });
         }
         if (!dynamicState.is6proPaused) {
+          const is6proLocked = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
+          const is6proPaper = is6proLocked || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
+          let displayName = 'Strategy 6 Pro';
+          if (is6proLocked) displayName = 'Strategy 6 Pro (Target-Locked Paper)';
+
           strategiesToRun.push({
             id: '6PRO',
             name: 'STRATEGY_6_PRO',
-            displayName: 'Strategy 6 Pro',
+            displayName,
             fn: detectStrategy6ProSetup,
-            isPaper: (dynamicState.mode6pro || 'PAPER') === 'PAPER'
+            isPaper: is6proPaper
           });
         }
       } else if (dynamicState.activeStrategy === 'STRATEGY_6_PRO') {
+        const is6proLocked = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
         if (!dynamicState.is6proPaused) {
+          const is6proPaper = is6proLocked || (dynamicState.executionMode || 'PAPER') === 'PAPER';
+          let displayName = 'Strategy 6 Pro';
+          if (is6proLocked) displayName = 'Strategy 6 Pro (Target-Locked Paper)';
+
           strategiesToRun.push({
             id: '6PRO',
             name: 'STRATEGY_6_PRO',
-            displayName: 'Strategy 6 Pro',
+            displayName,
             fn: detectStrategy6ProSetup,
-            isPaper: (dynamicState.executionMode || 'PAPER') === 'PAPER'
+            isPaper: is6proPaper
           });
         }
       } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
