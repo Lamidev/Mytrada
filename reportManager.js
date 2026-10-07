@@ -538,10 +538,25 @@ function formatReportTelegramHTML(report) {
 
   const startBalLabel = report.period === 'WEEKLY' ? "Previous Week Start Balance:" : "Yesterday's Start Balance:";
 
+  let stratName = "Strategy 5B Enhanced (Value-Zone Momentum Sniper)";
+  try {
+    const dynamicStatePath = path.join(CACHE_DIR, 'dynamic_state.json');
+    if (fs.existsSync(dynamicStatePath)) {
+      const ds = JSON.parse(fs.readFileSync(dynamicStatePath, 'utf8'));
+      if (ds.mode6pro === 'LIVE' && ds.mode5b === 'PAPER') {
+        stratName = "Strategy 6 Pro Live (GodEyes SMC) | 5B Paper Sandbox";
+      } else if (ds.mode6pro === 'LIVE' || ds.activeStrategy === 'STRATEGY_6_PRO') {
+        stratName = "Strategy 6 Pro (GodEyes SMC Institutional Sniper)";
+      } else if (ds.activeStrategy === 'BOTH') {
+        stratName = "Dual Engine (5B Live / 6 Pro Paper)";
+      }
+    }
+  } catch (e) {}
+
   const lines = [
     `👑 ${emojiHeader} <b>[MYTRADA ${periodTitle}]</b>`,
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-    `<b>Strategy:</b> <code>Strategy 5B Enhanced (Value-Zone Momentum Sniper)</code>`,
+    `<b>Strategy:</b> <code>${stratName}</code>`,
     `<b>Positions Closed:</b> <code>${report.closedCount}</code>`,
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
     `🟢 <b>Winning Trades:</b> <code>${report.wins} Wins</code>`,
@@ -589,20 +604,45 @@ function formatReportTelegramHTML(report) {
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
   }
 
-  // ── INCUBATION PAIR FOOTPRINT AUDIT ──
+  // ── PAPER FORWARD TEST / INCUBATION AUDIT SUMMARY ──
   const incubationHistory = loadIncubationHistory();
-  const incTargetDate = report.targetDateStr || new Date().toISOString().split('T')[0];
+  const incTargetDate = report.date || report.targetDateStr || new Date().toISOString().split('T')[0];
   const incToday = incubationHistory.filter(s => getDateString(s.time) === incTargetDate);
   if (incToday.length > 0) {
     const incWins = incToday.filter(s => s.outcome === 'WIN');
     const incLosses = incToday.filter(s => s.outcome === 'LOSS');
-    const incWinRate = ((incWins.length / incToday.length) * 100).toFixed(1);
-    const incProfitUSD = incWins.reduce((acc, s) => acc + (s.pnlUSD || 0), 0) - incLosses.reduce((acc, s) => acc + (Math.abs(s.pnlUSD) || 0), 0);
+    const incWinRate = incToday.length > 0 ? ((incWins.length / incToday.length) * 100).toFixed(1) : '0.0';
+    const incProfitUSD = incToday.reduce((acc, s) => acc + (s.pnlUSD || 0), 0);
+    const incNetR = incToday.reduce((acc, s) => acc + (s.rMultiple || s.pnlR || 0), 0);
 
-    lines.push(`🔬 <b>INCUBATION SANDBOX AUDIT (PAPER MONITORING):</b>`);
-    lines.push(`• <b>Paper Scalps Today:</b> <code>${incToday.length} Trades (${incWins.length}W / ${incLosses.length}L • ${incWinRate}% WR)</code>`);
-    lines.push(`• <b>Theoretical Net PnL:</b> <code>${incProfitUSD >= 0 ? '+' : ''}$${incProfitUSD.toFixed(2)} USD</code>`);
-    lines.push(`• <b>Status:</b> <i>Zero capital impact. Footprint tracking active.</i>`);
+    // Group by symbol
+    const incPerSymbol = {};
+    incToday.forEach(s => {
+      const sym = s.symbol || 'OTHER';
+      if (!incPerSymbol[sym]) incPerSymbol[sym] = { wins: 0, losses: 0, total: 0, pnlUSD: 0, pnlR: 0 };
+      incPerSymbol[sym].total++;
+      if (s.outcome === 'WIN') incPerSymbol[sym].wins++;
+      else if (s.outcome === 'LOSS') incPerSymbol[sym].losses++;
+      incPerSymbol[sym].pnlUSD += (s.pnlUSD || 0);
+      incPerSymbol[sym].pnlR += (s.rMultiple || s.pnlR || 0);
+    });
+
+    lines.push(`🔬 <b>[PAPER FORWARD TEST — DAILY SUMMARY]</b>`);
+    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+    lines.push(`🧪 <b>Paper Sandbox Trades:</b> <code>${incToday.length} Trades (${incWins.length}W / ${incLosses.length}L • ${incWinRate}% WR)</code>`);
+    lines.push(`📈 <b>Theoretical Net PnL:</b> <code>${incProfitUSD >= 0 ? '+' : ''}$${incProfitUSD.toFixed(2)} USD (${incNetR >= 0 ? '+' : ''}${incNetR.toFixed(1)}R)</code>`);
+    lines.push(`💵 <b>Live Capital Impact:</b> <code>$0.00 USD (Real Risk Zero)</code>`);
+    
+    const symKeys = Object.keys(incPerSymbol);
+    if (symKeys.length > 0) {
+      lines.push(`📊 <b>Paper Setups by Pair:</b>`);
+      symKeys.forEach(sym => {
+        const item = incPerSymbol[sym];
+        const sign = item.pnlUSD >= 0 ? '+' : '-';
+        const emoji = item.pnlUSD > 0 ? '🟢' : (item.pnlUSD < 0 ? '🔴' : '⚪');
+        lines.push(`${emoji} <b>${sym}:</b> <code>${item.total} Trades (${item.wins}W / ${item.losses}L) • ${sign}$${Math.abs(item.pnlUSD).toFixed(2)} (${sign}${Math.abs(item.pnlR).toFixed(1)}R)</code>`);
+      });
+    }
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
   }
 

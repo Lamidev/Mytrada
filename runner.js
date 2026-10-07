@@ -184,11 +184,11 @@ function loadDynamicState() {
         saveDynamicState(data);
       }
       if (!data.mode5b) {
-        data.mode5b = 'LIVE';
+        data.mode5b = 'PAPER';
         saveDynamicState(data);
       }
       if (!data.mode6pro) {
-        data.mode6pro = 'PAPER';
+        data.mode6pro = 'LIVE';
         saveDynamicState(data);
       }
       if (data.is5bPaused === undefined) data.is5bPaused = false;
@@ -209,10 +209,10 @@ function loadDynamicState() {
     customRiskPercent: null,
     portfolioConsecutiveLosses: 0,
     portfolioPauseUntil: 0,
-    activeStrategy: 'NONE',
+    activeStrategy: 'BOTH',
     executionMode: 'LIVE',
-    mode5b: 'LIVE',
-    mode6pro: 'PAPER',
+    mode5b: 'PAPER',
+    mode6pro: 'LIVE',
     is5bPaused: false,
     is6proPaused: false
   };
@@ -225,6 +225,17 @@ function saveDynamicState(state) {
     fs.writeFileSync(DYNAMIC_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
   } catch (e) {
     console.warn("[runner] Warning saving dynamic state:", e.message);
+  }
+}
+
+// ── AUTO-RECONCILIATION FOR 6 PRO LIVE LAUNCH ──
+const RECONCILED_FLAG_FILE = path.join(CACHE_DIR, 'reconciled_6pro_oct7.json');
+if (!fs.existsSync(RECONCILED_FLAG_FILE)) {
+  try {
+    const { reconcileLedger } = require('./reconcile6ProLedger');
+    reconcileLedger();
+  } catch (err) {
+    console.warn("[runner] Auto-reconciliation notice:", err.message);
   }
 }
 
@@ -839,7 +850,7 @@ const telegramHandlers = {
     if (dynamicState.activeStrategy === 'BOTH') {
       const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (dynamicState.mode5b === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
       const mode6Label = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.mode6pro === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      stratBadge = `⚡ <b>DUAL ENGINE</b> (5B: ${mode5bLabel} | 6 Pro: ${mode6Label})`;
+      stratBadge = `⚡ <b>DUAL ENGINE</b> (6 Pro: ${mode6Label} | 5B: ${mode5bLabel})`;
     } else if (dynamicState.activeStrategy === 'STRATEGY_6_PRO') {
       const mode6Label = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.executionMode === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
       stratBadge = `👑 <b>Strategy 6 Pro</b> (${mode6Label})`;
@@ -1047,8 +1058,8 @@ const telegramHandlers = {
     dynamicState.is5bPaused = false;
     dynamicState.is6proPaused = false;
     if (strat === 'BOTH') {
-      dynamicState.mode5b = 'LIVE';
-      dynamicState.mode6pro = 'PAPER';
+      dynamicState.mode5b = 'PAPER';
+      dynamicState.mode6pro = 'LIVE';
     }
     saveDynamicState(dynamicState);
   },
@@ -2114,6 +2125,9 @@ async function monitorMarket() {
           });
         }
       }
+
+      // 👑 Whichever strategy is LIVE runs FIRST and dispatches ahead of paper/test
+      strategiesToRun.sort((a, b) => (a.isPaper === b.isPaper ? 0 : a.isPaper ? 1 : -1));
 
       // 👑 Execution window: evaluate ONLY the most recently closed 5M bar (offset=1)
       const LOOKBACK_BARS = 1;

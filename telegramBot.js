@@ -317,8 +317,8 @@ async function handleCommand(rawText, handlers) {
         await sendTelegramMessage([
           `⚡ <b>[DUAL STRATEGY ENGINE ACTIVATED]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `• 🟢 <b>Strategy 5B:</b> <b>LIVE REAL TRADING</b> (Account Equity)`,
-          `• 🔬 <b>Strategy 6 Pro:</b> <b>PAPER FORWARD TEST</b> ($0 Risk Sandbox)`,
+          `• 👑 <b>Strategy 6 Pro:</b> <b>LIVE REAL TRADING</b> (Account Equity)`,
+          `• 🔬 <b>Strategy 5B:</b> <b>PAPER FORWARD TEST</b> ($0 Risk Sandbox)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<i>Both engines are actively scanning in parallel. Control each anytime with /pause 5b or /pause 6pro.</i>`
         ].join('\n'));
@@ -369,12 +369,20 @@ async function handleCommand(rawText, handlers) {
         await sendTelegramMessage(`🥇 <b>Gold Scalper Mode updated to:</b> <code>${isPaper ? '🔬 PAPER FORWARD TEST ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>`);
       } else if (mChoice.includes('5b') && mTarget) {
         const isPaper = mTarget.includes('paper') || mTarget.includes('test');
-        if (handlers.setStrategyMode) handlers.setStrategyMode('5b', isPaper ? 'PAPER' : 'LIVE');
-        await sendTelegramMessage(`🚀 <b>Strategy 5B Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>`);
+        if (handlers.setStrategyMode) {
+          handlers.setStrategyMode('5b', isPaper ? 'PAPER' : 'LIVE');
+          if (!isPaper) handlers.setStrategyMode('6pro', 'PAPER');
+        }
+        const extraNote = !isPaper ? '\n👑 <i>Strategy 6 Pro automatically flipped to 🔬 PAPER SANDBOX</i>' : '';
+        await sendTelegramMessage(`🚀 <b>Strategy 5B Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>${extraNote}`);
       } else if (mChoice.includes('6') && mTarget) {
         const isPaper = mTarget.includes('paper') || mTarget.includes('test');
-        if (handlers.setStrategyMode) handlers.setStrategyMode('6pro', isPaper ? 'PAPER' : 'LIVE');
-        await sendTelegramMessage(`👑 <b>Strategy 6 Pro Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>`);
+        if (handlers.setStrategyMode) {
+          handlers.setStrategyMode('6pro', isPaper ? 'PAPER' : 'LIVE');
+          if (!isPaper) handlers.setStrategyMode('5b', 'PAPER');
+        }
+        const extraNote = !isPaper ? '\n🚀 <i>Strategy 5B automatically flipped to 🔬 PAPER SANDBOX</i>' : '';
+        await sendTelegramMessage(`👑 <b>Strategy 6 Pro Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>${extraNote}`);
       } else if (mChoice.includes('paper') || mChoice.includes('test') || mChoice.includes('sandbox')) {
         if (handlers.setExecutionMode) handlers.setExecutionMode('PAPER');
         await sendTelegramMessage(`🔬 <b>[GLOBAL MODE ➔ PAPER SANDBOX]</b>\nAll signals across all strategies will now run as <b>Forward Test Setups ($0 real equity at risk)</b>.`);

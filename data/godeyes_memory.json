@@ -262,9 +262,9 @@
   "BOOM600": {
     "name": "Boom 600 Index",
     "mode": "BOOM",
-    "pdh": 5229.67,
-    "pdl": 5096.01,
-    "rangeSpan": 133.65999999999985,
+    "pdh": 5241.58,
+    "pdl": 5103.545,
+    "rangeSpan": 138.03499999999985,
     "trendRegime": "BEARISH_MOMENTUM",
     "healthRating": "🟡 ACTIVE",
     "stats": {
@@ -373,7 +373,8 @@
         "outcome": "WIN",
         "rMultiple": 1.3
       }
-    ]
+    ],
+    "lastUpdated": 1791350251718
   },
   "BOOM1000": {
     "name": "Boom 1000 Index",
@@ -422,13 +423,13 @@
     "trendRegime": "BULLISH_MOMENTUM",
     "healthRating": "👑 ELITE MVP RUNNER",
     "stats": {
-      "wins": 8,
+      "wins": 9,
       "losses": 2,
       "breakevens": 0,
-      "totalTrades": 10,
-      "winRate": 80,
-      "netR": 8.4,
-      "netUSD": 570.13
+      "totalTrades": 11,
+      "winRate": 81.8,
+      "netR": 9.7,
+      "netUSD": 677.17
     },
     "recentTrades": [
       {
@@ -508,6 +509,14 @@
         "type": "BUY",
         "entry": 2613.05,
         "exit": 2643.71,
+        "outcome": "WIN",
+        "rMultiple": 1.3
+      },
+      {
+        "date": "2026-10-07",
+        "type": "BUY",
+        "entry": 2716.53,
+        "exit": 2752.66,
         "outcome": "WIN",
         "rMultiple": 1.3
       }
