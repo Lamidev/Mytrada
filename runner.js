@@ -229,7 +229,7 @@ function saveDynamicState(state) {
 }
 
 // ── AUTO-RECONCILIATION FOR 6 PRO LIVE LAUNCH ──
-const RECONCILED_FLAG_FILE = path.join(CACHE_DIR, 'reconciled_6pro_oct7.json');
+const RECONCILED_FLAG_FILE = path.join(CACHE_DIR, 'reconciled_6pro_oct7_v2.json');
 if (!fs.existsSync(RECONCILED_FLAG_FILE)) {
   try {
     const { reconcileLedger } = require('./reconcile6ProLedger');

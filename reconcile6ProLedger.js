@@ -17,7 +17,7 @@ const TRADE_HISTORY_FILE = path.join(CACHE_DIR, 'trade_history.json');
 const DYNAMIC_STATE_FILE = path.join(CACHE_DIR, 'dynamic_state.json');
 const CIRCUIT_BREAKER_FILE = path.join(CACHE_DIR, 'circuit_breaker_state.json');
 const GODEYES_MEMORY_FILE = path.join(DATA_DIR, 'godeyes_memory.json');
-const RECONCILED_FLAG_FILE = path.join(CACHE_DIR, 'reconciled_6pro_oct7.json');
+const RECONCILED_FLAG_FILE = path.join(CACHE_DIR, 'reconciled_6pro_oct7_v2.json');
 
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
