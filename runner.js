@@ -1170,6 +1170,9 @@ const telegramHandlers = {
     if (!config.SYMBOLS[symbol]) {
       return { success: false, error: `Symbol ${symbol} not in configured universe.` };
     }
+    if (!config.SYMBOLS[symbol].monitorOnly) {
+      return { success: false, error: `${symbol} is already an active Live Trading pair!` };
+    }
     config.SYMBOLS[symbol].monitorOnly = false;
     const rec = getPairHealth(symbol);
     rec.isQuarantined = false;
@@ -1178,6 +1181,7 @@ const telegramHandlers = {
     rec.quarantineReason = null;
     rec.quarantinedAt = null;
     rec.isPromoted = true;
+    rec.graduationAlertSent = false;
     savePairHealthState(pairHealthState);
     return { success: true, name: config.SYMBOLS[symbol].name };
   },
@@ -1192,6 +1196,7 @@ const telegramHandlers = {
     rec.quarantineReason = reason;
     rec.quarantinedAt = new Date().toISOString();
     rec.isPromoted = false;
+    rec.graduationAlertSent = false;
     savePairHealthState(pairHealthState);
     return { success: true, name: config.SYMBOLS[symbol].name };
   }
@@ -1409,38 +1414,51 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         await updatePairHealthOnPaperClose(symbol, 'WIN');
         recordSymbolTradeOutcome(symbol, 'WIN', true);
 
+        const isMonitorOnly = config.SYMBOLS[symbol] && config.SYMBOLS[symbol].monitorOnly;
+        const stratName = trade.strategy || 'Paper Sandbox';
+        const bannerTitle = isMonitorOnly 
+          ? `[MYTRADA INCUBATION OUTCOME — TP HIT (+1.3R)]`
+          : `[MYTRADA PAPER OUTCOME — ${stratName.toUpperCase()} — TP HIT (+1.3R)]`;
+
         const tpAlert = [
-          `🔬 🟢 <b>[MYTRADA INCUBATION OUTCOME — TP HIT (+1.3R)]</b>`,
+          `🔬 🟢 <b>${bannerTitle}</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Strategy:</b> <code>${stratName}</code>`,
           `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `🎯 <b>Outcome:</b> <code>+1.3R (+$${compRisk.rewardUSD.toFixed(2)} USD Paper Return)</code>`,
           `🎯 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> ➔ 🏆 <b>TP:</b> <code>${trade.takeProfit.toFixed(2)}</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `🧪 <i>Paper Incubation trade closed. Real account equity ($${getCurrentAccountBalance().toFixed(2)}) unaffected.</i>`
+          `🧪 <i>Paper trade closed. Real account equity ($${getCurrentAccountBalance().toFixed(2)}) unaffected.</i>`
         ].join('\n');
 
         await sendTelegramMessage(tpAlert);
 
-        // 🎓 Auto-evaluate Incubation Graduation (3-Gate Proof of Edge)
+        // 🎓 Auto-evaluate Incubation Graduation ONLY for actual monitorOnly incubation pairs
         try {
-          const grad = checkIncubationGraduation(symbol);
-          if (grad.allPassed) {
-            const gradAlert = [
-              `🎓 👑 <b>[INCUBATION GRADUATION ACHIEVED: ${symbol}]</b>`,
-              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-              `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-              `<b>Achievement:</b> All 3 Incubation Gates Passed!`,
-              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-              `✅ <b>Gate 1 (Min 5 Trades):</b> <code>${grad.total} Trades Completed</code>`,
-              `✅ <b>Gate 2 (≥60% Win Rate):</b> <code>${grad.winRate}% WR (${grad.wins}W / ${grad.losses}L)</code>`,
-              `✅ <b>Gate 3 (Multi-Day Proof):</b> <code>${grad.daysCount} Distinct Trading Days</code>`,
-              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-              `🚀 <i>Pair has proven statistical edge in forward sandbox!</i>`,
-              `💡 <b>To promote to Live Trading, send:</b> <code>/promote ${symbol}</code>`
-            ].join('\n');
-            await sendTelegramMessage(gradAlert);
+          const symConf = config.SYMBOLS[symbol];
+          const rec = getPairHealth(symbol);
+          if (symConf && symConf.monitorOnly && !rec.graduationAlertSent) {
+            const grad = checkIncubationGraduation(symbol);
+            if (grad.allPassed) {
+              rec.graduationAlertSent = true;
+              savePairHealthState(pairHealthState);
+              const gradAlert = [
+                `🎓 👑 <b>[INCUBATION GRADUATION ACHIEVED: ${symbol}]</b>`,
+                `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+                `<b>Asset:</b> <code>${symbol}</code> (${symConf.name || symbol})`,
+                `<b>Achievement:</b> All 3 Incubation Gates Passed!`,
+                `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+                `✅ <b>Gate 1 (Min 5 Trades):</b> <code>${grad.total} Trades Completed</code>`,
+                `✅ <b>Gate 2 (≥60% Win Rate):</b> <code>${grad.winRate}% WR (${grad.wins}W / ${grad.losses}L)</code>`,
+                `✅ <b>Gate 3 (Multi-Day Proof):</b> <code>${grad.daysCount} Distinct Trading Days</code>`,
+                `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+                `🚀 <i>Pair has proven statistical edge in forward sandbox!</i>`,
+                `💡 <b>To promote to Live Trading, send:</b> <code>/promote ${symbol}</code>`
+              ].join('\n');
+              await sendTelegramMessage(gradAlert);
+            }
           }
         } catch (e) {
           console.warn('[runner] Graduation check error:', e.message);
@@ -1475,38 +1493,51 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         await updatePairHealthOnPaperClose(symbol, 'LOSS');
         recordSymbolTradeOutcome(symbol, 'LOSS', true);
 
+        const isMonitorOnly = config.SYMBOLS[symbol] && config.SYMBOLS[symbol].monitorOnly;
+        const stratName = trade.strategy || 'Paper Sandbox';
+        const bannerTitle = isMonitorOnly 
+          ? `[MYTRADA INCUBATION OUTCOME — SL HIT (-1.0R)]`
+          : `[MYTRADA PAPER OUTCOME — ${stratName.toUpperCase()} — SL HIT (-1.0R)]`;
+
         const slAlert = [
-          `🔬 🔴 <b>[MYTRADA INCUBATION OUTCOME — SL HIT (-1.0R)]</b>`,
+          `🔬 🔴 <b>${bannerTitle}</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Strategy:</b> <code>${stratName}</code>`,
           `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💸 <b>Outcome:</b> <code>-1.0R (-$${compRisk.riskUSD.toFixed(2)} USD Paper Loss)</code>`,
           `🔥 <b>Entry:</b> <code>${trade.entryPrice.toFixed(2)}</code> ➔ 🛡️ <b>SL:</b> <code>${trade.stopLoss.toFixed(2)}</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `🧪 <i>Paper Incubation trade closed. Real account equity ($${getCurrentAccountBalance().toFixed(2)}) unaffected.</i>`
+          `🧪 <i>Paper trade closed. Real account equity ($${getCurrentAccountBalance().toFixed(2)}) unaffected.</i>`
         ].join('\n');
 
         await sendTelegramMessage(slAlert);
 
-        // 🎓 Auto-evaluate Incubation Graduation (SL could still qualify if overall WR >= 60%)
+        // 🎓 Auto-evaluate Incubation Graduation ONLY for actual monitorOnly incubation pairs
         try {
-          const grad = checkIncubationGraduation(symbol);
-          if (grad.allPassed) {
-            const gradAlert = [
-              `🎓 👑 <b>[INCUBATION GRADUATION ACHIEVED: ${symbol}]</b>`,
-              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-              `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-              `<b>Achievement:</b> All 3 Incubation Gates Passed!`,
-              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-              `✅ <b>Gate 1 (Min 5 Trades):</b> <code>${grad.total} Trades Completed</code>`,
-              `✅ <b>Gate 2 (≥60% Win Rate):</b> <code>${grad.winRate}% WR (${grad.wins}W / ${grad.losses}L)</code>`,
-              `✅ <b>Gate 3 (Multi-Day Proof):</b> <code>${grad.daysCount} Distinct Trading Days</code>`,
-              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-              `🚀 <i>Pair has proven statistical edge in forward sandbox!</i>`,
-              `💡 <b>To promote to Live Trading, send:</b> <code>/promote ${symbol}</code>`
-            ].join('\n');
-            await sendTelegramMessage(gradAlert);
+          const symConf = config.SYMBOLS[symbol];
+          const rec = getPairHealth(symbol);
+          if (symConf && symConf.monitorOnly && !rec.graduationAlertSent) {
+            const grad = checkIncubationGraduation(symbol);
+            if (grad.allPassed) {
+              rec.graduationAlertSent = true;
+              savePairHealthState(pairHealthState);
+              const gradAlert = [
+                `🎓 👑 <b>[INCUBATION GRADUATION ACHIEVED: ${symbol}]</b>`,
+                `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+                `<b>Asset:</b> <code>${symbol}</code> (${symConf.name || symbol})`,
+                `<b>Achievement:</b> All 3 Incubation Gates Passed!`,
+                `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+                `✅ <b>Gate 1 (Min 5 Trades):</b> <code>${grad.total} Trades Completed</code>`,
+                `✅ <b>Gate 2 (≥60% Win Rate):</b> <code>${grad.winRate}% WR (${grad.wins}W / ${grad.losses}L)</code>`,
+                `✅ <b>Gate 3 (Multi-Day Proof):</b> <code>${grad.daysCount} Distinct Trading Days</code>`,
+                `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+                `🚀 <i>Pair has proven statistical edge in forward sandbox!</i>`,
+                `💡 <b>To promote to Live Trading, send:</b> <code>/promote ${symbol}</code>`
+              ].join('\n');
+              await sendTelegramMessage(gradAlert);
+            }
           }
         } catch (e) {}
 
