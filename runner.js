@@ -859,6 +859,8 @@ const telegramHandlers = {
       stratBadge = `🚀 <b>Strategy 5B Enhanced</b> (${mode5bLabel})`;
     }
 
+    const liveTradesCount = activeTrades.filter(t => !t.isIncubation).length;
+    const paperTradesCount = activeTrades.filter(t => t.isIncubation).length;
     const maxLiveLimit = config.MAX_CONCURRENT_LIVE_TRADES || 3;
     const posLabel = paperTradesCount > 0 
       ? `${liveTradesCount}/${maxLiveLimit} Live | ${paperTradesCount} Paper`
@@ -2553,3 +2555,5 @@ main().catch(async (err) => {
   console.error("[runner fatal]", err);
   await notifyShutdown(`Fatal Startup Error: ${err.message}`);
 });
+
+module.exports = { telegramHandlers };
