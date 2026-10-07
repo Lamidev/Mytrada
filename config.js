@@ -43,6 +43,7 @@ module.exports = {
   MIN_RISK_AMOUNT_USD: 3.0,             // Safety floor: risk never drops below $3.00
   DYNAMIC_RISK_COMPOUNDING: true,       // 👑 Auto-adjust risk and lot sizes weekly based on account equity
   COMPOUNDING_FREQUENCY: "WEEKLY",      // 👑 Weekly End-of-Week (Sunday Midnight) Re-anchoring
+  MAX_CONCURRENT_LIVE_TRADES: 3,        // 👑 Max 3 Concurrent Live Positions (caps floating risk at ~7.5%-9%)
   
   // Timezone Settings (WAT / West Africa Time / GMT+1)
   TIMEZONE_OFFSET_HOURS: 1,             // 12:00 AM midnight daily report & date rollover triggers in trader local time

@@ -180,6 +180,24 @@ function reconcileLedger() {
       pnlUSD: 107.04,
       pnlR: 1.3,
       strategy: "Strategy 6 Pro"
+    },
+    {
+      setupId: "CRASH300N_BUY_2026-10-07T05:30:00Z",
+      symbol: "CRASH300N",
+      type: "bullish",
+      entryPrice: 2719.26,
+      stopLoss: 2694.41,
+      takeProfit: 2751.58,
+      confluenceScore: 10,
+      signalTime: "2026-10-07T05:30:00.000Z",
+      status: "CLOSED",
+      triggeredTime: "2026-10-07T05:30:00.000Z",
+      closedTime: "2026-10-07T06:15:00.000Z",
+      outcome: "WIN",
+      exitPrice: 2751.58,
+      pnlUSD: 107.04,
+      pnlR: 1.3,
+      strategy: "Strategy 6 Pro"
     }
   ];
 
@@ -188,14 +206,18 @@ function reconcileLedger() {
 
   // Verify resulting balance
   let finalCumulativePnL = 0;
+  let todayPnL = 0;
   fullReconciledHistory.forEach(t => {
     if (t.status === 'CLOSED') finalCumulativePnL += (t.pnlUSD || 0);
+  });
+  trades6ProToday.forEach(t => {
+    todayPnL += (t.pnlUSD || 0);
   });
   const finalBalance = baseDeposit + finalCumulativePnL;
 
   console.log(`✅ [TRADE HISTORY RECONCILED] Total closed trades: ${fullReconciledHistory.length}`);
   console.log(`💵 Starting Balance (Oct 07): $${targetYesterdayBalance.toFixed(2)} USD`);
-  console.log(`📈 Today's Net PnL (6 Pro):    -$32.94 USD (2W / 3L)`);
+  console.log(`📈 Today's Net PnL (6 Pro):    +$${todayPnL.toFixed(2)} USD (3W / 3L • +0.9R)`);
   console.log(`💰 New Account Equity:         $${finalBalance.toFixed(2)} USD`);
 
   // 2. Update dynamic state

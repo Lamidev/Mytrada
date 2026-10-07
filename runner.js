@@ -859,11 +859,10 @@ const telegramHandlers = {
       stratBadge = `🚀 <b>Strategy 5B Enhanced</b> (${mode5bLabel})`;
     }
 
-    const liveTradesCount = activeTrades.filter(t => !t.isIncubation).length;
-    const paperTradesCount = activeTrades.filter(t => t.isIncubation).length;
+    const maxLiveLimit = config.MAX_CONCURRENT_LIVE_TRADES || 3;
     const posLabel = paperTradesCount > 0 
-      ? `${liveTradesCount} Live | ${paperTradesCount} Paper`
-      : `${liveTradesCount} Trade(s)`;
+      ? `${liveTradesCount}/${maxLiveLimit} Live | ${paperTradesCount} Paper`
+      : `${liveTradesCount}/${maxLiveLimit} Live Trade(s)`;
 
     const lines = [
       `👑 <b>[MYTRADA LIVE STATUS MONITOR]</b>`,
@@ -2194,10 +2193,20 @@ async function monitorMarket() {
           }
 
           // Target / Loss Locks Check
-          const isPaperMode = symConfig.monitorOnly || strat.isPaper;
+          let isPaperMode = symConfig.monitorOnly || strat.isPaper;
           if (!isPaperMode && (dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked || dynamicState.isManuallyPaused)) {
             console.log(`  [${mode}] ${symbol.padEnd(12)} | [${strat.displayName}] Setup ignored: Locked/Paused state.`);
             break;
+          }
+
+          // 🛡️ MAX CONCURRENT LIVE TRADES GUARD (3 Max Live Positions)
+          const liveActiveTrades = existingActive.filter(t => !t.isIncubation);
+          const maxLiveTrades = config.MAX_CONCURRENT_LIVE_TRADES || 3;
+          let reroutedDueToLiveCap = false;
+          if (!isPaperMode && liveActiveTrades.length >= maxLiveTrades) {
+            console.log(`  [LIVE CAP] ${symbol.padEnd(12)} | [${strat.displayName}] Max ${maxLiveTrades} live trades active (${liveActiveTrades.map(t => t.symbol).join(', ')}). Rerouting setup to Paper Sandbox.`);
+            isPaperMode = true;
+            reroutedDueToLiveCap = true;
           }
 
           // ── NEW SIGNAL — FIRE ALERT ──
@@ -2222,6 +2231,10 @@ async function monitorMarket() {
               `🧪 <b>Execution Mode:</b> <code>Paper Sandbox ($0 Real Risk)</code>`,
               `💵 <b>Live Balance Protected:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`
             ];
+
+            if (reroutedDueToLiveCap) {
+              alertLines.push(`🛡️ <i>Live capacity reached (${maxLiveTrades}/${maxLiveTrades} active). Setup rerouted to Paper Sandbox to eliminate floating risk.</i>`);
+            }
 
             if (isQuarantined) {
               alertLines.push(
