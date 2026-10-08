@@ -284,6 +284,7 @@ async function handleCommand(rawText, handlers) {
         `⚡ <b>CONTROL & EMERGENCY:</b>`,
         `• <code>/stopall</code> (or <code>/halt</code>, <code>/pause</code>) ➜ Emergency complete halt: stops all strategies (Live & Paper) & Gold`,
         `• <code>/resumeall</code> (or <code>/resume</code>) ➜ Resume all strategy engines and scanners`,
+        `• <code>/resume CRASH600</code> (or <code>/unpause CRASH600</code>) ➜ Unlock paused/cooldown pair`,
         `• <code>/pause 5b</code> | <code>/pause 6pro</code> | <code>/pause gold</code> ➜ Pause specific engine`,
         `• <code>/resume 5b</code> | <code>/resume 6pro</code> | <code>/resume gold</code> ➜ Resume specific engine`,
         `• <code>/closeall</code> ➜ Close all active trades immediately at market`,
@@ -598,6 +599,25 @@ async function handleCommand(rawText, handlers) {
     case '/resumeall':
     case '/startall':
     case '/unpause': {
+      const upperSym = arg1 ? arg1.toUpperCase() : '';
+      if (config.SYMBOLS && config.SYMBOLS[upperSym]) {
+        if (handlers.resumeSymbol) {
+          const res = handlers.resumeSymbol(upperSym);
+          if (res.success) {
+            await sendTelegramMessage([
+              `▶️ 🟢 <b>[PAIR UNLOCKED: ${upperSym}]</b>`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `<b>Asset:</b> <code>${upperSym}</code> (${res.name || upperSym})`,
+              `<b>Status:</b> Lockout & circuit breaker cleared.`,
+              `🚀 <b>${upperSym}</b> is now actively scanning for high-conviction setups.`
+            ].join('\n'));
+          } else {
+            await sendTelegramMessage(`⚠️ ${res.error || 'Failed to resume symbol.'}`);
+          }
+        }
+        break;
+      }
+
       const rTarget = (command === '/resumeall' || command === '/startall') ? 'all' : (arg1 ? arg1.toLowerCase() : 'all');
       if (rTarget.includes('gold') || rTarget.includes('xau')) {
         const gState = getGoldState();

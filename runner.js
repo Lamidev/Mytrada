@@ -253,6 +253,14 @@ function loadCircuitBreakerState() {
         saveCircuitBreakerState(freshState);
         return freshState;
       }
+      // 🛠️ Auto-heal duplicate paper strike on live pairs (e.g. CRASH600)
+      if (state.symbols && state.symbols.CRASH600 && state.symbols.CRASH600.dailyLosses >= 2) {
+        state.symbols.CRASH600.dailyLosses = 1;
+        state.symbols.CRASH600.consecutiveLosses = 1;
+        state.symbols.CRASH600.pauseUntil = Math.min(state.symbols.CRASH600.pauseUntil || 0, Date.now() + 45 * 60 * 1000);
+        saveCircuitBreakerState(state);
+        console.log(`[runner] 🛠️ Auto-healed CRASH600 circuit breaker: dailyLosses reset to 1 (cleared duplicate paper strike).`);
+      }
       return state;
     } catch (e) {
       console.warn("[runner] Warning loading circuit breaker state:", e.message);
@@ -531,6 +539,15 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false) {
   }
   if (!dynamicState || dynamicState.date !== today) {
     dynamicState = loadDynamicState();
+  }
+
+  const symConfig = config.SYMBOLS[symbol];
+  const isMonitorOnly = symConfig && symConfig.monitorOnly;
+
+  // 👑 ISOLATION GUARD: Paper trades on LIVE pairs must NEVER increment real daily loss limits,
+  // trigger daily lockouts, or double-count against live trades!
+  if (isPaper && !isMonitorOnly) {
+    return;
   }
 
   if (!circuitBreakerState.symbols) circuitBreakerState.symbols = {};
@@ -1198,6 +1215,30 @@ const telegramHandlers = {
     rec.isPromoted = false;
     rec.graduationAlertSent = false;
     savePairHealthState(pairHealthState);
+    return { success: true, name: config.SYMBOLS[symbol].name };
+  },
+
+  resumeSymbol: (symbol) => {
+    symbol = symbol.toUpperCase();
+    if (!config.SYMBOLS[symbol]) {
+      return { success: false, error: `Symbol ${symbol} not in configured universe.` };
+    }
+    const today = getLocalDateStr();
+    if (!circuitBreakerState || circuitBreakerState.date !== today) {
+      circuitBreakerState = loadCircuitBreakerState();
+    }
+    if (circuitBreakerState.symbols) {
+      if (!circuitBreakerState.symbols[symbol]) {
+        circuitBreakerState.symbols[symbol] = { consecutiveLosses: 0, dailyLosses: 0, pauseUntil: 0 };
+      } else {
+        circuitBreakerState.symbols[symbol].pauseUntil = 0;
+        circuitBreakerState.symbols[symbol].consecutiveLosses = 0;
+        if (circuitBreakerState.symbols[symbol].dailyLosses >= 2) {
+          circuitBreakerState.symbols[symbol].dailyLosses = 1;
+        }
+      }
+      saveCircuitBreakerState(circuitBreakerState);
+    }
     return { success: true, name: config.SYMBOLS[symbol].name };
   }
 };
