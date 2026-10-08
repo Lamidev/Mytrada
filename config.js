@@ -62,14 +62,21 @@ module.exports = {
   // Institutional Responsive Tiered Circuit Breakers & Daily Targets
   CIRCUIT_BREAKER: {
     ENABLED: true,
-    POST_WIN_PAUSE_MINS: 35,             // 👑 35m pause post-TP to prevent climax traps
-    TIER_1_PAUSE_MINS: 45,               // 45-minute pause on symbol after 1 loss (9x M5 candles)
+    POST_WIN_PAUSE_MINS: 60,             // 👑 Universal 60m Cooldown after WIN (12x M5 bars / 1 full 1H candle cycle)
+    TIER_1_PAUSE_MINS: 60,               // 👑 Universal 60m Cooldown after LOSS (12x M5 bars / 1 full 1H candle cycle)
     TIER_2_PAUSE_MINS: 60,               // 60-minute pause on symbol after 2 consecutive losses
     MAX_DAILY_LOSSES_PER_SYMBOL: 2,      // 👑 2 Daily Losses = Halted on symbol for remainder of day
     PORTFOLIO_CONSECUTIVE_LOSS_LIMIT: 3, // 👑 3 Consecutive Losses across ANY pairs = 60m Portfolio-wide Cooldown
     PORTFOLIO_LOSS_PAUSE_MINS: 60,       // 60-minute portfolio pause duration
     DEFAULT_DAILY_PROFIT_TARGET_USD: 0,  // 👑 Default daily profit target disabled (0) — set dynamically via Telegram /target <amt>
     DEFAULT_DAILY_MAX_LOSS_USD: 0        // 👑 Default daily max loss shield disabled (0) — set dynamically via Telegram /maxloss <amt>
+  },
+
+  // Strategy 6 Pro "GodEyes" Institutional SMC Settings
+  GODEYES: {
+    ENABLED: true,
+    MAX_BUY_RANGE_PCT: 75.0,             // 👑 Reject BUY when macro range > 75% (prevents buying premium/overbought ceiling)
+    MIN_SELL_RANGE_PCT: 25.0,            // 👑 Reject SELL when macro range < 25% (prevents shorting discount/oversold floor)
   },
 
   // Bot Settings & Modes

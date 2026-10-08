@@ -2048,7 +2048,7 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
   const baseSetup = detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol);
   if (!baseSetup) return null;
 
-  // 2. Evaluate GodEyes 15% / 85% Macro Exhaustion Guard (using multi-day anchors)
+  // 2. Evaluate GodEyes 25% / 75% Macro Exhaustion Guard (Golden SMC Dealing Zone)
   const exhaustion = evaluateMacroExhaustion(symbol, baseSetup.entry, baseSetup.direction, htf1hCandles);
 
   const isBlocked = exhaustion.isExhausted;
@@ -2057,7 +2057,7 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
   return {
     ...baseSetup,
     strategy: 'Strategy 6 Pro',
-    valuationLabel: `Macro Range: ${exhaustion.rangePct.toFixed(1)}% (SMC Dealing Zone)`,
+    valuationLabel: `Macro Range: ${exhaustion.rangePct.toFixed(1)}% (SMC Dealing Zone [25%-75%])`,
     liquidityLabel: `SMC Anchor (PDH/PDL Range)`,
     isBlocked,
     blockedReason

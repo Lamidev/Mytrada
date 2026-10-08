@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
+const config = require('./config');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const MEMORY_FILE = path.join(DATA_DIR, 'godeyes_memory.json');
@@ -86,7 +87,8 @@ function getOrUpdateSessionAnchors(symbol, htf1hCandles) {
 }
 
 /**
- * Evaluates the 15% / 85% Macro Exhaustion Guard
+ * Evaluates the 25% / 75% Golden Macro Exhaustion Guard (SMC Dealing Zone)
+ * Prevents buying in the Premium / Overbought top 25% (>75%) & shorting in the Deep Discount bottom 25% (<25%)
  * @param {string} symbol 
  * @param {number} currentPrice 
  * @param {string} direction 'BUY' | 'SELL'
@@ -101,22 +103,24 @@ function evaluateMacroExhaustion(symbol, currentPrice, direction, htf1hCandles) 
   }
 
   const rangePct = ((currentPrice - pdl) / rangeSpan) * 100;
+  const maxBuyPct = (config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) || 75.0;
+  const minSellPct = (config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) || 25.0;
 
-  // 1. Climax Ceiling: Buying > 85% of macro range
-  if (direction === 'BUY' && rangePct > 85.0) {
+  // 1. Climax Ceiling: Buying > 75% of macro range (Premium Trap)
+  if (direction === 'BUY' && rangePct > maxBuyPct) {
     return {
       isExhausted: true,
       rangePct,
-      reason: `Macro Climax Exhaustion (${rangePct.toFixed(1)}% Range Ceiling > 85%)`
+      reason: `Macro Climax Exhaustion (${rangePct.toFixed(1)}% Range Ceiling > ${maxBuyPct}%)`
     };
   }
 
-  // 2. Climax Floor: Shorting < 15% of macro range
-  if (direction === 'SELL' && rangePct < 15.0) {
+  // 2. Climax Floor: Shorting < 25% of macro range (Discount Trap)
+  if (direction === 'SELL' && rangePct < minSellPct) {
     return {
       isExhausted: true,
       rangePct,
-      reason: `Macro Climax Exhaustion (${rangePct.toFixed(1)}% Range Floor < 15%)`
+      reason: `Macro Climax Exhaustion (${rangePct.toFixed(1)}% Range Floor < ${minSellPct}%)`
     };
   }
 
