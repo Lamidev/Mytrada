@@ -103,25 +103,45 @@ function evaluateMacroExhaustion(symbol, currentPrice, direction, htf1hCandles, 
   }
 
   const rangePct = ((currentPrice - pdl) / rangeSpan) * 100;
-  const maxBuyPct = customMaxBuy !== undefined ? customMaxBuy : ((config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) || 75.0);
-  const minSellPct = customMinSell !== undefined ? customMinSell : ((config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) || 25.0);
+  const maxBuyPct = customMaxBuy !== undefined ? customMaxBuy : ((config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) || 50.0);
+  const minSellPct = customMinSell !== undefined ? customMinSell : ((config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) || 50.0);
+  const minBuyPct = (config.GODEYES && config.GODEYES.MIN_BUY_RANGE_PCT) || 15.0;
+  const maxSellPct = (config.GODEYES && config.GODEYES.MAX_SELL_RANGE_PCT) || 85.0;
 
-  // 1. Climax Ceiling
-  if (direction === 'BUY' && rangePct > maxBuyPct) {
-    return {
-      isExhausted: true,
-      rangePct,
-      reason: `Macro Climax Exhaustion (${rangePct.toFixed(1)}% Range Ceiling > ${maxBuyPct}%)`
-    };
+  // 1. BUY Guard: Only BUY in Discount (< maxBuyPct) & Reject Climax Floor (< minBuyPct)
+  if (direction === 'BUY') {
+    if (rangePct > maxBuyPct) {
+      return {
+        isExhausted: true,
+        rangePct,
+        reason: `Macro Premium Buying Violation (${rangePct.toFixed(1)}% Range > ${maxBuyPct.toFixed(0)}% Equilibrium)`
+      };
+    }
+    if (rangePct < minBuyPct) {
+      return {
+        isExhausted: true,
+        rangePct,
+        reason: `Macro Climax Floor Exhaustion (${rangePct.toFixed(1)}% Range Floor < ${minBuyPct.toFixed(0)}%)`
+      };
+    }
   }
 
-  // 2. Climax Floor
-  if (direction === 'SELL' && rangePct < minSellPct) {
-    return {
-      isExhausted: true,
-      rangePct,
-      reason: `Macro Climax Exhaustion (${rangePct.toFixed(1)}% Range Floor < ${minSellPct}%)`
-    };
+  // 2. SELL Guard: Only SELL in Premium (> minSellPct) & Reject Climax Ceiling (> maxSellPct)
+  if (direction === 'SELL') {
+    if (rangePct < minSellPct) {
+      return {
+        isExhausted: true,
+        rangePct,
+        reason: `Macro Discount Shorting Violation (${rangePct.toFixed(1)}% Range < ${minSellPct.toFixed(0)}% Equilibrium)`
+      };
+    }
+    if (rangePct > maxSellPct) {
+      return {
+        isExhausted: true,
+        rangePct,
+        reason: `Macro Climax Ceiling Exhaustion (${rangePct.toFixed(1)}% Range Ceiling > ${maxSellPct.toFixed(0)}%)`
+      };
+    }
   }
 
   return {

@@ -75,8 +75,10 @@ module.exports = {
   // Strategy 6 Pro "GodEyes" Institutional SMC Settings
   GODEYES: {
     ENABLED: true,
-    MAX_BUY_RANGE_PCT: 75.0,             // 👑 Reject BUY when macro range > 75% (Golden SMC Dealing Zone)
-    MIN_SELL_RANGE_PCT: 25.0,            // 👑 Reject SELL when macro range < 25% (Golden SMC Dealing Zone)
+    MAX_BUY_RANGE_PCT: 50.0,             // 👑 SMC Discount Rule: Only BUY in Discount < 50%
+    MIN_SELL_RANGE_PCT: 50.0,            // 👑 SMC Premium Rule: Only SELL in Premium > 50%
+    MIN_BUY_RANGE_PCT: 15.0,             // 👑 Climax Floor Guard: Reject BUY when macro range < 15%
+    MAX_SELL_RANGE_PCT: 85.0,            // 👑 Climax Ceiling Guard: Reject SELL when macro range > 85%
   },
 
   // Strategy 5B Macro Dealing Range Guard (Wide Momentum Corridor)
@@ -86,9 +88,9 @@ module.exports = {
     MIN_SELL_RANGE_PCT: 15.0,            // 👑 Reject SELL when macro range < 15% (prevents shorting extreme floor)
   },
 
-  // Trend-Regime Multi-Timeframe Cascade Filter (Disabled / Nulled)
+  // Trend-Regime Multi-Timeframe Cascade Filter
   CASCADE_FILTER: {
-    ENABLED: false,                      // 👑 Disabled / Nulled
+    ENABLED: true,                       // 👑 Active Anti-Knife-Catching Guard
     MAX_CONSECUTIVE_1H_BEARISH_CRASH: 3, // Reject BUY on Crash when last 3x 1H candles are bearish continuation (anti-knife-catching)
     MAX_CONSECUTIVE_1H_BULLISH_BOOM: 3,  // Reject SELL on Boom when last 3x 1H candles are bullish continuation (anti-squeeze)
   },
