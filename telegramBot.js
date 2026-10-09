@@ -298,7 +298,7 @@ async function handleCommand(rawText, handlers) {
     case '/strat': {
       if (!arg1) {
         const cur = handlers.getActiveStrategy ? handlers.getActiveStrategy() : 'BOTH';
-        let label = '⚡ <b>DUAL ENGINE (5B Live + 6 Pro Paper Sandbox)</b>';
+        let label = '⚡ <b>DUAL ENGINE (6 Pro Live + 5B Paper Sandbox)</b>';
         if (cur === 'STRATEGY_6_PRO') label = '👑 <b>Strategy 6 Pro Only (Institutional SMC Sniper)</b>';
         else if (cur === 'STRATEGY_5B') label = '🚀 <b>Strategy 5B Only (Value-Zone Momentum Sniper)</b>';
 
@@ -311,7 +311,7 @@ async function handleCommand(rawText, handlers) {
           `🚀 <b>Strategy 5B:</b> Value-Zone Spike Exhaustion Sniper (~10-15 trades/day)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💡 <b>Commands:</b>`,
-          `• <code>/strategy both</code> — Run BOTH (5B Live + 6 Pro Paper Sandbox)`,
+          `• <code>/strategy both</code> — Run BOTH (6 Pro Live + 5B Paper Sandbox)`,
           `• <code>/strategy 6pro</code> — Run Strategy 6 Pro exclusively`,
           `• <code>/strategy 5b</code> — Run Strategy 5B Enhanced exclusively`
         ].join('\n'));

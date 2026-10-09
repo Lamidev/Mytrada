@@ -588,7 +588,7 @@ function formatReportTelegramHTML(report) {
       } else if (ds.mode6pro === 'LIVE' || ds.activeStrategy === 'STRATEGY_6_PRO') {
         stratName = "Strategy 6 Pro (GodEyes SMC Institutional Sniper)";
       } else if (ds.activeStrategy === 'BOTH') {
-        stratName = "Dual Engine (5B Live / 6 Pro Paper)";
+        stratName = "Dual Engine (6 Pro Live / 5B Paper Sandbox)";
       }
     }
   } catch (e) {}

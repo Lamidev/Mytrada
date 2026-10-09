@@ -181,7 +181,7 @@ function loadDynamicState() {
         saveDynamicState(data);
       }
       if (!data.executionMode) {
-        data.executionMode = 'PAPER';
+        data.executionMode = 'LIVE';
         saveDynamicState(data);
       }
       if (!data.mode5b) {
@@ -189,7 +189,7 @@ function loadDynamicState() {
         saveDynamicState(data);
       }
       if (!data.mode6pro) {
-        data.mode6pro = 'PAPER';
+        data.mode6pro = 'LIVE';
         saveDynamicState(data);
       }
       if (data.is5bPaused === undefined) data.is5bPaused = false;
@@ -211,9 +211,9 @@ function loadDynamicState() {
     portfolioConsecutiveLosses: 0,
     portfolioPauseUntil: 0,
     activeStrategy: 'BOTH',
-    executionMode: 'PAPER',
+    executionMode: 'LIVE',
     mode5b: 'PAPER',
-    mode6pro: 'PAPER',
+    mode6pro: 'LIVE',
     is5bPaused: false,
     is6proPaused: false
   };
@@ -1078,7 +1078,11 @@ const telegramHandlers = {
     dynamicState.is6proPaused = false;
     if (strat === 'BOTH') {
       dynamicState.mode5b = 'PAPER';
-      dynamicState.mode6pro = 'PAPER';
+      dynamicState.mode6pro = 'LIVE';
+      dynamicState.executionMode = 'LIVE';
+    } else if (strat === 'STRATEGY_6_PRO') {
+      dynamicState.mode6pro = 'LIVE';
+      dynamicState.executionMode = 'LIVE';
     }
     saveDynamicState(dynamicState);
   },
@@ -2673,14 +2677,16 @@ async function main() {
       `💡 <b>Send a command to launch your strategy:</b>`,
       `• <code>/strategy 6pro</code> — Launch Strategy 6 Pro (Institutional SMC)`,
       `• <code>/strategy 5b</code> — Launch Strategy 5B Enhanced`,
-      `• <code>/strategy both</code> — Launch Both (5B Live + 6 Pro Paper Sandbox)`,
+      `• <code>/strategy both</code> — Launch Both (6 Pro Live + 5B Paper Sandbox)`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
     ].join('\n'));
   } else {
     const isBoth = dynamicState.activeStrategy === 'BOTH';
     const is6Pro = dynamicState.activeStrategy === 'STRATEGY_6_PRO';
     const stratDisplayName = isBoth
-      ? 'Dual Engine (5B Live + 6 Pro Paper Sandbox)'
+      ? (dynamicState.mode6pro === 'LIVE' && dynamicState.mode5b === 'PAPER'
+          ? 'Dual Engine (6 Pro Live + 5B Paper Sandbox)'
+          : 'Dual Engine (5B Live + 6 Pro Paper Sandbox)')
       : (is6Pro ? 'Strategy 6 Pro (Institutional SMC)' : 'Strategy 5B Enhanced');
 
     console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner — ${stratDisplayName}${RESET}`);
