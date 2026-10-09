@@ -2140,14 +2140,14 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
   const baseSetup = detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol);
   if (!baseSetup) return null;
 
-  // 2. Evaluate GodEyes True SMC Dealing Zone Guard (Sell >50% Premium / Buy <50% Discount)
-  const minSell6Pro = (config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) !== undefined ? config.GODEYES.MIN_SELL_RANGE_PCT : 50.0;
-  const maxBuy6Pro = (config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) !== undefined ? config.GODEYES.MAX_BUY_RANGE_PCT : 50.0;
+  // 2. Evaluate GodEyes Institutional Dealing Zone Guard (Sell >=25% / Buy <=75%)
+  const minSell6Pro = (config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) !== undefined ? config.GODEYES.MIN_SELL_RANGE_PCT : 25.0;
+  const maxBuy6Pro = (config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) !== undefined ? config.GODEYES.MAX_BUY_RANGE_PCT : 75.0;
   const exhaustion = evaluateMacroExhaustion(symbol, baseSetup.entry, baseSetup.direction, htf1hCandles, minSell6Pro, maxBuy6Pro);
 
   const isBlocked = exhaustion.isExhausted;
-  const blockedReason = exhaustion.reason ? `6 Pro SMC Dealing Zone: ${exhaustion.reason}` : null;
-  const zoneDesc = baseSetup.direction === 'SELL' ? '>=50% Premium' : '<=50% Discount';
+  const blockedReason = exhaustion.reason ? `6 Pro Dealing Zone: ${exhaustion.reason}` : null;
+  const zoneDesc = baseSetup.direction === 'SELL' ? `>=${minSell6Pro.toFixed(0)}% Floor` : `<=${maxBuy6Pro.toFixed(0)}% Ceiling`;
 
   return {
     ...baseSetup,

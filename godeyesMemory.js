@@ -103,18 +103,18 @@ function evaluateMacroExhaustion(symbol, currentPrice, direction, htf1hCandles, 
   }
 
   const rangePct = ((currentPrice - pdl) / rangeSpan) * 100;
-  const maxBuyPct = customMaxBuy !== undefined ? customMaxBuy : ((config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) || 50.0);
-  const minSellPct = customMinSell !== undefined ? customMinSell : ((config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) || 50.0);
+  const maxBuyPct = customMaxBuy !== undefined ? customMaxBuy : ((config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) || 75.0);
+  const minSellPct = customMinSell !== undefined ? customMinSell : ((config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) || 25.0);
   const minBuyPct = (config.GODEYES && config.GODEYES.MIN_BUY_RANGE_PCT) || 15.0;
   const maxSellPct = (config.GODEYES && config.GODEYES.MAX_SELL_RANGE_PCT) || 85.0;
 
-  // 1. BUY Guard: Only BUY in Discount (< maxBuyPct) & Reject Climax Floor (< minBuyPct)
+  // 1. BUY Guard: Only BUY in Range (< maxBuyPct) & Reject Climax Floor (< minBuyPct)
   if (direction === 'BUY') {
     if (rangePct > maxBuyPct) {
       return {
         isExhausted: true,
         rangePct,
-        reason: `Macro Premium Buying Violation (${rangePct.toFixed(1)}% Range > ${maxBuyPct.toFixed(0)}% Equilibrium)`
+        reason: `Macro Range Ceiling Violation (${rangePct.toFixed(1)}% Range > ${maxBuyPct.toFixed(0)}% Cap)`
       };
     }
     if (rangePct < minBuyPct) {
@@ -126,13 +126,13 @@ function evaluateMacroExhaustion(symbol, currentPrice, direction, htf1hCandles, 
     }
   }
 
-  // 2. SELL Guard: Only SELL in Premium (> minSellPct) & Reject Climax Ceiling (> maxSellPct)
+  // 2. SELL Guard: Only SELL in Range (> minSellPct) & Reject Climax Ceiling (> maxSellPct)
   if (direction === 'SELL') {
     if (rangePct < minSellPct) {
       return {
         isExhausted: true,
         rangePct,
-        reason: `Macro Discount Shorting Violation (${rangePct.toFixed(1)}% Range < ${minSellPct.toFixed(0)}% Equilibrium)`
+        reason: `Macro Range Floor Violation (${rangePct.toFixed(1)}% Range < ${minSellPct.toFixed(0)}% Floor)`
       };
     }
     if (rangePct > maxSellPct) {

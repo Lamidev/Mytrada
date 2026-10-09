@@ -75,17 +75,17 @@ module.exports = {
   // Strategy 6 Pro "GodEyes" Institutional SMC Settings
   GODEYES: {
     ENABLED: true,
-    MAX_BUY_RANGE_PCT: 50.0,             // 👑 SMC Discount Rule: Only BUY in Discount < 50%
-    MIN_SELL_RANGE_PCT: 50.0,            // 👑 SMC Premium Rule: Only SELL in Premium > 50%
+    MAX_BUY_RANGE_PCT: 75.0,             // 👑 BUY Ceiling: Only BUY below 75% range (prevents buying exhausted tops)
+    MIN_SELL_RANGE_PCT: 25.0,            // 👑 SELL Floor: Only SELL above 25% range (prevents shorting exhausted bottoms)
     MIN_BUY_RANGE_PCT: 15.0,             // 👑 Climax Floor Guard: Reject BUY when macro range < 15%
     MAX_SELL_RANGE_PCT: 85.0,            // 👑 Climax Ceiling Guard: Reject SELL when macro range > 85%
   },
 
-  // Strategy 5B Macro Dealing Range Guard (Wide Momentum Corridor)
+  // Strategy 5B Macro Dealing Range Guard (Momentum Corridor)
   STRATEGY_5B: {
     ENABLED: true,
-    MAX_BUY_RANGE_PCT: 85.0,             // 👑 Reject BUY when macro range > 85% (prevents buying extreme ceiling)
-    MIN_SELL_RANGE_PCT: 15.0,            // 👑 Reject SELL when macro range < 15% (prevents shorting extreme floor)
+    MAX_BUY_RANGE_PCT: 75.0,             // 👑 Reject BUY when macro range > 75% (prevents buying extreme ceiling)
+    MIN_SELL_RANGE_PCT: 25.0,            // 👑 Reject SELL when macro range < 25% (prevents shorting extreme floor)
   },
 
   // Trend-Regime Multi-Timeframe Cascade Filter
