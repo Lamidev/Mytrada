@@ -1808,56 +1808,7 @@ async function monitorActivePositionsFast() {
  * @returns {{ isCascading: boolean, count: number, reason: string|null }}
  */
 function isMacroCascadeActive(htf1hCandles, mode) {
-  const cascadeCfg = config.CASCADE_FILTER || {};
-  if (cascadeCfg.ENABLED === false) return { isCascading: false, count: 0, reason: null };
-
-  if (!htf1hCandles || htf1hCandles.length < 4) {
-    return { isCascading: false, count: 0, reason: null };
-  }
-
-  const maxThresholdCrash = cascadeCfg.MAX_CONSECUTIVE_1H_BEARISH_CRASH || 3;
-  const maxThresholdBoom = cascadeCfg.MAX_CONSECUTIVE_1H_BULLISH_BOOM || 3;
-
-  if (mode === 'CRASH') {
-    let count = 0;
-    for (let i = htf1hCandles.length - 1; i >= Math.max(0, htf1hCandles.length - 6); i--) {
-      const c = htf1hCandles[i];
-      const prev = htf1hCandles[i - 1];
-      // Bearish continuation: closed red (close < open) AND lower close than previous candle
-      if (c && c.close < c.open && (!prev || c.close < prev.close)) {
-        count++;
-      } else {
-        break;
-      }
-    }
-    if (count >= maxThresholdCrash) {
-      return {
-        isCascading: true,
-        count,
-        reason: `${count}x Consecutive 1H Bearish Continuation Candles (Active Macro Cascade)`
-      };
-    }
-  } else if (mode === 'BOOM') {
-    let count = 0;
-    for (let i = htf1hCandles.length - 1; i >= Math.max(0, htf1hCandles.length - 6); i--) {
-      const c = htf1hCandles[i];
-      const prev = htf1hCandles[i - 1];
-      // Bullish continuation: closed green (close > open) AND higher close than previous candle
-      if (c && c.close > c.open && (!prev || c.close > prev.close)) {
-        count++;
-      } else {
-        break;
-      }
-    }
-    if (count >= maxThresholdBoom) {
-      return {
-        isCascading: true,
-        count,
-        reason: `${count}x Consecutive 1H Bullish Continuation Candles (Active Macro Squeeze)`
-      };
-    }
-  }
-
+  // 👑 Nulled / Disabled for now
   return { isCascading: false, count: 0, reason: null };
 }
 
@@ -1907,9 +1858,9 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
 
-    // 👑 Macro Squeeze Guard: Reject SELL if last 3+ 1H candles are bullish continuation
-    const boomCascade = isMacroCascadeActive(htf1hCandles, 'BOOM');
-    if (boomCascade.isCascading) return null;
+    // 👑 Macro Squeeze Guard (Nulled / Disabled)
+    // const boomCascade = isMacroCascadeActive(htf1hCandles, 'BOOM');
+    // if (boomCascade.isCascading) return null;
 
     // 1. Multi-Candle Confirmation: Last confirmCount candles must all be closed RED (close < open)
     let hasConfirm = true;
@@ -2020,9 +1971,9 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
 
-    // 👑 Macro Cascade Guard: Reject BUY if last 3+ 1H candles are bearish continuation (Anti-Knife-Catching)
-    const crashCascade = isMacroCascadeActive(htf1hCandles, 'CRASH');
-    if (crashCascade.isCascading) return null;
+    // 👑 Macro Cascade Guard: Anti-Knife-Catching (Nulled / Disabled)
+    // const crashCascade = isMacroCascadeActive(htf1hCandles, 'CRASH');
+    // if (crashCascade.isCascading) return null;
 
     // 1. Multi-Candle Confirmation: Last confirmCount candles must all be closed GREEN (close > open)
     let hasConfirm = true;

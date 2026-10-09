@@ -86,11 +86,11 @@ module.exports = {
     MIN_SELL_RANGE_PCT: 15.0,            // 👑 Reject SELL when macro range < 15% (prevents shorting extreme floor)
   },
 
-  // Trend-Regime Multi-Timeframe Cascade Filter
+  // Trend-Regime Multi-Timeframe Cascade Filter (Disabled / Nulled)
   CASCADE_FILTER: {
-    ENABLED: true,
-    MAX_CONSECUTIVE_1H_BEARISH_CRASH: 3, // 👑 Reject BUY on Crash when last 3x 1H candles are bearish continuation (anti-knife-catching)
-    MAX_CONSECUTIVE_1H_BULLISH_BOOM: 3,  // 👑 Reject SELL on Boom when last 3x 1H candles are bullish continuation (anti-squeeze)
+    ENABLED: false,                      // 👑 Disabled / Nulled
+    MAX_CONSECUTIVE_1H_BEARISH_CRASH: 3, // Reject BUY on Crash when last 3x 1H candles are bearish continuation (anti-knife-catching)
+    MAX_CONSECUTIVE_1H_BULLISH_BOOM: 3,  // Reject SELL on Boom when last 3x 1H candles are bullish continuation (anti-squeeze)
   },
 
   // Bot Settings & Modes
