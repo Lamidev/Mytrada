@@ -75,8 +75,22 @@ module.exports = {
   // Strategy 6 Pro "GodEyes" Institutional SMC Settings
   GODEYES: {
     ENABLED: true,
-    MAX_BUY_RANGE_PCT: 75.0,             // 👑 Reject BUY when macro range > 75% (prevents buying premium/overbought ceiling)
-    MIN_SELL_RANGE_PCT: 25.0,            // 👑 Reject SELL when macro range < 25% (prevents shorting discount/oversold floor)
+    MAX_BUY_RANGE_PCT: 75.0,             // 👑 Reject BUY when macro range > 75% (Golden SMC Dealing Zone)
+    MIN_SELL_RANGE_PCT: 25.0,            // 👑 Reject SELL when macro range < 25% (Golden SMC Dealing Zone)
+  },
+
+  // Strategy 5B Macro Dealing Range Guard (Wide Momentum Corridor)
+  STRATEGY_5B: {
+    ENABLED: true,
+    MAX_BUY_RANGE_PCT: 85.0,             // 👑 Reject BUY when macro range > 85% (prevents buying extreme ceiling)
+    MIN_SELL_RANGE_PCT: 15.0,            // 👑 Reject SELL when macro range < 15% (prevents shorting extreme floor)
+  },
+
+  // Trend-Regime Multi-Timeframe Cascade Filter
+  CASCADE_FILTER: {
+    ENABLED: true,
+    MAX_CONSECUTIVE_1H_BEARISH_CRASH: 3, // 👑 Reject BUY on Crash when last 3x 1H candles are bearish continuation (anti-knife-catching)
+    MAX_CONSECUTIVE_1H_BULLISH_BOOM: 3,  // 👑 Reject SELL on Boom when last 3x 1H candles are bullish continuation (anti-squeeze)
   },
 
   // Bot Settings & Modes

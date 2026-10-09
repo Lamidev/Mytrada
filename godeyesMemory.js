@@ -95,7 +95,7 @@ function getOrUpdateSessionAnchors(symbol, htf1hCandles) {
  * @param {Array} htf1hCandles 
  * @returns {{ isExhausted: boolean, rangePct: number, reason: string|null }}
  */
-function evaluateMacroExhaustion(symbol, currentPrice, direction, htf1hCandles) {
+function evaluateMacroExhaustion(symbol, currentPrice, direction, htf1hCandles, customMinSell, customMaxBuy) {
   const { pdh, pdl, rangeSpan } = getOrUpdateSessionAnchors(symbol, htf1hCandles);
 
   if (!rangeSpan || rangeSpan <= 0) {
@@ -103,10 +103,10 @@ function evaluateMacroExhaustion(symbol, currentPrice, direction, htf1hCandles) 
   }
 
   const rangePct = ((currentPrice - pdl) / rangeSpan) * 100;
-  const maxBuyPct = (config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) || 75.0;
-  const minSellPct = (config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) || 25.0;
+  const maxBuyPct = customMaxBuy !== undefined ? customMaxBuy : ((config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) || 75.0);
+  const minSellPct = customMinSell !== undefined ? customMinSell : ((config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) || 25.0);
 
-  // 1. Climax Ceiling: Buying > 75% of macro range (Premium Trap)
+  // 1. Climax Ceiling
   if (direction === 'BUY' && rangePct > maxBuyPct) {
     return {
       isExhausted: true,
@@ -115,7 +115,7 @@ function evaluateMacroExhaustion(symbol, currentPrice, direction, htf1hCandles) 
     };
   }
 
-  // 2. Climax Floor: Shorting < 25% of macro range (Discount Trap)
+  // 2. Climax Floor
   if (direction === 'SELL' && rangePct < minSellPct) {
     return {
       isExhausted: true,

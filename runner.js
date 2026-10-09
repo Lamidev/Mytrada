@@ -181,7 +181,7 @@ function loadDynamicState() {
         saveDynamicState(data);
       }
       if (!data.executionMode) {
-        data.executionMode = 'LIVE';
+        data.executionMode = 'PAPER';
         saveDynamicState(data);
       }
       if (!data.mode5b) {
@@ -189,7 +189,7 @@ function loadDynamicState() {
         saveDynamicState(data);
       }
       if (!data.mode6pro) {
-        data.mode6pro = 'LIVE';
+        data.mode6pro = 'PAPER';
         saveDynamicState(data);
       }
       if (data.is5bPaused === undefined) data.is5bPaused = false;
@@ -211,9 +211,9 @@ function loadDynamicState() {
     portfolioConsecutiveLosses: 0,
     portfolioPauseUntil: 0,
     activeStrategy: 'BOTH',
-    executionMode: 'LIVE',
+    executionMode: 'PAPER',
     mode5b: 'PAPER',
-    mode6pro: 'LIVE',
+    mode6pro: 'PAPER',
     is5bPaused: false,
     is6proPaused: false
   };
@@ -895,7 +895,7 @@ const telegramHandlers = {
       `🛡️ <b>Daily Max Loss Floor:</b> <code>${maxLossStatus}</code>`,
       `🛡️ <b>Risk Per Trade:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0).toFixed(1)}%)</code>`,
       `🏛️ <b>Strategy Configuration:</b> ${stratBadge}`,
-      `🧠 <b>GodEyes Memory Brain:</b> 🟢 <b>ACTIVE (15%/85% Armor + Multi-Day Anchors)</b>`,
+      `🧠 <b>GodEyes Memory Brain:</b> 🟢 <b>ACTIVE (25%/75% Golden SMC Armor + Multi-Day Anchors)</b>`,
       `📂 <b>Active Positions:</b> <code>${posLabel}</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `🤖 <b>Engine State:</b> ${stateBadge}`
@@ -1078,7 +1078,7 @@ const telegramHandlers = {
     dynamicState.is6proPaused = false;
     if (strat === 'BOTH') {
       dynamicState.mode5b = 'PAPER';
-      dynamicState.mode6pro = 'LIVE';
+      dynamicState.mode6pro = 'PAPER';
     }
     saveDynamicState(dynamicState);
   },
@@ -1799,6 +1799,68 @@ async function monitorActivePositionsFast() {
   }
 }
 
+/**
+ * 👑 Macro Cascade / Squeeze Guard
+ * Detects whether Higher Timeframe (1H) is in an unbroken 3+ candle waterfall (Crash) or short-squeeze (Boom)
+ * Prevents buying into active cascading selloffs or shorting into active buying rallies.
+ * @param {Array} htf1hCandles - Array of 1H candle objects
+ * @param {string} mode - 'CRASH' | 'BOOM'
+ * @returns {{ isCascading: boolean, count: number, reason: string|null }}
+ */
+function isMacroCascadeActive(htf1hCandles, mode) {
+  const cascadeCfg = config.CASCADE_FILTER || {};
+  if (cascadeCfg.ENABLED === false) return { isCascading: false, count: 0, reason: null };
+
+  if (!htf1hCandles || htf1hCandles.length < 4) {
+    return { isCascading: false, count: 0, reason: null };
+  }
+
+  const maxThresholdCrash = cascadeCfg.MAX_CONSECUTIVE_1H_BEARISH_CRASH || 3;
+  const maxThresholdBoom = cascadeCfg.MAX_CONSECUTIVE_1H_BULLISH_BOOM || 3;
+
+  if (mode === 'CRASH') {
+    let count = 0;
+    for (let i = htf1hCandles.length - 1; i >= Math.max(0, htf1hCandles.length - 6); i--) {
+      const c = htf1hCandles[i];
+      const prev = htf1hCandles[i - 1];
+      // Bearish continuation: closed red (close < open) AND lower close than previous candle
+      if (c && c.close < c.open && (!prev || c.close < prev.close)) {
+        count++;
+      } else {
+        break;
+      }
+    }
+    if (count >= maxThresholdCrash) {
+      return {
+        isCascading: true,
+        count,
+        reason: `${count}x Consecutive 1H Bearish Continuation Candles (Active Macro Cascade)`
+      };
+    }
+  } else if (mode === 'BOOM') {
+    let count = 0;
+    for (let i = htf1hCandles.length - 1; i >= Math.max(0, htf1hCandles.length - 6); i--) {
+      const c = htf1hCandles[i];
+      const prev = htf1hCandles[i - 1];
+      // Bullish continuation: closed green (close > open) AND higher close than previous candle
+      if (c && c.close > c.open && (!prev || c.close > prev.close)) {
+        count++;
+      } else {
+        break;
+      }
+    }
+    if (count >= maxThresholdBoom) {
+      return {
+        isCascading: true,
+        count,
+        reason: `${count}x Consecutive 1H Bullish Continuation Candles (Active Macro Squeeze)`
+      };
+    }
+  }
+
+  return { isCascading: false, count: 0, reason: null };
+}
+
 // ── STRATEGY 5B SIGNAL DETECTION ENGINE ──
 function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
   if (!ltfCandles || !htf1hCandles || ltfCandles.length < 25 || htf1hCandles.length < 55) return null;
@@ -1844,6 +1906,10 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf1hTrend !== 'bearish') return null;
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
+
+    // 👑 Macro Squeeze Guard: Reject SELL if last 3+ 1H candles are bullish continuation
+    const boomCascade = isMacroCascadeActive(htf1hCandles, 'BOOM');
+    if (boomCascade.isCascading) return null;
 
     // 1. Multi-Candle Confirmation: Last confirmCount candles must all be closed RED (close < open)
     let hasConfirm = true;
@@ -1913,10 +1979,17 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const tp = entry - (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
-    let isBlocked = false;
-    let blockedReason = null;
+    const minSell5B = (config.STRATEGY_5B && config.STRATEGY_5B.MIN_SELL_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MIN_SELL_RANGE_PCT : 15.0;
+    const maxBuy5B = (config.STRATEGY_5B && config.STRATEGY_5B.MAX_BUY_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MAX_BUY_RANGE_PCT : 85.0;
+    const exhaustion5B = evaluateMacroExhaustion(symbol, entry, 'SELL', htf1hCandles, minSell5B, maxBuy5B);
+
+    const isBlocked = exhaustion5B.isExhausted;
+    const blockedReason = exhaustion5B.reason ? `5B Macro Momentum Guard: ${exhaustion5B.reason}` : null;
+    const valuationLabel = `Macro Range: ${exhaustion5B.rangePct.toFixed(1)}% (5B Momentum Zone [${minSell5B.toFixed(0)}%-${maxBuy5B.toFixed(0)}%])`;
+    const liquidityLabel = `SMC Anchor (PDH/PDL Range)`;
 
     return {
+      strategy: 'Strategy 5B Enhanced',
       direction: 'SELL',
       type: 'bearish',
       htf4hTrend,
@@ -1934,6 +2007,8 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
       candleEpoch,
       confirmCount,
       spikeCountLabel,
+      valuationLabel,
+      liquidityLabel,
       isBlocked,
       blockedReason
     };
@@ -1944,6 +2019,10 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf1hTrend !== 'bullish') return null;
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
+
+    // 👑 Macro Cascade Guard: Reject BUY if last 3+ 1H candles are bearish continuation (Anti-Knife-Catching)
+    const crashCascade = isMacroCascadeActive(htf1hCandles, 'CRASH');
+    if (crashCascade.isCascading) return null;
 
     // 1. Multi-Candle Confirmation: Last confirmCount candles must all be closed GREEN (close > open)
     let hasConfirm = true;
@@ -2013,10 +2092,17 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const tp = entry + (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
-    let isBlocked = false;
-    let blockedReason = null;
+    const minSell5B = (config.STRATEGY_5B && config.STRATEGY_5B.MIN_SELL_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MIN_SELL_RANGE_PCT : 15.0;
+    const maxBuy5B = (config.STRATEGY_5B && config.STRATEGY_5B.MAX_BUY_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MAX_BUY_RANGE_PCT : 85.0;
+    const exhaustion5B = evaluateMacroExhaustion(symbol, entry, 'BUY', htf1hCandles, minSell5B, maxBuy5B);
+
+    const isBlocked = exhaustion5B.isExhausted;
+    const blockedReason = exhaustion5B.reason ? `5B Macro Momentum Guard: ${exhaustion5B.reason}` : null;
+    const valuationLabel = `Macro Range: ${exhaustion5B.rangePct.toFixed(1)}% (5B Momentum Zone [${minSell5B.toFixed(0)}%-${maxBuy5B.toFixed(0)}%])`;
+    const liquidityLabel = `SMC Anchor (PDH/PDL Range)`;
 
     return {
+      strategy: 'Strategy 5B Enhanced',
       direction: 'BUY',
       type: 'bullish',
       htf4hTrend,
@@ -2034,6 +2120,8 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
       candleEpoch,
       confirmCount,
       spikeCountLabel,
+      valuationLabel,
+      liquidityLabel,
       isBlocked,
       blockedReason
     };
@@ -2049,15 +2137,17 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
   if (!baseSetup) return null;
 
   // 2. Evaluate GodEyes 25% / 75% Macro Exhaustion Guard (Golden SMC Dealing Zone)
-  const exhaustion = evaluateMacroExhaustion(symbol, baseSetup.entry, baseSetup.direction, htf1hCandles);
+  const minSell6Pro = (config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) !== undefined ? config.GODEYES.MIN_SELL_RANGE_PCT : 25.0;
+  const maxBuy6Pro = (config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) !== undefined ? config.GODEYES.MAX_BUY_RANGE_PCT : 75.0;
+  const exhaustion = evaluateMacroExhaustion(symbol, baseSetup.entry, baseSetup.direction, htf1hCandles, minSell6Pro, maxBuy6Pro);
 
   const isBlocked = exhaustion.isExhausted;
-  const blockedReason = exhaustion.reason;
+  const blockedReason = exhaustion.reason ? `6 Pro SMC Dealing Zone: ${exhaustion.reason}` : null;
 
   return {
     ...baseSetup,
     strategy: 'Strategy 6 Pro',
-    valuationLabel: `Macro Range: ${exhaustion.rangePct.toFixed(1)}% (SMC Dealing Zone [25%-75%])`,
+    valuationLabel: `Macro Range: ${exhaustion.rangePct.toFixed(1)}% (SMC Dealing Zone [${minSell6Pro.toFixed(0)}%-${maxBuy6Pro.toFixed(0)}%])`,
     liquidityLabel: `SMC Anchor (PDH/PDL Range)`,
     isBlocked,
     blockedReason
