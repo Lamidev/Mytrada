@@ -164,6 +164,9 @@ function loadDynamicState() {
         data.dailyMaxLossUSD = defaultMaxLoss;
         data.portfolioConsecutiveLosses = 0;
         data.portfolioPauseUntil = 0;
+        data.isManuallyPaused = false;
+        data.is5bPaused = false;
+        data.is6proPaused = false;
         saveDynamicState(data);
       }
       if (data.dailyTargetUSD === 250 || data.dailyTargetUSD === undefined) {
@@ -1016,6 +1019,8 @@ const telegramHandlers = {
 
   resumeBot: () => {
     dynamicState.isManuallyPaused = false;
+    dynamicState.is5bPaused = false;
+    dynamicState.is6proPaused = false;
     dynamicState.dailyTargetLocked = false;
     dynamicState.dailyTargetUSD = 0; // Clear target so it does not immediately re-lock
     dynamicState.dailyLossLocked = false;
@@ -1074,6 +1079,7 @@ const telegramHandlers = {
 
   setActiveStrategy: (strat) => {
     dynamicState.activeStrategy = strat;
+    dynamicState.isManuallyPaused = false;
     dynamicState.is5bPaused = false;
     dynamicState.is6proPaused = false;
     if (strat === 'BOTH') {
@@ -1096,6 +1102,7 @@ const telegramHandlers = {
   resumeStrategy: (strat) => {
     if (strat === '5b') dynamicState.is5bPaused = false;
     if (strat === '6pro') dynamicState.is6proPaused = false;
+    dynamicState.isManuallyPaused = false; // 👑 Unpause global engine so scanning resumes
     if (dynamicState.activeStrategy === 'NONE') {
       dynamicState.activeStrategy = strat === '5b' ? 'STRATEGY_5B' : 'STRATEGY_6_PRO';
     }
