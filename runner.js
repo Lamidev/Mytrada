@@ -2161,7 +2161,7 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
 
   const isBlocked = exhaustion.isExhausted;
   const blockedReason = exhaustion.reason ? `6 Pro Dealing Zone: ${exhaustion.reason}` : null;
-  const zoneDesc = baseSetup.direction === 'SELL' ? `>=${minSell6Pro.toFixed(0)}% Floor` : `<=${maxBuy6Pro.toFixed(0)}% Ceiling`;
+  const zoneDesc = baseSetup.direction === 'SELL' ? `Min ${minSell6Pro.toFixed(0)}% Floor` : `Max ${maxBuy6Pro.toFixed(0)}% Ceiling`;
 
   return {
     ...baseSetup,

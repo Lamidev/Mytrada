@@ -86,8 +86,12 @@ function sendTelegramMessage(text) {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
-        if (res.statusCode === 200) resolve(true);
-        else resolve(false);
+        if (res.statusCode === 200) {
+          resolve(true);
+        } else {
+          console.warn(`[telegramBot] Outbound message failed (${res.statusCode}):`, data);
+          resolve(false);
+        }
       });
     });
 
