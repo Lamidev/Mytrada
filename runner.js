@@ -1924,10 +1924,6 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
 
-    // 👑 Macro Squeeze Guard: Reject SELL if last 3+ 1H candles are bullish continuation
-    const boomCascade = isMacroCascadeActive(htf1hCandles, 'BOOM');
-    if (boomCascade.isCascading) return null;
-
     // 1. Multi-Candle Confirmation: Last confirmCount candles must all be closed RED (close < open)
     let hasConfirm = true;
     const confirmCandles = [];
@@ -2037,10 +2033,6 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
 
-    // 👑 Macro Cascade Guard: Reject BUY if last 3+ 1H candles are bearish continuation (Anti-Knife-Catching)
-    const crashCascade = isMacroCascadeActive(htf1hCandles, 'CRASH');
-    if (crashCascade.isCascading) return null;
-
     // 1. Multi-Candle Confirmation: Last confirmCount candles must all be closed GREEN (close > open)
     let hasConfirm = true;
     const confirmCandles = [];
@@ -2149,11 +2141,22 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
 
 // ── STRATEGY 6 PRO: GODEYES INSTITUTIONAL SMC MEMORY BRAIN ──
 function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
-  // 1. Evaluate baseline spike exhaustion & 5M confirmation trigger (identical to 5B so it's a true A/B twin)
+  // 1. Evaluate baseline spike exhaustion & 5M confirmation trigger
   const baseSetup = detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol);
   if (!baseSetup) return null;
 
-  // 2. Evaluate GodEyes Institutional Dealing Zone Guard (Sell >=25% / Buy <=75%)
+  // 2. 👑 Strategy 6 Pro Macro Cascade Guard (Exclusive to 6 Pro - Anti-Knife-Catching & Anti-Squeeze)
+  const cascade = isMacroCascadeActive(htf1hCandles, mode);
+  if (cascade.isCascading) {
+    return {
+      ...baseSetup,
+      strategy: 'Strategy 6 Pro',
+      isBlocked: true,
+      blockedReason: `Macro Cascade Guard: ${cascade.reason || 'Active 1H Continuation Waterfall'}`
+    };
+  }
+
+  // 3. 👑 Strategy 6 Pro Institutional SMC Dealing Zone Guard (Strict 25% Floor / 75% Ceiling)
   const minSell6Pro = (config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) !== undefined ? config.GODEYES.MIN_SELL_RANGE_PCT : 25.0;
   const maxBuy6Pro = (config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) !== undefined ? config.GODEYES.MAX_BUY_RANGE_PCT : 75.0;
   const exhaustion = evaluateMacroExhaustion(symbol, baseSetup.entry, baseSetup.direction, htf1hCandles, minSell6Pro, maxBuy6Pro);

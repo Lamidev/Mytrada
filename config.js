@@ -84,8 +84,8 @@ module.exports = {
   // Strategy 5B Macro Dealing Range Guard (Momentum Corridor)
   STRATEGY_5B: {
     ENABLED: true,
-    MAX_BUY_RANGE_PCT: 75.0,             // 👑 Reject BUY when macro range > 75% (prevents buying extreme ceiling)
-    MIN_SELL_RANGE_PCT: 25.0,            // 👑 Reject SELL when macro range < 25% (prevents shorting extreme floor)
+    MAX_BUY_RANGE_PCT: 85.0,             // 🌐 Wide Open Scout: Allows momentum buys up to 85% range
+    MIN_SELL_RANGE_PCT: 15.0,            // 🌐 Wide Open Scout: Allows momentum sells down to 15% range
   },
 
   // Trend-Regime Multi-Timeframe Cascade Filter
