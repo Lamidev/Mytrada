@@ -1613,6 +1613,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         `🏆 🟢 <b>[MYTRADA TP HIT (+1.3R)]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+        `<b>Strategy:</b> <code>${trade.strategy || 'Strategy 6 Pro'} (Live Real Money)</code>`,
         `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `💰 <b>Profit:</b> <code>+$${pnlUsd.toFixed(2)} USD (+1.3R)</code>`,
@@ -1623,6 +1624,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
       ].filter(Boolean).join('\n');
 
       await sendTelegramMessage(tpAlert);
+      await new Promise(r => setTimeout(r, 1200));
 
       updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
       changed = true;
@@ -1643,6 +1645,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           `🛡️ 🟡 <b>[MYTRADA BREAKEVEN EXIT ($0 RISK)]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Strategy:</b> <code>${trade.strategy || 'Strategy 6 Pro'} (Live Real Money)</code>`,
           `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💸 <b>Outcome:</b> <code>$0.00 USD (0.0R Breakeven)</code>`,
@@ -1653,6 +1656,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         ].filter(Boolean).join('\n');
 
         await sendTelegramMessage(beAlert);
+        await new Promise(r => setTimeout(r, 1200));
       } else {
         recordSymbolTradeOutcome(symbol, 'LOSS');
         await updatePairHealthOnLiveClose(symbol, 'LOSS');
@@ -1663,6 +1667,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           `🔴 🛡️ <b>[MYTRADA STOP LOSS HIT (-1.0R)]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Strategy:</b> <code>${trade.strategy || 'Strategy 6 Pro'} (Live Real Money)</code>`,
           `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💸 <b>Loss:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R)</code>`,
@@ -1673,6 +1678,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         ].filter(Boolean).join('\n');
 
         await sendTelegramMessage(slAlert);
+        await new Promise(r => setTimeout(r, 1200));
       }
 
       updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
@@ -2521,6 +2527,7 @@ async function monitorMarket() {
             );
 
             await sendTelegramMessage(alertLines.join('\n'));
+            await new Promise(r => setTimeout(r, 1200));
             console.log(`${YELLOW}${BOLD}   >>> [FORWARD TEST SIGNAL - ${strat.displayName}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
 
             const activeTrades = loadActiveTrades();
@@ -2602,6 +2609,7 @@ async function monitorMarket() {
           const alertHtml = alertLines.join('\n');
 
           await sendTelegramMessage(alertHtml);
+          await new Promise(r => setTimeout(r, 1200));
           console.log(`${dirEmoji === '🔴' ? RED : GREEN}${BOLD}   >>> ${strat.displayName} SIGNAL [offset:${offset}]: ${setup.direction} ${symbol} @ ${setup.entry.toFixed(2)} | TP: ${setup.tp.toFixed(2)} | SL: ${setup.sl.toFixed(2)}${RESET}`);
 
           const activeTrades = loadActiveTrades();
