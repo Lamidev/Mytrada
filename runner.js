@@ -510,7 +510,7 @@ function formatHealthTelegramHTML() {
   return lines.join('\n');
 }
 
-function isSymbolInCooldown(symbol) {
+function isSymbolInCooldown(symbol, isPaper = false) {
   if (!config.CIRCUIT_BREAKER || !config.CIRCUIT_BREAKER.ENABLED) return { inCooldown: false };
   
   // Always load fresh state from disk to guarantee instant cross-monitor synchronization
@@ -519,16 +519,21 @@ function isSymbolInCooldown(symbol) {
   const rec = circuitBreakerState.symbols && circuitBreakerState.symbols[symbol];
   if (!rec) return { inCooldown: false };
 
-  if (rec.dailyLosses >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2)) {
-    return { inCooldown: true, reason: `Daily limit (${rec.dailyLosses} losses) reached` };
+  const maxDaily = config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2;
+  const dailyLosses = isPaper ? (rec.paperDailyLosses || 0) : (rec.dailyLosses || 0);
+  const pauseUntil = isPaper ? (rec.paperPauseUntil || 0) : (rec.pauseUntil || 0);
+  const consecLosses = isPaper ? (rec.paperConsecutiveLosses || 0) : (rec.consecutiveLosses || 0);
+
+  if (dailyLosses >= maxDaily) {
+    return { inCooldown: true, reason: `Daily limit (${dailyLosses} ${isPaper ? 'paper ' : ''}losses) reached` };
   }
 
   const now = Date.now();
-  if (rec.pauseUntil && now < rec.pauseUntil) {
-    const remMins = Math.ceil((rec.pauseUntil - now) / 60000);
-    const reason = (rec.consecutiveLosses === 0 && rec.dailyLosses < (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2))
-      ? `Post-Win breathing room (${remMins}m remaining)`
-      : `Cooldown active — ${remMins}m remaining`;
+  if (pauseUntil && now < pauseUntil) {
+    const remMins = Math.ceil((pauseUntil - now) / 60000);
+    const reason = (consecLosses === 0 && dailyLosses < maxDaily)
+      ? `${isPaper ? 'Paper post-win' : 'Post-win'} breathing room (${remMins}m remaining)`
+      : `${isPaper ? 'Paper cooldown' : 'Cooldown'} active — ${remMins}m remaining`;
     return { inCooldown: true, reason };
   }
 
@@ -544,67 +549,84 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false) {
     dynamicState = loadDynamicState();
   }
 
-  const symConfig = config.SYMBOLS[symbol];
-  const isMonitorOnly = symConfig && symConfig.monitorOnly;
-  const is6ProLive = (dynamicState.mode6pro || 'LIVE') === 'LIVE' && dynamicState.executionMode !== 'PAPER';
-
-  // 👑 ISOLATION GUARD: Paper trades on LIVE pairs must NEVER increment real daily loss limits,
-  // trigger daily lockouts, or lock Strategy 6 Pro out of live trading!
-  if (isPaper && is6ProLive && !isMonitorOnly) {
-    return;
-  }
-
   if (!circuitBreakerState.symbols) circuitBreakerState.symbols = {};
   if (!circuitBreakerState.symbols[symbol]) {
-    circuitBreakerState.symbols[symbol] = { consecutiveLosses: 0, dailyLosses: 0, pauseUntil: 0 };
+    circuitBreakerState.symbols[symbol] = {
+      consecutiveLosses: 0,
+      dailyLosses: 0,
+      pauseUntil: 0,
+      paperConsecutiveLosses: 0,
+      paperDailyLosses: 0,
+      paperPauseUntil: 0
+    };
   }
 
   const rec = circuitBreakerState.symbols[symbol];
   const now = Date.now();
+  const maxDaily = config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2;
+  const postWinMins = config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 60;
+  const tier1Mins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 60;
 
-  if (outcome === 'WIN') {
-    rec.consecutiveLosses = 0;
-    if (!isPaper) {
+  if (isPaper) {
+    // ── 🔬 PAPER SANDBOX CIRCUIT BREAKER (Strategy 5B & Incubation) ──
+    if (outcome === 'WIN') {
+      rec.paperConsecutiveLosses = 0;
+      rec.paperPauseUntil = Math.max(rec.paperPauseUntil || 0, now + (postWinMins * 60 * 1000));
+    } else if (outcome === 'LOSS') {
+      rec.paperConsecutiveLosses = (rec.paperConsecutiveLosses || 0) + 1;
+      rec.paperDailyLosses = (rec.paperDailyLosses || 0) + 1;
+
+      if (rec.paperDailyLosses >= maxDaily) {
+        const endOfDay = new Date();
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        rec.paperPauseUntil = endOfDay.getTime();
+        sendTelegramMessage([
+          `🛑 🛡️ <b>[SYMBOL DAILY LOSS LIMIT REACHED — PAPER SANDBOX]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Trigger:</b> <code>${rec.paperDailyLosses} paper losses today</code> (Strategy 5B Sandbox).`,
+          `<b>Action:</b> Paper forward tests paused on <b>${symbol}</b> until <b>12:00 AM UTC</b>.`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `👑 <i>Strategy 6 Pro Live trading remains independent & scanning.</i>`
+        ].join('\n')).catch(() => null);
+      } else {
+        rec.paperPauseUntil = Math.max(rec.paperPauseUntil || 0, now + (tier1Mins * 60 * 1000));
+      }
+    }
+  } else {
+    // ── 👑 LIVE REAL TRADING CIRCUIT BREAKER (Strategy 6 Pro) ──
+    if (outcome === 'WIN') {
+      rec.consecutiveLosses = 0;
       dynamicState.portfolioConsecutiveLosses = 0;
-    }
-
-    // 👑 Institutional Post-Win Breathing Room: pause symbol to prevent immediate tail-end re-entry (60m)
-    const postWinMins = config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 60;
-    rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (postWinMins * 60 * 1000));
-  } else if (outcome === 'LOSS') {
-    rec.consecutiveLosses = (rec.consecutiveLosses || 0) + 1;
-    rec.dailyLosses = (rec.dailyLosses || 0) + 1;
-    if (!isPaper) {
+      rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (postWinMins * 60 * 1000));
+    } else if (outcome === 'LOSS') {
+      rec.consecutiveLosses = (rec.consecutiveLosses || 0) + 1;
+      rec.dailyLosses = (rec.dailyLosses || 0) + 1;
       dynamicState.portfolioConsecutiveLosses = (dynamicState.portfolioConsecutiveLosses || 0) + 1;
-    }
 
-    // Symbol-Level Responsive Tiered Circuit Breakers:
-    if (rec.dailyLosses >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2)) {
-      const endOfDay = new Date();
-      endOfDay.setUTCHours(23, 59, 59, 999);
-      rec.pauseUntil = endOfDay.getTime();
-      sendTelegramMessage([
-        `🛑 🛡️ <b>[SYMBOL DAILY LOSS LIMIT REACHED]</b>`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-        `<b>Trigger:</b> <code>${rec.dailyLosses} losses today</code> (${isPaper ? 'Paper Sandbox' : 'Live Trading'}).`,
-        `<b>Action:</b> Trading paused on <b>${symbol}</b> until <b>12:00 AM UTC</b> to protect performance.`,
-        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `<i>Remaining healthy pairs will continue scanning normally.</i>`
-      ].join('\n')).catch(() => null);
-    } else {
-      // 👑 Universal 60-Minute Cooldown after Loss (TIER_1_PAUSE_MINS: 60)
-      const tier1Mins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 60;
-      rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (tier1Mins * 60 * 1000));
-    }
+      if (rec.dailyLosses >= maxDaily) {
+        const endOfDay = new Date();
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        rec.pauseUntil = endOfDay.getTime();
+        sendTelegramMessage([
+          `🛑 🛡️ <b>[SYMBOL DAILY LOSS LIMIT REACHED — LIVE TRADING]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Trigger:</b> <code>${rec.dailyLosses} live losses today</code>.`,
+          `<b>Action:</b> Live trading paused on <b>${symbol}</b> until <b>12:00 AM UTC</b> to protect performance.`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `<i>Remaining healthy pairs will continue scanning normally.</i>`
+        ].join('\n')).catch(() => null);
+      } else {
+        rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (tier1Mins * 60 * 1000));
+      }
 
-    // Portfolio-Wide Consecutive Loss Breaker (Live real capital trades only):
-    if (!isPaper) {
+      // Portfolio-Wide Consecutive Loss Breaker (Live real capital trades only):
       const maxPortfolioLosses = config.CIRCUIT_BREAKER.PORTFOLIO_CONSECUTIVE_LOSS_LIMIT || 3;
       if (dynamicState.portfolioConsecutiveLosses >= maxPortfolioLosses) {
         const pauseMins = config.CIRCUIT_BREAKER.PORTFOLIO_LOSS_PAUSE_MINS || 60;
         dynamicState.portfolioPauseUntil = now + (pauseMins * 60 * 1000);
-        dynamicState.portfolioConsecutiveLosses = 0; // Reset counter so subsequent trades don't keep firing immediately
+        dynamicState.portfolioConsecutiveLosses = 0; // Reset counter
         sendTelegramMessage([
           `⚠️ 🛡️ <b>[MYTRADA PORTFOLIO CIRCUIT BREAKER]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -847,12 +869,21 @@ const telegramHandlers = {
     const cooldowns = [];
     if (circuitBreakerState && circuitBreakerState.symbols) {
       for (const [sym, rec] of Object.entries(circuitBreakerState.symbols)) {
-        const isLockedOut = (rec.dailyLosses || 0) >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2);
-        if (isLockedOut) {
-          cooldowns.push(`• <code>${sym}</code>: 🛑 <b>LOCKED FOR TODAY</b> (${rec.dailyLosses} losses hit — halts until 12 AM UTC)`);
+        const isLiveLocked = (rec.dailyLosses || 0) >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2);
+        const isPaperLocked = (rec.paperDailyLosses || 0) >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2);
+
+        if (isLiveLocked) {
+          cooldowns.push(`• <code>${sym}</code>: 🛑 <b>LIVE LOCKED FOR TODAY</b> (${rec.dailyLosses} live losses hit — halts until 12 AM UTC)`);
         } else if (rec.pauseUntil && now < rec.pauseUntil) {
           const rem = Math.ceil((rec.pauseUntil - now) / 60000);
-          cooldowns.push(`• <code>${sym}</code>: ⏳ ${rem}m cooldown (${rec.dailyLosses || 0} loss today)`);
+          cooldowns.push(`• <code>${sym}</code>: ⏳ Live ${rem}m cooldown (${rec.dailyLosses || 0} loss today)`);
+        }
+
+        if (isPaperLocked) {
+          cooldowns.push(`• <code>${sym}</code>: 🔬 <b>5B PAPER LOCKED FOR TODAY</b> (${rec.paperDailyLosses} paper losses hit)`);
+        } else if (rec.paperPauseUntil && now < rec.paperPauseUntil) {
+          const rem = Math.ceil((rec.paperPauseUntil - now) / 60000);
+          cooldowns.push(`• <code>${sym}</code>: 🔬 5B Paper ${rem}m cooldown (${rec.paperDailyLosses || 0} loss today)`);
         }
       }
     }
@@ -1248,12 +1279,24 @@ const telegramHandlers = {
     }
     if (circuitBreakerState.symbols) {
       if (!circuitBreakerState.symbols[symbol]) {
-        circuitBreakerState.symbols[symbol] = { consecutiveLosses: 0, dailyLosses: 0, pauseUntil: 0 };
+        circuitBreakerState.symbols[symbol] = {
+          consecutiveLosses: 0,
+          dailyLosses: 0,
+          pauseUntil: 0,
+          paperConsecutiveLosses: 0,
+          paperDailyLosses: 0,
+          paperPauseUntil: 0
+        };
       } else {
         circuitBreakerState.symbols[symbol].pauseUntil = 0;
         circuitBreakerState.symbols[symbol].consecutiveLosses = 0;
+        circuitBreakerState.symbols[symbol].paperPauseUntil = 0;
+        circuitBreakerState.symbols[symbol].paperConsecutiveLosses = 0;
         if (circuitBreakerState.symbols[symbol].dailyLosses >= 2) {
           circuitBreakerState.symbols[symbol].dailyLosses = 1;
+        }
+        if (circuitBreakerState.symbols[symbol].paperDailyLosses >= 2) {
+          circuitBreakerState.symbols[symbol].paperDailyLosses = 1;
         }
       }
       saveCircuitBreakerState(circuitBreakerState);
@@ -2314,10 +2357,27 @@ async function monitorMarket() {
       const mode = symConfig.mode;
       const minSpikes = symConfig.min_spikes || 2;
 
-      // Check Cooldown
-      const cbStatus = isSymbolInCooldown(symbol);
-      if (cbStatus.inCooldown) {
-        console.log(`  [${mode}] ${symbol.padEnd(12)} | 🛡️ COOLDOWN: ${cbStatus.reason}`);
+      const symHealth = getPairHealth(symbol);
+      const isQuarantined = symHealth.isQuarantined === true;
+
+      // ── INDEPENDENT STRATEGY COOLDOWN VERIFICATION (Option A) ──
+      const is6proLockedState = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
+      const is6proPaper = is6proLockedState || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
+      const is5bPaper = is6proLockedState || isQuarantined || (dynamicState.mode5b || 'LIVE') === 'PAPER';
+
+      const is6proEnabled = !dynamicState.is6proPaused && (isBoth || dynamicState.activeStrategy === 'STRATEGY_6_PRO');
+      const is5bEnabled = !dynamicState.is5bPaused && (isBoth || dynamicState.activeStrategy === 'STRATEGY_5B');
+
+      const cb6pro = isSymbolInCooldown(symbol, is6proPaper);
+      const cb5b = isSymbolInCooldown(symbol, is5bPaper);
+
+      const canRun6Pro = is6proEnabled && !cb6pro.inCooldown;
+      const canRun5B = is5bEnabled && !cb5b.inCooldown;
+
+      // If neither engine is permitted to scan this symbol, skip candle fetching
+      if (!canRun6Pro && !canRun5B) {
+        const skipReason = (is6proEnabled && cb6pro.inCooldown) ? cb6pro.reason : (cb5b.reason || 'Cooldown active');
+        console.log(`  [${mode}] ${symbol.padEnd(12)} | 🛡️ COOLDOWN: ${skipReason}`);
         const ltf = await getCandles(symbol, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
         if (ltf && ltf.length > 0) {
           await checkActiveTradesForSymbol(symbol, ltf);
@@ -2339,17 +2399,12 @@ async function monitorMarket() {
 
       const latestPrice = ltfCandles[ltfCandles.length - 1].close;
 
-      const symHealth = getPairHealth(symbol);
-      const isQuarantined = symHealth.isQuarantined === true;
-
       // Build active strategies for this scan
       const strategiesToRun = [];
       if (isBoth) {
-        const is5bLocked = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
-        if (!dynamicState.is5bPaused) {
-          const is5bPaper = is5bLocked || isQuarantined || (dynamicState.mode5b || 'LIVE') === 'PAPER';
+        if (canRun5B) {
           let displayName = 'Strategy 5B Enhanced';
-          if (is5bLocked) displayName = 'Strategy 5B (Target-Locked Paper)';
+          if (is6proLockedState) displayName = 'Strategy 5B (Target-Locked Paper)';
           else if (isQuarantined) displayName = 'Strategy 5B (Quarantined Paper)';
 
           strategiesToRun.push({
@@ -2360,11 +2415,9 @@ async function monitorMarket() {
             isPaper: is5bPaper
           });
         }
-        if (!dynamicState.is6proPaused) {
-          const is6proLocked = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
-          const is6proPaper = is6proLocked || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
+        if (canRun6Pro) {
           let displayName = 'Strategy 6 Pro';
-          if (is6proLocked) displayName = 'Strategy 6 Pro (Target-Locked Paper)';
+          if (is6proLockedState) displayName = 'Strategy 6 Pro (Target-Locked Paper)';
 
           strategiesToRun.push({
             id: '6PRO',
@@ -2375,11 +2428,9 @@ async function monitorMarket() {
           });
         }
       } else if (dynamicState.activeStrategy === 'STRATEGY_6_PRO') {
-        const is6proLocked = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
-        if (!dynamicState.is6proPaused) {
-          const is6proPaper = is6proLocked || (dynamicState.executionMode || 'PAPER') === 'PAPER';
+        if (canRun6Pro) {
           let displayName = 'Strategy 6 Pro';
-          if (is6proLocked) displayName = 'Strategy 6 Pro (Target-Locked Paper)';
+          if (is6proLockedState) displayName = 'Strategy 6 Pro (Target-Locked Paper)';
 
           strategiesToRun.push({
             id: '6PRO',
@@ -2390,11 +2441,9 @@ async function monitorMarket() {
           });
         }
       } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
-        const is5bLocked = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
-        if (!dynamicState.is5bPaused) {
-          const is5bPaper = is5bLocked || isQuarantined || (dynamicState.executionMode || 'LIVE') === 'PAPER';
+        if (canRun5B) {
           let displayName = 'Strategy 5B Enhanced';
-          if (is5bLocked) displayName = 'Strategy 5B (Target-Locked Paper)';
+          if (is6proLockedState) displayName = 'Strategy 5B (Target-Locked Paper)';
           else if (isQuarantined) displayName = 'Strategy 5B (Quarantined Paper)';
 
           strategiesToRun.push({
