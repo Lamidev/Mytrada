@@ -594,15 +594,18 @@ async function handleCommand(rawText, handlers) {
         if (handlers.pauseSymbol) {
           const res = handlers.pauseSymbol(upperSym, minutes, target);
           if (res.success) {
-            const untilTime = new Date(res.until).toTimeString().slice(0, 8) + ' UTC';
+            const offsetHours = (config.TIMEZONE_OFFSET_HOURS !== undefined) ? config.TIMEZONE_OFFSET_HOURS : 1;
+            const localDate = new Date(res.until + (offsetHours * 3600000));
+            const localTimeStr = localDate.toISOString().slice(11, 19);
+            const utcTimeStr = new Date(res.until).toISOString().slice(11, 19);
             const targetBadge = res.target === 'paper' ? '🔬 5B Paper Sandbox' : (res.target === 'both' ? '⚡ Dual Engine (Live & Paper)' : '👑 Strategy 6 Pro Live');
             await sendTelegramMessage([
               `⏳ 🛡️ <b>[PAIR COOLDOWN ACTIVATED: ${upperSym}]</b>`,
               `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
               `<b>Asset:</b> <code>${upperSym}</code> (${res.name || upperSym})`,
               `<b>Engine:</b> ${targetBadge}`,
-              `<b>Duration:</b> <code>${res.minutes} minutes</code>`,
-              `<b>Resume Time:</b> <code>${untilTime}</code>`,
+              `<b>Duration:</b> <code>${res.minutes} minutes</code> (in ${res.minutes}m)`,
+              `<b>Resume Time:</b> <code>${localTimeStr} Local / ${utcTimeStr} UTC</code>`,
               `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
               `<i>Pair paused from new setups until cooldown completes. Send <code>/resume ${upperSym}</code> to override anytime.</i>`
             ].join('\n'));
