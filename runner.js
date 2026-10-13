@@ -544,6 +544,16 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false) {
     dynamicState = loadDynamicState();
   }
 
+  const symConfig = config.SYMBOLS[symbol];
+  const isMonitorOnly = symConfig && symConfig.monitorOnly;
+  const is6ProLive = (dynamicState.mode6pro || 'LIVE') === 'LIVE' && dynamicState.executionMode !== 'PAPER';
+
+  // 👑 ISOLATION GUARD: Paper trades on LIVE pairs must NEVER increment real daily loss limits,
+  // trigger daily lockouts, or lock Strategy 6 Pro out of live trading!
+  if (isPaper && is6ProLive && !isMonitorOnly) {
+    return;
+  }
+
   if (!circuitBreakerState.symbols) circuitBreakerState.symbols = {};
   if (!circuitBreakerState.symbols[symbol]) {
     circuitBreakerState.symbols[symbol] = { consecutiveLosses: 0, dailyLosses: 0, pauseUntil: 0 };
