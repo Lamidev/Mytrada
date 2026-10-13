@@ -157,10 +157,11 @@ function registerTelegramCommands() {
     { command: 'report', description: "Daily performance summary report" },
     { command: 'target', description: "Set daily target: /target 250 (or /target off)" },
     { command: 'maxloss', description: "Set max loss floor: /maxloss 150 (or /maxloss off)" },
-    { command: 'pause', description: "Pause scanning: /pause | /pause 5b | /pause 6pro | /pause gold" },
+    { command: 'cooldown', description: "Set pair cooldown: /cooldown CRASH1000 25 [live|paper]" },
+    { command: 'pause', description: "Pause scanning: /pause | /pause CRASH1000 25 | /pause 5b | /pause 6pro" },
     { command: 'stopall', description: "Halt all engines: /stopall (stops 5b, 6pro, gold, live & paper)" },
     { command: 'resumeall', description: "Resume all engines: /resumeall (resumes 5b, 6pro, gold)" },
-    { command: 'resume', description: "Resume scanning: /resume | /resume 5b | /resume 6pro | /resume gold" },
+    { command: 'resume', description: "Resume scanning: /resume | /resume CRASH1000 | /resume 6pro" },
     { command: 'closeall', description: "Emergency exit: Close all open positions at market" },
     { command: 'help', description: "Show clean command control center" }
   ];
@@ -249,6 +250,7 @@ async function handleCommand(rawText, handlers) {
   const command = parts[0].toLowerCase().split('@')[0]; // strip bot username if any
   const arg1 = parts[1];
   const arg2 = parts[2];
+  const arg3 = parts[3];
 
   switch (command) {
     case '':
@@ -286,9 +288,11 @@ async function handleCommand(rawText, handlers) {
         `• <code>/be</code> ➜ Move SL on open trades to Breakeven ($0 risk)`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `⚡ <b>CONTROL & EMERGENCY:</b>`,
-        `• <code>/stopall</code> (or <code>/halt</code>, <code>/pause</code>) ➜ Emergency complete halt: stops all strategies (Live & Paper) & Gold`,
+        `• <code>/cooldown CRASH1000 25</code> ➜ Put pair in temporary cooldown (e.g. 25 mins)`,
+        `• <code>/pause CRASH1000 [mins]</code> ➜ Pause pair scanning for X minutes (defaults to 60m)`,
+        `• <code>/resume CRASH1000</code> ➜ Clear cooldown/lockout on pair & resume scanning`,
+        `• <code>/stopall</code> (or <code>/halt</code>, <code>/pause</code>) ➜ Emergency complete halt: stops all strategies & Gold`,
         `• <code>/resumeall</code> (or <code>/resume</code>) ➜ Resume all strategy engines and scanners`,
-        `• <code>/resume CRASH600</code> (or <code>/unpause CRASH600</code>) ➜ Unlock paused/cooldown pair`,
         `• <code>/pause 5b</code> | <code>/pause 6pro</code> | <code>/pause gold</code> ➜ Pause specific engine`,
         `• <code>/resume 5b</code> | <code>/resume 6pro</code> | <code>/resume gold</code> ➜ Resume specific engine`,
         `• <code>/closeall</code> ➜ Close all active trades immediately at market`,
@@ -562,11 +566,53 @@ async function handleCommand(rawText, handlers) {
       break;
     }
 
+    case '/cooldown':
     case '/pause':
     case '/pauseall':
     case '/stop':
     case '/stopall':
     case '/halt': {
+      const upperSym = arg1 ? arg1.toUpperCase() : '';
+      if (config.SYMBOLS && config.SYMBOLS[upperSym]) {
+        let minutes = 60;
+        let target = 'live';
+
+        if (arg2) {
+          const parsedMins = parseInt(arg2, 10);
+          if (!isNaN(parsedMins) && parsedMins > 0) {
+            minutes = parsedMins;
+            if (arg3) target = arg3.toLowerCase();
+          } else {
+            target = arg2.toLowerCase();
+            if (arg3) {
+              const parsedMins3 = parseInt(arg3, 10);
+              if (!isNaN(parsedMins3) && parsedMins3 > 0) minutes = parsedMins3;
+            }
+          }
+        }
+
+        if (handlers.pauseSymbol) {
+          const res = handlers.pauseSymbol(upperSym, minutes, target);
+          if (res.success) {
+            const untilTime = new Date(res.until).toTimeString().slice(0, 8) + ' UTC';
+            const targetBadge = res.target === 'paper' ? '🔬 5B Paper Sandbox' : (res.target === 'both' ? '⚡ Dual Engine (Live & Paper)' : '👑 Strategy 6 Pro Live');
+            await sendTelegramMessage([
+              `⏳ 🛡️ <b>[PAIR COOLDOWN ACTIVATED: ${upperSym}]</b>`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `<b>Asset:</b> <code>${upperSym}</code> (${res.name || upperSym})`,
+              `<b>Engine:</b> ${targetBadge}`,
+              `<b>Duration:</b> <code>${res.minutes} minutes</code>`,
+              `<b>Resume Time:</b> <code>${untilTime}</code>`,
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+              `<i>Pair paused from new setups until cooldown completes. Send <code>/resume ${upperSym}</code> to override anytime.</i>`
+            ].join('\n'));
+          } else {
+            await sendTelegramMessage(`⚠️ ${res.error || 'Failed to pause symbol.'}`);
+          }
+        }
+        break;
+      }
+
       const pTarget = (command === '/stopall' || command === '/pauseall' || command === '/halt') ? 'all' : (arg1 ? arg1.toLowerCase() : 'all');
       if (pTarget.includes('gold') || pTarget.includes('xau')) {
         const gState = getGoldState();
@@ -606,10 +652,12 @@ async function handleCommand(rawText, handlers) {
       const upperSym = arg1 ? arg1.toUpperCase() : '';
       if (config.SYMBOLS && config.SYMBOLS[upperSym]) {
         if (handlers.resumeSymbol) {
-          const res = handlers.resumeSymbol(upperSym);
+          const target = arg2 ? arg2.toLowerCase() : 'all';
+          const res = handlers.resumeSymbol(upperSym, target);
           if (res.success) {
+            const targetBadge = target === 'paper' ? ' (5B Paper)' : (target === 'live' || target === '6pro' ? ' (6 Pro Live)' : '');
             await sendTelegramMessage([
-              `▶️ 🟢 <b>[PAIR UNLOCKED: ${upperSym}]</b>`,
+              `▶️ 🟢 <b>[PAIR UNLOCKED: ${upperSym}${targetBadge}]</b>`,
               `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
               `<b>Asset:</b> <code>${upperSym}</code> (${res.name || upperSym})`,
               `<b>Status:</b> Lockout & circuit breaker cleared.`,

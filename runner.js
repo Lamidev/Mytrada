@@ -1268,7 +1268,45 @@ const telegramHandlers = {
     return { success: true, name: config.SYMBOLS[symbol].name };
   },
 
-  resumeSymbol: (symbol) => {
+  pauseSymbol: (symbol, minutes = 60, target = 'live') => {
+    symbol = symbol.toUpperCase();
+    if (!config.SYMBOLS[symbol]) {
+      return { success: false, error: `Symbol ${symbol} not in configured universe.` };
+    }
+    const today = getLocalDateStr();
+    if (!circuitBreakerState || circuitBreakerState.date !== today) {
+      circuitBreakerState = loadCircuitBreakerState();
+    }
+    if (!circuitBreakerState.symbols) circuitBreakerState.symbols = {};
+    if (!circuitBreakerState.symbols[symbol]) {
+      circuitBreakerState.symbols[symbol] = {
+        consecutiveLosses: 0,
+        dailyLosses: 0,
+        pauseUntil: 0,
+        paperConsecutiveLosses: 0,
+        paperDailyLosses: 0,
+        paperPauseUntil: 0
+      };
+    }
+    const rec = circuitBreakerState.symbols[symbol];
+    const now = Date.now();
+    const until = now + (minutes * 60 * 1000);
+    const t = (target || 'live').toLowerCase();
+
+    if (t === 'paper' || t === '5b') {
+      rec.paperPauseUntil = until;
+    } else if (t === 'both' || t === 'all') {
+      rec.pauseUntil = until;
+      rec.paperPauseUntil = until;
+    } else {
+      rec.pauseUntil = until;
+    }
+
+    saveCircuitBreakerState(circuitBreakerState);
+    return { success: true, name: config.SYMBOLS[symbol].name, minutes, until, target: t };
+  },
+
+  resumeSymbol: (symbol, target = 'all') => {
     symbol = symbol.toUpperCase();
     if (!config.SYMBOLS[symbol]) {
       return { success: false, error: `Symbol ${symbol} not in configured universe.` };
@@ -1288,15 +1326,23 @@ const telegramHandlers = {
           paperPauseUntil: 0
         };
       } else {
-        circuitBreakerState.symbols[symbol].pauseUntil = 0;
-        circuitBreakerState.symbols[symbol].consecutiveLosses = 0;
-        circuitBreakerState.symbols[symbol].paperPauseUntil = 0;
-        circuitBreakerState.symbols[symbol].paperConsecutiveLosses = 0;
-        if (circuitBreakerState.symbols[symbol].dailyLosses >= 2) {
-          circuitBreakerState.symbols[symbol].dailyLosses = 1;
-        }
-        if (circuitBreakerState.symbols[symbol].paperDailyLosses >= 2) {
-          circuitBreakerState.symbols[symbol].paperDailyLosses = 1;
+        const t = (target || 'all').toLowerCase();
+        const rec = circuitBreakerState.symbols[symbol];
+        if (t === 'paper' || t === '5b') {
+          rec.paperPauseUntil = 0;
+          rec.paperConsecutiveLosses = 0;
+          if (rec.paperDailyLosses >= 2) rec.paperDailyLosses = 1;
+        } else if (t === 'live' || t === '6pro') {
+          rec.pauseUntil = 0;
+          rec.consecutiveLosses = 0;
+          if (rec.dailyLosses >= 2) rec.dailyLosses = 1;
+        } else {
+          rec.pauseUntil = 0;
+          rec.consecutiveLosses = 0;
+          rec.paperPauseUntil = 0;
+          rec.paperConsecutiveLosses = 0;
+          if (rec.dailyLosses >= 2) rec.dailyLosses = 1;
+          if (rec.paperDailyLosses >= 2) rec.paperDailyLosses = 1;
         }
       }
       saveCircuitBreakerState(circuitBreakerState);
