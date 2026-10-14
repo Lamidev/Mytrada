@@ -1505,21 +1505,29 @@ async function getCachedHtfCandles(symbol, tf, count, ttlMs = 5 * 60 * 1000) {
   return [];
 }
 
+// ── ACTIVE TRADE CONCURRENCY & DEDUPLICATION GUARDS ──
+const closingTradeSetups = new Set();
+const activeSymbolCheckLocks = new Set();
+
 // ── ACTIVE TRADE LIFECYCLE MANAGEMENT (1:1.3 R:R) ──
 async function checkActiveTradesForSymbol(symbol, ltfCandles) {
   if (!ltfCandles || ltfCandles.length === 0) return;
+  if (activeSymbolCheckLocks.has(symbol)) return;
+  activeSymbolCheckLocks.add(symbol);
 
-  const activeTrades = loadActiveTrades();
-  const tradesForSymbol = activeTrades.filter(t => t.symbol === symbol);
-  if (tradesForSymbol.length === 0) return;
+  try {
+    const activeTrades = loadActiveTrades();
+    const tradesForSymbol = activeTrades.filter(t => t.symbol === symbol && !closingTradeSetups.has(t.setupId));
+    if (tradesForSymbol.length === 0) return;
 
-  const currentLivePrice = ltfCandles[ltfCandles.length - 1].close;
-  let updatedTrades = [...activeTrades];
-  let changed = false;
-  const compRisk = getWeeklyCompoundedRisk();
+    const currentLivePrice = ltfCandles[ltfCandles.length - 1].close;
+    let updatedTrades = [...activeTrades];
+    let changed = false;
+    const compRisk = getWeeklyCompoundedRisk();
 
-  for (const trade of tradesForSymbol) {
-    const entryCandleEpoch = trade.candleEpoch || (trade.triggeredTime ? trade.triggeredTime - 300000 : 0);
+    for (const trade of tradesForSymbol) {
+      if (closingTradeSetups.has(trade.setupId)) continue;
+      const entryCandleEpoch = trade.candleEpoch || (trade.triggeredTime ? trade.triggeredTime - 300000 : 0);
     // ONLY inspect candles that formed strictly AFTER the entry candle was completed
     const postEntryCandles = ltfCandles.filter(c => (c.time > entryCandleEpoch));
 
@@ -1540,6 +1548,14 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
 
     if (trade.isIncubation) {
       if (hitTP) {
+        if (closingTradeSetups.has(trade.setupId)) continue;
+        closingTradeSetups.add(trade.setupId);
+
+        // 🛡️ Immediately remove from activeTrades on disk so no concurrent loop sees it as open
+        updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
+        saveActiveTrades(updatedTrades);
+        changed = true;
+
         recordIncubationOutcome({
           setupId: trade.setupId,
           symbol: trade.symbol,
@@ -1619,6 +1635,14 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
       }
 
       if (hitSL) {
+        if (closingTradeSetups.has(trade.setupId)) continue;
+        closingTradeSetups.add(trade.setupId);
+
+        // 🛡️ Immediately remove from activeTrades on disk so no concurrent loop sees it as open
+        updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
+        saveActiveTrades(updatedTrades);
+        changed = true;
+
         recordIncubationOutcome({
           setupId: trade.setupId,
           symbol: trade.symbol,
@@ -1699,6 +1723,14 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
     }
 
     if (hitTP) {
+      if (closingTradeSetups.has(trade.setupId)) continue;
+      closingTradeSetups.add(trade.setupId);
+
+      // 🛡️ Immediately remove from activeTrades on disk so no concurrent loop sees it as open
+      updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
+      saveActiveTrades(updatedTrades);
+      changed = true;
+
       const pnlUsd = trade.rewardUSD || compRisk.rewardUSD;
 
       recordSymbolTradeOutcome(symbol, 'WIN');
@@ -1729,6 +1761,14 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
     }
 
     if (hitSL) {
+      if (closingTradeSetups.has(trade.setupId)) continue;
+      closingTradeSetups.add(trade.setupId);
+
+      // 🛡️ Immediately remove from activeTrades on disk so no concurrent loop sees it as open
+      updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
+      saveActiveTrades(updatedTrades);
+      changed = true;
+
       const isBreakevenExit = trade.isBreakeven || Math.abs(trade.stopLoss - trade.entryPrice) < 0.001;
       const riskUSD = trade.riskUSD || compRisk.riskUSD;
       const pauseMins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 45;
@@ -1778,16 +1818,23 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         await new Promise(r => setTimeout(r, 1200));
       }
 
-      updatedTrades = updatedTrades.filter(t => t.setupId !== trade.setupId);
-      changed = true;
+      continue;
     }
   }
 
   if (changed) {
-    saveActiveTrades(updatedTrades);
     await checkDailyTargetLock();
     await checkDailyMaxLossLock();
   }
+
+  // Prune closingTradeSetups set periodically to keep memory lightweight
+  if (closingTradeSetups.size > 500) {
+    const arr = Array.from(closingTradeSetups);
+    arr.slice(0, 200).forEach(id => closingTradeSetups.delete(id));
+  }
+} finally {
+  activeSymbolCheckLocks.delete(symbol);
+}
 }
 
 // ── SHADOW / COUNTERFACTUAL TRADE MONITOR ──

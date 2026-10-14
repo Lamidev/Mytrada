@@ -50,6 +50,7 @@ function getGoldTrades() {
 
 let isPolling = false;
 let lastUpdateId = 0;
+const recentOutboundAlerts = new Map();
 
 /**
  * Dispatches an outbound HTML message to the configured Telegram Chat
@@ -61,6 +62,23 @@ function sendTelegramMessage(text) {
 
     if (!botToken || !chatId) {
       return resolve(false);
+    }
+
+    // 🛡️ Deduplication Guard: Drop identical messages dispatched within 8 seconds
+    const cleanKey = String(text || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    const now = Date.now();
+    const lastSent = recentOutboundAlerts.get(cleanKey);
+    if (lastSent && (now - lastSent < 8000)) {
+      console.warn(`[telegramBot] 🛡️ Blocked duplicate Telegram message within 8s: ${cleanKey.slice(0, 70)}...`);
+      return resolve(true);
+    }
+    recentOutboundAlerts.set(cleanKey, now);
+
+    // Prune stale cache entries older than 60 seconds
+    if (recentOutboundAlerts.size > 200) {
+      for (const [k, ts] of recentOutboundAlerts.entries()) {
+        if (now - ts > 60000) recentOutboundAlerts.delete(k);
+      }
     }
 
     const payload = JSON.stringify({
