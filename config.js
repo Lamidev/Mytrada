@@ -91,8 +91,8 @@ module.exports = {
   // Trend-Regime Multi-Timeframe Cascade Filter
   CASCADE_FILTER: {
     ENABLED: true,                       // 👑 Active Anti-Knife-Catching Guard
-    MAX_CONSECUTIVE_1H_BEARISH_CRASH: 3, // Reject BUY on Crash when last 3x 1H candles are bearish continuation (anti-knife-catching)
-    MAX_CONSECUTIVE_1H_BULLISH_BOOM: 3,  // Reject SELL on Boom when last 3x 1H candles are bullish continuation (anti-squeeze)
+    MAX_CONSECUTIVE_1H_BEARISH_CRASH: 2, // Reject BUY on Crash when last 2x 1H candles are bearish continuation (anti-knife-catching)
+    MAX_CONSECUTIVE_1H_BULLISH_BOOM: 2,  // Reject SELL on Boom when last 2x 1H candles are bullish continuation (anti-squeeze)
   },
 
   // Bot Settings & Modes
