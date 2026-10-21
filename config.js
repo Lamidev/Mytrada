@@ -18,7 +18,7 @@ module.exports = {
     "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 3 }, // 👑 3-Spike Fast Index Exhaustion
     "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
+    "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM",  min_spikes: 2, monitorOnly: true }, // 🔬 Quarantined to Paper Monitor (0% WR protection)
     "BOOM150N":  { name: "Boom 150 Index",  mode: "BOOM",  min_spikes: 2, monitorOnly: true }, // 🔬 Incubation Paper Monitor ($0 Risk)
 
     // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend + Price Action Displacement) ──
@@ -91,8 +91,13 @@ module.exports = {
   // Trend-Regime Multi-Timeframe Cascade Filter
   CASCADE_FILTER: {
     ENABLED: true,                       // 👑 Active Anti-Knife-Catching Guard
-    MAX_CONSECUTIVE_1H_BEARISH_CRASH: 2, // Reject BUY on Crash when last 2x 1H candles are bearish continuation (anti-knife-catching)
-    MAX_CONSECUTIVE_1H_BULLISH_BOOM: 2,  // Reject SELL on Boom when last 2x 1H candles are bullish continuation (anti-squeeze)
+    MAX_CONSECUTIVE_1H_BEARISH_CRASH: 3, // Reject BUY on Crash when last 3x 1H candles are bearish continuation (anti-knife-catching)
+    MAX_CONSECUTIVE_1H_BULLISH_BOOM: 3,  // Reject SELL on Boom when last 3x 1H candles are bullish continuation (anti-squeeze)
+  },
+
+  // Active 1H Candle Guard (Anti-Knife-Catching & Anti-Squeeze)
+  ACTIVE_1H_CANDLE_GUARD: {
+    ENABLED: false,                      // Disabled: Prevents blocking high Boom SELL entries or low Crash BUY dips
   },
 
   // Bot Settings & Modes

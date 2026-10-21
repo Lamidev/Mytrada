@@ -384,7 +384,7 @@ async function updatePairHealthOnLiveClose(symbol, outcome) {
         `📊 <b>Pair Record:</b> <code>${rec.totalRealWins}W / ${rec.totalRealLosses}L (${rec.weeklyNetR >= 0 ? '+' : ''}${rec.weeklyNetR.toFixed(1)}R)</code>`,
         `💵 <b>Live Account Balance Protected:</b> <code>$${getCurrentAccountBalance().toFixed(2)} USD</code>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💡 <i>Bot will safely forward-test this pair in paper sandbox until it scores 1 winning paper setup, or send /unquarantine ${symbol} to override.</i>`
+        `💡 <i>Bot will safely forward-test this pair in paper sandbox until it scores 2 winning paper setups, or send /unquarantine ${symbol} to override.</i>`
       ].join('\n');
 
       await sendTelegramMessage(alertMsg);
@@ -401,7 +401,7 @@ async function updatePairHealthOnPaperClose(symbol, outcome) {
 
   if (outcome === 'WIN') {
     rec.consecutivePaperWins = (rec.consecutivePaperWins || 0) + 1;
-    if (rec.consecutivePaperWins >= 1) {
+    if (rec.consecutivePaperWins >= 2) {
       // 🏆 Proof-of-Health Achieved: Restore to Live Trading!
       rec.isQuarantined = false;
       rec.consecutiveLosses = 0;
@@ -426,14 +426,14 @@ async function updatePairHealthOnPaperClose(symbol, outcome) {
         `🏆 🟢 <b>[PAIR GRADUATION: RESTORED TO LIVE]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-        `<b>Achievement:</b> <code>1 Winning Paper Setup (+1.3R)</code>`,
+        `<b>Achievement:</b> <code>2 Consecutive Winning Paper Setups (+2.6R)</code>`,
         actionLine,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         noteLine
       ].join('\n');
 
       await sendTelegramMessage(alertMsg);
-      console.log(`\n🏆 [PAIR GRADUATION] ${symbol} achieved 1 winning paper trade -> Restored to Live Trading${isDailyLocked ? ' (active tomorrow after rollover)' : ''}!\n`);
+      console.log(`\n🏆 [PAIR GRADUATION] ${symbol} achieved 2 winning paper trades -> Restored to Live Trading${isDailyLocked ? ' (active tomorrow after rollover)' : ''}!\n`);
     }
   } else if (outcome === 'LOSS') {
     rec.consecutivePaperWins = 0;
@@ -1976,12 +1976,13 @@ function isMacroCascadeActive(htf1hCandles, mode) {
     return { isCascading: false, count: 0, reason: null };
   }
 
-  const maxThresholdCrash = cascadeCfg.MAX_CONSECUTIVE_1H_BEARISH_CRASH || 2;
-  const maxThresholdBoom = cascadeCfg.MAX_CONSECUTIVE_1H_BULLISH_BOOM || 2;
+  const maxThresholdCrash = cascadeCfg.MAX_CONSECUTIVE_1H_BEARISH_CRASH || 3;
+  const maxThresholdBoom = cascadeCfg.MAX_CONSECUTIVE_1H_BULLISH_BOOM || 3;
 
+  // Evaluate completed closed 1H candles (start at length - 2 to ignore the forming unclosed candle)
   if (mode === 'CRASH') {
     let count = 0;
-    for (let i = htf1hCandles.length - 1; i >= Math.max(0, htf1hCandles.length - 6); i--) {
+    for (let i = htf1hCandles.length - 2; i >= Math.max(0, htf1hCandles.length - 7); i--) {
       const c = htf1hCandles[i];
       const prev = htf1hCandles[i - 1];
       // Bearish continuation: closed red (close < open) AND lower close than previous candle
@@ -2000,7 +2001,7 @@ function isMacroCascadeActive(htf1hCandles, mode) {
     }
   } else if (mode === 'BOOM') {
     let count = 0;
-    for (let i = htf1hCandles.length - 1; i >= Math.max(0, htf1hCandles.length - 6); i--) {
+    for (let i = htf1hCandles.length - 2; i >= Math.max(0, htf1hCandles.length - 7); i--) {
       const c = htf1hCandles[i];
       const prev = htf1hCandles[i - 1];
       // Bullish continuation: closed green (close > open) AND higher close than previous candle
@@ -2144,10 +2145,13 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     let blockedReason = exhaustion5B.reason ? `5B Macro Momentum Guard: ${exhaustion5B.reason}` : null;
 
     // 👑 Active 1H Candle Guard: Reject SELL on Boom if the active 1-hour candle is green (close > open)
-    const current1hCandle = htf1hCandles && htf1hCandles.length > 0 ? htf1hCandles[htf1hCandles.length - 1] : null;
-    if (!isBlocked && current1hCandle && current1hCandle.close > current1hCandle.open) {
-      isBlocked = true;
-      blockedReason = `Active 1H Bar Guard: Current 1H candle is Bullish Green (${current1hCandle.close.toFixed(2)} > open ${current1hCandle.open.toFixed(2)})`;
+    const active1hCfg = config.ACTIVE_1H_CANDLE_GUARD || {};
+    if (active1hCfg.ENABLED) {
+      const current1hCandle = htf1hCandles && htf1hCandles.length > 0 ? htf1hCandles[htf1hCandles.length - 1] : null;
+      if (!isBlocked && current1hCandle && current1hCandle.close > current1hCandle.open) {
+        isBlocked = true;
+        blockedReason = `Active 1H Bar Guard: Current 1H candle is Bullish Green (${current1hCandle.close.toFixed(2)} > open ${current1hCandle.open.toFixed(2)})`;
+      }
     }
     const valuationLabel = `Macro Range: ${exhaustion5B.rangePct.toFixed(1)}% (5B Momentum Zone [${minSell5B.toFixed(0)}%-${maxBuy5B.toFixed(0)}%])`;
     const liquidityLabel = `SMC Anchor (PDH/PDL Range)`;
@@ -2260,10 +2264,13 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     let blockedReason = exhaustion5B.reason ? `5B Macro Momentum Guard: ${exhaustion5B.reason}` : null;
 
     // 👑 Active 1H Candle Guard: Reject BUY on Crash if the active 1-hour candle is red (close < open)
-    const current1hCandle = htf1hCandles && htf1hCandles.length > 0 ? htf1hCandles[htf1hCandles.length - 1] : null;
-    if (!isBlocked && current1hCandle && current1hCandle.close < current1hCandle.open) {
-      isBlocked = true;
-      blockedReason = `Active 1H Bar Guard: Current 1H candle is Bearish Red (${current1hCandle.close.toFixed(2)} < open ${current1hCandle.open.toFixed(2)})`;
+    const active1hCfg = config.ACTIVE_1H_CANDLE_GUARD || {};
+    if (active1hCfg.ENABLED) {
+      const current1hCandle = htf1hCandles && htf1hCandles.length > 0 ? htf1hCandles[htf1hCandles.length - 1] : null;
+      if (!isBlocked && current1hCandle && current1hCandle.close < current1hCandle.open) {
+        isBlocked = true;
+        blockedReason = `Active 1H Bar Guard: Current 1H candle is Bearish Red (${current1hCandle.close.toFixed(2)} < open ${current1hCandle.open.toFixed(2)})`;
+      }
     }
     const valuationLabel = `Macro Range: ${exhaustion5B.rangePct.toFixed(1)}% (5B Momentum Zone [${minSell5B.toFixed(0)}%-${maxBuy5B.toFixed(0)}%])`;
     const liquidityLabel = `SMC Anchor (PDH/PDL Range)`;
@@ -2304,7 +2311,8 @@ function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCa
   if (!baseSetup) return null;
 
   // 2. 👑 Active 1-Hour Candle Momentum Guard (Anti-Knife-Catching & Anti-Squeeze)
-  if (htf1hCandles && htf1hCandles.length > 0) {
+  const active1hCfg = config.ACTIVE_1H_CANDLE_GUARD || {};
+  if (active1hCfg.ENABLED && htf1hCandles && htf1hCandles.length > 0) {
     const current1hCandle = htf1hCandles[htf1hCandles.length - 1];
     if (baseSetup.direction === 'BUY' && current1hCandle.close < current1hCandle.open) {
       return {
@@ -2490,7 +2498,7 @@ async function monitorMarket() {
 
       // ── INDEPENDENT STRATEGY COOLDOWN VERIFICATION (Option A) ──
       const is6proLockedState = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
-      const is6proPaper = is6proLockedState || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
+      const is6proPaper = is6proLockedState || isQuarantined || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
       const is5bPaper = is6proLockedState || isQuarantined || (dynamicState.mode5b || 'LIVE') === 'PAPER';
 
       const is6proEnabled = !dynamicState.is6proPaused && (isBoth || dynamicState.activeStrategy === 'STRATEGY_6_PRO');
@@ -2546,6 +2554,7 @@ async function monitorMarket() {
         if (canRun6Pro) {
           let displayName = 'Strategy 6 Pro';
           if (is6proLockedState) displayName = 'Strategy 6 Pro (Target-Locked Paper)';
+          else if (isQuarantined) displayName = 'Strategy 6 Pro (Quarantined Paper)';
 
           strategiesToRun.push({
             id: '6PRO',
@@ -2559,6 +2568,7 @@ async function monitorMarket() {
         if (canRun6Pro) {
           let displayName = 'Strategy 6 Pro';
           if (is6proLockedState) displayName = 'Strategy 6 Pro (Target-Locked Paper)';
+          else if (isQuarantined) displayName = 'Strategy 6 Pro (Quarantined Paper)';
 
           strategiesToRun.push({
             id: '6PRO',
