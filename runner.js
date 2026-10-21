@@ -243,6 +243,21 @@ if (!fs.existsSync(RECONCILED_FLAG_FILE)) {
   }
 }
 
+// ── AUTO-RESET TO RESTORE TODAY'S FRESH SESSION ($4,747.06 USD) ──
+const RESET_OCT21_FLAG_FILE = path.join(CACHE_DIR, 'reconciled_oct21_reset.json');
+if (!fs.existsSync(RESET_OCT21_FLAG_FILE)) {
+  try {
+    const { resetTodayState } = require('./reconcileTodayReset');
+    resetTodayState(4747.06);
+    fs.writeFileSync(RESET_OCT21_FLAG_FILE, JSON.stringify({
+      resetAt: new Date().toISOString(),
+      startingBalance: 4747.06
+    }), 'utf8');
+  } catch (err) {
+    console.warn("[runner] Auto-reset notice:", err.message);
+  }
+}
+
 let dynamicState = loadDynamicState();
 
 // ── CIRCUIT BREAKER STATE MANAGER ──
