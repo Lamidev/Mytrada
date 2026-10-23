@@ -18,7 +18,7 @@ const CIRCUIT_BREAKER_FILE = path.join(CACHE_DIR, 'circuit_breaker_state.json');
 const GODEYES_MEMORY_FILE = path.join(DATA_DIR, 'godeyes_memory.json');
 const ACTIVE_TRADES_FILE = path.join(CACHE_DIR, 'active_trades.json');
 
-const TARGET_START_BALANCE = 4747.06; // Start of day baseline on Oct 21
+const TARGET_START_BALANCE = 5114.16; // Start of day baseline on Oct 23
 
 function getDateString(isoString) {
   if (!isoString) return "";
@@ -129,13 +129,13 @@ function resetTodayState(targetBalance = TARGET_START_BALANCE, customDateStr = n
   dynamicState.portfolioPauseUntil = 0;
   dynamicState.activeStrategy = 'BOTH';
   dynamicState.executionMode = 'LIVE';
-  dynamicState.mode5b = 'PAPER';
-  dynamicState.mode6pro = 'LIVE';
+  dynamicState.mode5b = 'LIVE';
+  dynamicState.mode6pro = 'PAPER';
   dynamicState.is5bPaused = false;
   dynamicState.is6proPaused = false;
 
   fs.writeFileSync(DYNAMIC_STATE_FILE, JSON.stringify(dynamicState, null, 2), 'utf8');
-  console.log(`✅ dynamic_state.json updated: portfolio unpaused, target = $${dynamicState.dailyTargetUSD}, maxloss = -$${dynamicState.dailyMaxLossUSD}.`);
+  console.log(`✅ dynamic_state.json updated: portfolio unpaused, mode5b = LIVE, mode6pro = PAPER, target = $${dynamicState.dailyTargetUSD}, maxloss = -$${dynamicState.dailyMaxLossUSD}.`);
 
   // 4. Circuit Breaker State: reset today's losses and cooldowns
   let cbState = {};
@@ -196,6 +196,31 @@ function resetTodayState(targetBalance = TARGET_START_BALANCE, customDateStr = n
       console.log(`✅ godeyes_memory.json cleaned and recalibrated.`);
     } catch (e) {
       console.warn("Could not clean memory file:", e.message);
+    }
+  }
+
+  // 6. Pair Health State: unquarantine any pair demoted today
+  const PAIR_HEALTH_FILE = path.join(CACHE_DIR, 'pair_health_state.json');
+  if (fs.existsSync(PAIR_HEALTH_FILE)) {
+    try {
+      const ph = JSON.parse(fs.readFileSync(PAIR_HEALTH_FILE, 'utf8'));
+      let modified = false;
+      for (const sym of Object.keys(ph)) {
+        if (ph[sym] && ph[sym].isQuarantined && ph[sym].quarantinedAt && ph[sym].quarantinedAt.startsWith(TODAY_STR)) {
+          ph[sym].isQuarantined = false;
+          ph[sym].consecutiveLosses = 2; // Restore to prior Thursday state
+          ph[sym].quarantineReason = null;
+          ph[sym].quarantinedAt = null;
+          modified = true;
+          console.log(`Unquarantined ${sym} that was demoted today (${TODAY_STR}).`);
+        }
+      }
+      if (modified) {
+        fs.writeFileSync(PAIR_HEALTH_FILE, JSON.stringify(ph, null, 2), 'utf8');
+        console.log(`✅ pair_health_state.json updated.`);
+      }
+    } catch (e) {
+      console.warn("Could not clean pair health file:", e.message);
     }
   }
 

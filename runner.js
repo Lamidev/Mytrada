@@ -232,26 +232,15 @@ function saveDynamicState(state) {
   }
 }
 
-// ── AUTO-RECONCILIATION FOR 6 PRO LIVE LAUNCH ──
-const RECONCILED_FLAG_FILE = path.join(CACHE_DIR, 'reconciled_6pro_oct7_v2.json');
-if (!fs.existsSync(RECONCILED_FLAG_FILE)) {
-  try {
-    const { reconcileLedger } = require('./reconcile6ProLedger');
-    reconcileLedger();
-  } catch (err) {
-    console.warn("[runner] Auto-reconciliation notice:", err.message);
-  }
-}
-
-// ── AUTO-RESET TO RESTORE TODAY'S FRESH SESSION ($4,747.06 USD) ──
-const RESET_OCT21_FLAG_FILE = path.join(CACHE_DIR, 'reconciled_oct21_reset.json');
-if (!fs.existsSync(RESET_OCT21_FLAG_FILE)) {
+// ── AUTO-RESET TO RESTORE TODAY'S FRESH SESSION ($5,114.16 USD) ──
+const RESET_OCT23_FLAG_FILE = path.join(CACHE_DIR, 'reconciled_oct23_reset.json');
+if (!fs.existsSync(RESET_OCT23_FLAG_FILE)) {
   try {
     const { resetTodayState } = require('./reconcileTodayReset');
-    resetTodayState(4747.06);
-    fs.writeFileSync(RESET_OCT21_FLAG_FILE, JSON.stringify({
+    resetTodayState(5114.16, '2026-10-23');
+    fs.writeFileSync(RESET_OCT23_FLAG_FILE, JSON.stringify({
       resetAt: new Date().toISOString(),
-      startingBalance: 4747.06
+      startingBalance: 5114.16
     }), 'utf8');
   } catch (err) {
     console.warn("[runner] Auto-reset notice:", err.message);
@@ -1137,14 +1126,34 @@ const telegramHandlers = {
     dynamicState.is5bPaused = false;
     dynamicState.is6proPaused = false;
     if (strat === 'BOTH') {
-      dynamicState.mode5b = 'PAPER';
-      dynamicState.mode6pro = 'LIVE';
+      dynamicState.mode5b = 'LIVE';
+      dynamicState.mode6pro = 'PAPER';
       dynamicState.executionMode = 'LIVE';
     } else if (strat === 'STRATEGY_6_PRO') {
       dynamicState.mode6pro = 'LIVE';
       dynamicState.executionMode = 'LIVE';
+    } else if (strat === 'STRATEGY_5B') {
+      dynamicState.mode5b = 'LIVE';
+      dynamicState.executionMode = 'LIVE';
     }
     saveDynamicState(dynamicState);
+  },
+
+  resetToday: (targetBalance = 5114.16) => {
+    const { resetTodayState } = require('./reconcileTodayReset');
+    const todayStr = getLocalDateStr();
+    resetTodayState(targetBalance, todayStr);
+    dynamicState = loadDynamicState();
+    circuitBreakerState = loadCircuitBreakerState();
+    const report = generateDailyReport(todayStr);
+    return {
+      startingBalance: report.startingBalance,
+      tradesCount: report.closedCount,
+      mode5b: dynamicState.mode5b,
+      mode6pro: dynamicState.mode6pro,
+      target: dynamicState.dailyTargetUSD,
+      maxLoss: dynamicState.dailyMaxLossUSD
+    };
   },
 
   pauseStrategy: (strat) => {

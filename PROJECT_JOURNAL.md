@@ -148,6 +148,7 @@ All trades ever taken or closed by Mytrada are permanently recorded in standard 
 | `/resume` | None | Resumes scanning while strictly honoring existing pair circuit breakers. | `/resume` |
 | `/close` | `<symbol>` / `ALL` | Manually closes an active trade at the current market price. | `/close CRASH1000` |
 | `/pairs` | None | Lists all 12 monitored pairs and their current 4H/1H trend directions. | `/pairs` |
+| `/resettoday` | `[amount]` | Clears today's trades and resets starting balance to $5,114.16 USD. | `/resettoday` |
 | `/help` | None | Displays the interactive slash command menu and usage examples. | `/help` |
 
 ---

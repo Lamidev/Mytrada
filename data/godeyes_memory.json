@@ -2,9 +2,9 @@
   "BOOM500": {
     "name": "Boom 500 Index",
     "mode": "BOOM",
-    "pdh": 0,
-    "pdl": 0,
-    "rangeSpan": 0,
+    "pdh": 5659.547,
+    "pdl": 5432.862,
+    "rangeSpan": 226.6849999999995,
     "trendRegime": "BEARISH_MOMENTUM",
     "healthRating": "🔬 PENDING LIVE TRADES",
     "stats": {
@@ -16,14 +16,15 @@
       "netR": 0,
       "netUSD": 0
     },
-    "recentTrades": []
+    "recentTrades": [],
+    "lastUpdated": 1792319773136
   },
   "BOOM300N": {
     "name": "Boom 300 Index",
     "mode": "BOOM",
-    "pdh": 411.42,
-    "pdl": 394.97,
-    "rangeSpan": 16.44999999999999,
+    "pdh": 506.957,
+    "pdl": 436.852,
+    "rangeSpan": 70.10500000000002,
     "trendRegime": "BEARISH_MOMENTUM",
     "healthRating": "⚠️ HIGH-EXHAUSTION SENSITIVITY",
     "stats": {
@@ -92,14 +93,15 @@
         "outcome": "LOSS",
         "rMultiple": -1
       }
-    ]
+    ],
+    "lastUpdated": 1792319774626
   },
   "BOOM900": {
     "name": "Boom 900 Index",
     "mode": "BOOM",
-    "pdh": 8680.611,
-    "pdl": 8457.502,
-    "rangeSpan": 223.10900000000038,
+    "pdh": 8709.838,
+    "pdl": 8524.314,
+    "rangeSpan": 185.52399999999943,
     "trendRegime": "BEARISH_MOMENTUM",
     "healthRating": "🟡 ACTIVE",
     "stats": {
@@ -257,14 +259,14 @@
         "rMultiple": 1.3
       }
     ],
-    "lastUpdated": 1791366944657
+    "lastUpdated": 1792319775889
   },
   "BOOM600": {
     "name": "Boom 600 Index",
     "mode": "BOOM",
-    "pdh": 5226.41,
-    "pdl": 5103.545,
-    "rangeSpan": 122.86499999999978,
+    "pdh": 5290.993,
+    "pdl": 5166.818,
+    "rangeSpan": 124.17500000000018,
     "trendRegime": "BEARISH_MOMENTUM",
     "healthRating": "🟡 ACTIVE",
     "stats": {
@@ -374,14 +376,14 @@
         "rMultiple": 1.3
       }
     ],
-    "lastUpdated": 1791366947082
+    "lastUpdated": 1792319777283
   },
   "BOOM1000": {
     "name": "Boom 1000 Index",
     "mode": "BOOM",
-    "pdh": 0,
-    "pdl": 0,
-    "rangeSpan": 0,
+    "pdh": 15504.916,
+    "pdl": 15253.972,
+    "rangeSpan": 250.9439999999995,
     "trendRegime": "BEARISH_MOMENTUM",
     "healthRating": "🔬 PENDING LIVE TRADES",
     "stats": {
@@ -393,14 +395,15 @@
       "netR": 0,
       "netUSD": 0
     },
-    "recentTrades": []
+    "recentTrades": [],
+    "lastUpdated": 1792319778659
   },
   "BOOM150N": {
     "name": "Boom 150 Index",
     "mode": "BOOM",
-    "pdh": 0,
-    "pdl": 0,
-    "rangeSpan": 0,
+    "pdh": 9674.51717,
+    "pdl": 9604.97613,
+    "rangeSpan": 69.54104000000007,
     "trendRegime": "BEARISH_MOMENTUM",
     "healthRating": "🔬 INCUBATION SANDBOX",
     "stats": {
@@ -412,14 +415,15 @@
       "netR": 0,
       "netUSD": 0
     },
-    "recentTrades": []
+    "recentTrades": [],
+    "lastUpdated": 1792319779869
   },
   "CRASH300N": {
     "name": "Crash 300 Index",
     "mode": "CRASH",
-    "pdh": 2854.607,
-    "pdl": 2505.031,
-    "rangeSpan": 349.576,
+    "pdh": 2547.219,
+    "pdl": 2355.265,
+    "rangeSpan": 191.95400000000018,
     "trendRegime": "BULLISH_MOMENTUM",
     "healthRating": "👑 ELITE MVP RUNNER",
     "stats": {
@@ -521,14 +525,14 @@
         "rMultiple": 1.3
       }
     ],
-    "lastUpdated": 1791366944673
+    "lastUpdated": 1792319781703
   },
   "CRASH500": {
     "name": "Crash 500 Index",
     "mode": "CRASH",
-    "pdh": 3150,
-    "pdl": 3090,
-    "rangeSpan": 60,
+    "pdh": 3035.402,
+    "pdl": 2934.663,
+    "rangeSpan": 100.73900000000003,
     "trendRegime": "BULLISH_MOMENTUM",
     "healthRating": "👑 ELITE MVP RUNNER",
     "stats": {
@@ -665,14 +669,14 @@
         "spikes": null
       }
     ],
-    "lastUpdated": 1791226991249
+    "lastUpdated": 1792319782935
   },
   "CRASH600": {
     "name": "Crash 600 Index",
     "mode": "CRASH",
-    "pdh": 23517.16,
-    "pdl": 22971.225,
-    "rangeSpan": 545.9350000000013,
+    "pdh": 22451.131,
+    "pdl": 21911.179,
+    "rangeSpan": 539.9520000000011,
     "trendRegime": "BULLISH_MOMENTUM",
     "healthRating": "⚠️ HIGH-EXHAUSTION SENSITIVITY",
     "stats": {
@@ -702,14 +706,14 @@
         "rMultiple": -1
       }
     ],
-    "lastUpdated": 1791366944666
+    "lastUpdated": 1792319784290
   },
   "CRASH900": {
     "name": "Crash 900 Index",
     "mode": "CRASH",
-    "pdh": 16960,
-    "pdl": 16330,
-    "rangeSpan": 630,
+    "pdh": 16816.722,
+    "pdl": 16396.3,
+    "rangeSpan": 420.4220000000023,
     "trendRegime": "BULLISH_MOMENTUM",
     "healthRating": "🟡 ACTIVE",
     "stats": {
@@ -811,14 +815,14 @@
         "rMultiple": -1
       }
     ],
-    "lastUpdated": 1791226991246
+    "lastUpdated": 1792319785595
   },
   "CRASH1000": {
     "name": "Crash 1000 Index",
     "mode": "CRASH",
-    "pdh": 6183.82,
-    "pdl": 6006.43,
-    "rangeSpan": 177.38999999999942,
+    "pdh": 6285.362,
+    "pdl": 6141.958,
+    "rangeSpan": 143.40400000000045,
     "trendRegime": "BULLISH_MOMENTUM",
     "healthRating": "🟢 CONSISTENT PERFORMER",
     "stats": {
@@ -951,14 +955,15 @@
         "outcome": "LOSS",
         "rMultiple": -1
       }
-    ]
+    ],
+    "lastUpdated": 1792319786940
   },
   "CRASH150N": {
     "name": "Crash 150 Index",
     "mode": "CRASH",
-    "pdh": 0,
-    "pdl": 0,
-    "rangeSpan": 0,
+    "pdh": 9504.77052,
+    "pdl": 9467.70293,
+    "rangeSpan": 37.067590000000564,
     "trendRegime": "BULLISH_MOMENTUM",
     "healthRating": "🔬 INCUBATION SANDBOX",
     "stats": {
@@ -970,6 +975,7 @@
       "netR": 0,
       "netUSD": 0
     },
-    "recentTrades": []
+    "recentTrades": [],
+    "lastUpdated": 1792319788286
   }
 }

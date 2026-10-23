@@ -180,6 +180,7 @@ function registerTelegramCommands() {
     { command: 'stopall', description: "Halt all engines: /stopall (stops 5b, 6pro, gold, live & paper)" },
     { command: 'resumeall', description: "Resume all engines: /resumeall (resumes 5b, 6pro, gold)" },
     { command: 'resume', description: "Resume scanning: /resume | /resume CRASH1000 | /resume 6pro" },
+    { command: 'resettoday', description: "Reset today's session: clear trades & set balance ($5,114.16)" },
     { command: 'closeall', description: "Emergency exit: Close all open positions at market" },
     { command: 'help', description: "Show clean command control center" }
   ];
@@ -302,6 +303,7 @@ async function handleCommand(rawText, handlers) {
         `• <code>/promote CRASH150N</code> ➜ Graduate incubation pair to Live Trading`,
         `• <code>/demote CRASH150N</code> ➜ Demote pair back to Incubation Sandbox`,
         `• <code>/quarantine BOOM300N</code> ➜ Move pair to Paper Mode ($0 risk)`,
+        `• <code>/resettoday [bal]</code> ➜ Reset today's trades & restore starting balance ($5,114.16)`,
         `• <code>/unquarantine BOOM300N</code> ➜ Restore pair to Live Trading`,
         `• <code>/be</code> ➜ Move SL on open trades to Breakeven ($0 risk)`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -324,7 +326,7 @@ async function handleCommand(rawText, handlers) {
     case '/strat': {
       if (!arg1) {
         const cur = handlers.getActiveStrategy ? handlers.getActiveStrategy() : 'BOTH';
-        let label = '⚡ <b>DUAL ENGINE (6 Pro Live + 5B Paper Sandbox)</b>';
+        let label = '⚡ <b>DUAL ENGINE (5B Live + 6 Pro Paper Sandbox)</b>';
         if (cur === 'STRATEGY_6_PRO') label = '👑 <b>Strategy 6 Pro Only (Institutional SMC Sniper)</b>';
         else if (cur === 'STRATEGY_5B') label = '🚀 <b>Strategy 5B Only (Value-Zone Momentum Sniper)</b>';
 
@@ -337,9 +339,9 @@ async function handleCommand(rawText, handlers) {
           `🚀 <b>Strategy 5B:</b> Value-Zone Spike Exhaustion Sniper (~10-15 trades/day)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💡 <b>Commands:</b>`,
-          `• <code>/strategy both</code> — Run BOTH (6 Pro Live + 5B Paper Sandbox)`,
-          `• <code>/strategy 6pro</code> — Run Strategy 6 Pro exclusively`,
-          `• <code>/strategy 5b</code> — Run Strategy 5B Enhanced exclusively`
+          `• <code>/strategy both</code> — Run BOTH (5B Live + 6 Pro Paper Sandbox)`,
+          `• <code>/strategy 5b</code> — Run Strategy 5B Enhanced exclusively`,
+          `• <code>/strategy 6pro</code> — Run Strategy 6 Pro exclusively`
         ].join('\n'));
         break;
       }
@@ -349,8 +351,8 @@ async function handleCommand(rawText, handlers) {
         await sendTelegramMessage([
           `⚡ <b>[DUAL STRATEGY ENGINE ACTIVATED]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `• 👑 <b>Strategy 6 Pro:</b> <b>LIVE REAL TRADING</b> (Account Equity)`,
-          `• 🔬 <b>Strategy 5B:</b> <b>PAPER FORWARD TEST</b> ($0 Risk Sandbox)`,
+          `• 🚀 <b>Strategy 5B Enhanced:</b> <b>LIVE REAL TRADING</b> (Account Equity)`,
+          `• 👑 <b>Strategy 6 Pro:</b> <b>PAPER FORWARD TEST</b> ($0 Risk Sandbox)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<i>Both engines are actively scanning in parallel. Control each anytime with /pause 5b or /pause 6pro.</i>`
         ].join('\n'));
@@ -580,6 +582,35 @@ async function handleCommand(rawText, handlers) {
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `⏳ <i>Bot will automatically reset and resume tomorrow at 12:00 AM UTC. Send /resume to unlock immediately.</i>`
         ].join('\n'));
+      }
+      break;
+    }
+
+    case '/resettoday':
+    case '/reset':
+    case '/cleanstart': {
+      let targetBal = 5114.16;
+      if (arg1) {
+        const parsed = parseFloat(arg1);
+        if (!isNaN(parsed) && parsed > 0) targetBal = parsed;
+      }
+      if (handlers.resetToday) {
+        const res = handlers.resetToday(targetBal);
+        await sendTelegramMessage([
+          `🔄 🟢 <b>[MYTRADA TODAY'S SESSION FULLY RESET]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `💵 <b>Starting Balance:</b> <code>$${(res.startingBalance || targetBal).toFixed(2)} USD</code>`,
+          `💰 <b>Current Balance:</b> <code>$${(res.startingBalance || targetBal).toFixed(2)} USD</code>`,
+          `📊 <b>Today's Trades:</b> <code>0 Trades (All Today's Trades Cleared)</code>`,
+          `🚀 <b>Strategy 5B Enhanced:</b> 🟢 <b>LIVE REAL TRADING</b>`,
+          `👑 <b>Strategy 6 Pro:</b> 🔬 <b>PAPER SANDBOX ($0 Real Risk)</b>`,
+          `🎯 <b>Daily Profit Target:</b> <code>+$${(res.target || 300).toFixed(2)} USD</code>`,
+          `🛡️ <b>Daily Max Loss Floor:</b> <code>-$${(res.maxLoss || 250).toFixed(2)} USD</code>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `✨ <i>Circuit breakers, pair cooldowns, and quarantines reset. Bot is scanning fresh!</i>`
+        ].join('\n'));
+      } else {
+        await sendTelegramMessage(`⚠️ Reset handler not available.`);
       }
       break;
     }
