@@ -514,7 +514,7 @@ function formatHealthTelegramHTML() {
   return lines.join('\n');
 }
 
-function isSymbolInCooldown(symbol, isPaper = false) {
+function isSymbolInCooldown(symbol, isPaper = false, currentPrice = null) {
   if (!config.CIRCUIT_BREAKER || !config.CIRCUIT_BREAKER.ENABLED) return { inCooldown: false };
   
   // Always load fresh state from disk to guarantee instant cross-monitor synchronization
@@ -541,10 +541,23 @@ function isSymbolInCooldown(symbol, isPaper = false) {
     return { inCooldown: true, reason };
   }
 
+  // 🛡️ Same-Zone Re-entry Trap Armor: Prevents double-dipping at the same failed price level
+  if (rec.trapZone && now < rec.trapZone.expiresAt) {
+    if (currentPrice !== null && typeof currentPrice === 'number' && !isNaN(currentPrice)) {
+      if (currentPrice >= rec.trapZone.zoneMin && currentPrice <= rec.trapZone.zoneMax) {
+        const remMins = Math.ceil((rec.trapZone.expiresAt - now) / 60000);
+        return { 
+          inCooldown: true, 
+          reason: `Same-Zone Trap: Price (${currentPrice.toFixed(2)}) is inside failed zone [${rec.trapZone.zoneMin.toFixed(2)} - ${rec.trapZone.zoneMax.toFixed(2)}] (${remMins}m remaining)` 
+        };
+      }
+    }
+  }
+
   return { inCooldown: false };
 }
 
-function recordSymbolTradeOutcome(symbol, outcome, isPaper = false) {
+function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails = null) {
   const today = new Date().toISOString().slice(0, 10);
   if (!circuitBreakerState || circuitBreakerState.date !== today) {
     circuitBreakerState = loadCircuitBreakerState();
@@ -570,6 +583,25 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false) {
   const maxDaily = config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2;
   const postWinMins = config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 60;
   const tier1Mins = config.CIRCUIT_BREAKER.TIER_1_PAUSE_MINS || 60;
+
+  // 🛡️ Same-Zone Trap Armor: Store the failed price band on any loss
+  if (outcome === 'LOSS' && tradeDetails && tradeDetails.entryPrice) {
+    const entryPrice = parseFloat(tradeDetails.entryPrice);
+    const stopLoss = parseFloat(tradeDetails.stopLoss || entryPrice);
+    const slDist = Math.abs(entryPrice - stopLoss);
+    const zoneBuffer = (slDist > 0 && !isNaN(slDist) ? slDist : 10) * 1.5;
+    rec.trapZone = {
+      failedPrice: entryPrice,
+      zoneMin: entryPrice - zoneBuffer,
+      zoneMax: entryPrice + zoneBuffer,
+      direction: tradeDetails.direction || (tradeDetails.type === 'bullish' ? 'BUY' : 'SELL'),
+      failedAt: now,
+      expiresAt: now + (60 * 60 * 1000) // 60 minutes
+    };
+    console.log(`[TRAP SHIELD] ${symbol}: Activated Same-Zone Lockout around ${entryPrice.toFixed(2)} [${rec.trapZone.zoneMin.toFixed(2)} - ${rec.trapZone.zoneMax.toFixed(2)}] for 60m`);
+  } else if (outcome === 'WIN') {
+    rec.trapZone = null; // Clear trap zone immediately on win
+  }
 
   if (isPaper) {
     // ── 🔬 PAPER SANDBOX CIRCUIT BREAKER (Strategy 5B & Incubation) ──
@@ -706,7 +738,7 @@ async function closeTradeManually(symbol, skipTargetCheck = false) {
   const pnlUSD = pnlR * riskUSD;
   const outcome = pnlUSD >= 0 ? 'WIN' : 'LOSS';
 
-  recordSymbolTradeOutcome(symbol, outcome);
+  recordSymbolTradeOutcome(symbol, outcome, false, trade);
   recordClose(trade.setupId, outcome, livePrice, pnlUSD, pnlR, 'MANUAL_CLOSE');
 
   const updatedTrades = activeTrades.filter(t => t.setupId !== trade.setupId);
@@ -888,6 +920,11 @@ const telegramHandlers = {
         } else if (rec.paperPauseUntil && now < rec.paperPauseUntil) {
           const rem = Math.ceil((rec.paperPauseUntil - now) / 60000);
           cooldowns.push(`• <code>${sym}</code>: 🔬 5B Paper ${rem}m cooldown (${rec.paperDailyLosses || 0} loss today)`);
+        }
+
+        if (rec.trapZone && now < rec.trapZone.expiresAt) {
+          const rem = Math.ceil((rec.trapZone.expiresAt - now) / 60000);
+          cooldowns.push(`• <code>${sym}</code>: 🛡️ Trap Armor [${rec.trapZone.zoneMin.toFixed(2)} - ${rec.trapZone.zoneMax.toFixed(2)}] (${rem}m left)`);
         }
       }
     }
@@ -1352,6 +1389,7 @@ const telegramHandlers = {
       } else {
         const t = (target || 'all').toLowerCase();
         const rec = circuitBreakerState.symbols[symbol];
+        rec.trapZone = null;
         if (t === 'paper' || t === '5b') {
           rec.paperPauseUntil = 0;
           rec.paperConsecutiveLosses = 0;
@@ -1601,7 +1639,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         });
 
         await updatePairHealthOnPaperClose(symbol, 'WIN');
-        recordSymbolTradeOutcome(symbol, 'WIN', true);
+        recordSymbolTradeOutcome(symbol, 'WIN', true, trade);
 
         const isMonitorOnly = config.SYMBOLS[symbol] && config.SYMBOLS[symbol].monitorOnly;
         const stratName = trade.strategy || 'Paper Sandbox';
@@ -1688,7 +1726,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         });
 
         await updatePairHealthOnPaperClose(symbol, 'LOSS');
-        recordSymbolTradeOutcome(symbol, 'LOSS', true);
+        recordSymbolTradeOutcome(symbol, 'LOSS', true, trade);
 
         const isMonitorOnly = config.SYMBOLS[symbol] && config.SYMBOLS[symbol].monitorOnly;
         const stratName = trade.strategy || 'Paper Sandbox';
@@ -1757,7 +1795,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
 
       const pnlUsd = trade.rewardUSD || compRisk.rewardUSD;
 
-      recordSymbolTradeOutcome(symbol, 'WIN');
+      recordSymbolTradeOutcome(symbol, 'WIN', false, trade);
       await updatePairHealthOnLiveClose(symbol, 'WIN');
       recordClose(trade.setupId, 'WIN', trade.takeProfit, pnlUsd, 1.3, trade.aiVisionVerdict);
       const updatedBalance = getCurrentAccountBalance();
@@ -1819,7 +1857,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         await sendTelegramMessage(beAlert);
         await new Promise(r => setTimeout(r, 1200));
       } else {
-        recordSymbolTradeOutcome(symbol, 'LOSS');
+        recordSymbolTradeOutcome(symbol, 'LOSS', false, trade);
         await updatePairHealthOnLiveClose(symbol, 'LOSS');
         recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0, trade.aiVisionVerdict);
         const updatedBalance = getCurrentAccountBalance();
@@ -2681,6 +2719,14 @@ async function monitorMarket() {
 
           if (slAlreadyHit || tpAlreadyHit || priceDrift > maxAllowedDrift) {
             console.log(`  [${mode}] ${symbol.padEnd(12)} | [${strat.displayName}] Discarding stale setup (live price ${latestPrice.toFixed(2)} already beyond entry ${setup.entry.toFixed(2)})`);
+            saveAlertedSetup(setupId);
+            break;
+          }
+
+          // 🛡️ Same-Zone Re-entry Trap Armor Check
+          const trapCheck = isSymbolInCooldown(symbol, strat.isPaper, setup.entry);
+          if (trapCheck.inCooldown) {
+            console.log(`  [TRAP SHIELD] ${symbol.padEnd(12)} | [${strat.displayName}] 🛑 Setup blocked: ${trapCheck.reason}`);
             saveAlertedSetup(setupId);
             break;
           }
