@@ -154,7 +154,10 @@ function resetTodayState(targetBalance = TARGET_START_BALANCE, customDateStr = n
     cbState.symbols[sym] = {
       consecutiveLosses: 0,
       dailyLosses: 0,
-      pauseUntil: 0
+      pauseUntil: 0,
+      paperConsecutiveLosses: 0,
+      paperDailyLosses: 0,
+      paperPauseUntil: 0
     };
   }
 

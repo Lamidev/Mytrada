@@ -66,8 +66,8 @@ module.exports = {
     TIER_1_PAUSE_MINS: 60,               // 👑 Universal 60m Cooldown after LOSS (12x M5 bars / 1 full 1H candle cycle)
     TIER_2_PAUSE_MINS: 60,               // 60-minute pause on symbol after 2 consecutive losses
     MAX_DAILY_LOSSES_PER_SYMBOL: 2,      // 👑 2 Daily Losses = Halted on symbol for remainder of day
-    PORTFOLIO_CONSECUTIVE_LOSS_LIMIT: 3, // 👑 3 Consecutive Losses across ANY pairs = 60m Portfolio-wide Cooldown
-    PORTFOLIO_LOSS_PAUSE_MINS: 60,       // 60-minute portfolio pause duration
+    PORTFOLIO_CONSECUTIVE_LOSS_LIMIT: 3, // 👑 3 Consecutive Losses across ANY pairs = 120m (2-Hour) Portfolio-wide Cooldown
+    PORTFOLIO_LOSS_PAUSE_MINS: 120,      // 👑 120-minute (2-Hour) portfolio pause duration (2 full 1H cycles)
     DEFAULT_DAILY_PROFIT_TARGET_USD: 0,  // 👑 Default daily profit target disabled (0) — set dynamically via Telegram /target <amt>
     DEFAULT_DAILY_MAX_LOSS_USD: 0        // 👑 Default daily max loss shield disabled (0) — set dynamically via Telegram /maxloss <amt>
   },

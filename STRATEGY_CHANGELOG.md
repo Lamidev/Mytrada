@@ -9,6 +9,7 @@
 ## 📑 Changelog Table of Contents
 1. [Active Production Snapshot](#active-production-snapshot)
 2. [Version History & Modification Logs](#version-history--modification-logs)
+   - [v5.9 — October 24, 2026 (2-Hour Portfolio Cooldown & Airtight 2-Loss Lockout Rule)](#v59--october-24-2026)
    - [v5.8 — September 17, 2026 (Dual-Timeframe 1H+5M AI Vision & 12-Pair Balanced Universe)](#v58--september-17-2026)
    - [v5.7 — September 17, 2026 (Gemini 2.5 Flash Multimodal Vision A/B Shadow Tracker)](#v57--september-17-2026)
    - [v5.6 — September 16, 2026 (Active 1H Candle Momentum Guard & CRASH300N 3-Spikes)](#v56--september-16-2026)
@@ -43,6 +44,23 @@
 ---
 
 ## Version History & Modification Logs
+
+### v5.9 — October 24, 2026
+* **Author/Operator:** Antigravity / Lamidev
+* **Changes Made:**
+  - **Portfolio Consecutive Loss Cooldown Increased to 2 Hours (120m)**:
+    - Updated `PORTFOLIO_LOSS_PAUSE_MINS` from `60` to `120` in [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js).
+    - If 3 consecutive losses hit across live trades, the entire bot pauses for 2 full 1-hour candle cycles (24x M5 bars) to let multi-asset momentum squeezes completely exhaust.
+  - **Airtight 2-Loss Daily Limit per Symbol (Live & Paper)**:
+    - In [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js), updated `isSymbolInCooldown` and `recordSymbolTradeOutcome` so that a pair is locked until 12:00 AM UTC if it suffers **$\ge 2$ daily losses OR $\ge 2$ consecutive losses**.
+    - Removed the legacy `CRASH600` auto-heal hack from `loadCircuitBreakerState` so all pairs strictly adhere to the universal 2-loss limit.
+    - Sealed `resumeBot()` and [`reconcileTodayReset.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reconcileTodayReset.js) to preserve both live and paper loss counters across bot restarts and `/resume` calls.
+* **Rationale:**
+  - Prevents churning into choppy markets after 2 consecutive failures on any individual asset.
+  - Gives Deriv synthetic market structure adequate time (2 hours) to reset after portfolio-wide turbulence.
+* **Fail-Safe Switch:** In `config.js`, revert `PORTFOLIO_LOSS_PAUSE_MINS` to `60`.
+
+---
 
 ### v5.8 — September 17, 2026
 * **Author/Operator:** Antigravity / Lamidev

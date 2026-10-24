@@ -260,14 +260,6 @@ function loadCircuitBreakerState() {
         saveCircuitBreakerState(freshState);
         return freshState;
       }
-      // 🛠️ Auto-heal duplicate paper strike on live pairs (e.g. CRASH600)
-      if (state.symbols && state.symbols.CRASH600 && state.symbols.CRASH600.dailyLosses >= 2) {
-        state.symbols.CRASH600.dailyLosses = 1;
-        state.symbols.CRASH600.consecutiveLosses = 1;
-        state.symbols.CRASH600.pauseUntil = Math.min(state.symbols.CRASH600.pauseUntil || 0, Date.now() + 45 * 60 * 1000);
-        saveCircuitBreakerState(state);
-        console.log(`[runner] 🛠️ Auto-healed CRASH600 circuit breaker: dailyLosses reset to 1 (cleared duplicate paper strike).`);
-      }
       return state;
     } catch (e) {
       console.warn("[runner] Warning loading circuit breaker state:", e.message);
@@ -528,8 +520,9 @@ function isSymbolInCooldown(symbol, isPaper = false, currentPrice = null) {
   const pauseUntil = isPaper ? (rec.paperPauseUntil || 0) : (rec.pauseUntil || 0);
   const consecLosses = isPaper ? (rec.paperConsecutiveLosses || 0) : (rec.consecutiveLosses || 0);
 
-  if (dailyLosses >= maxDaily) {
-    return { inCooldown: true, reason: `Daily limit (${dailyLosses} ${isPaper ? 'paper ' : ''}losses) reached` };
+  if (dailyLosses >= maxDaily || consecLosses >= 2) {
+    const triggerDesc = consecLosses >= 2 ? `${consecLosses} consecutive` : `${dailyLosses} daily`;
+    return { inCooldown: true, reason: `Symbol limit (${triggerDesc} ${isPaper ? 'paper ' : ''}losses) reached — halted for today` };
   }
 
   const now = Date.now();
@@ -612,18 +605,21 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
       rec.paperConsecutiveLosses = (rec.paperConsecutiveLosses || 0) + 1;
       rec.paperDailyLosses = (rec.paperDailyLosses || 0) + 1;
 
-      if (rec.paperDailyLosses >= maxDaily) {
+      if (rec.paperDailyLosses >= maxDaily || rec.paperConsecutiveLosses >= 2) {
         const endOfDay = new Date();
         endOfDay.setUTCHours(23, 59, 59, 999);
         rec.paperPauseUntil = endOfDay.getTime();
+        const triggerReason = rec.paperConsecutiveLosses >= 2
+          ? `2 consecutive paper losses (${rec.paperDailyLosses} total today)`
+          : `${rec.paperDailyLosses} paper losses today`;
         sendTelegramMessage([
           `🛑 🛡️ <b>[SYMBOL DAILY LOSS LIMIT REACHED — PAPER SANDBOX]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-          `<b>Trigger:</b> <code>${rec.paperDailyLosses} paper losses today</code> (Strategy 5B Sandbox).`,
+          `<b>Trigger:</b> <code>${triggerReason}</code> (Strategy Sandbox).`,
           `<b>Action:</b> Paper forward tests paused on <b>${symbol}</b> until <b>12:00 AM UTC</b>.`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `👑 <i>Strategy 6 Pro Live trading remains independent & scanning.</i>`
+          `👑 <i>Live trading on healthy pairs remains independent & scanning.</i>`
         ].join('\n')).catch(() => null);
       } else {
         rec.paperPauseUntil = Math.max(rec.paperPauseUntil || 0, now + (tier1Mins * 60 * 1000));
@@ -640,15 +636,18 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
       rec.dailyLosses = (rec.dailyLosses || 0) + 1;
       dynamicState.portfolioConsecutiveLosses = (dynamicState.portfolioConsecutiveLosses || 0) + 1;
 
-      if (rec.dailyLosses >= maxDaily) {
+      if (rec.dailyLosses >= maxDaily || rec.consecutiveLosses >= 2) {
         const endOfDay = new Date();
         endOfDay.setUTCHours(23, 59, 59, 999);
         rec.pauseUntil = endOfDay.getTime();
+        const triggerReason = rec.consecutiveLosses >= 2
+          ? `2 consecutive live losses (${rec.dailyLosses} total today)`
+          : `${rec.dailyLosses} live losses today`;
         sendTelegramMessage([
           `🛑 🛡️ <b>[SYMBOL DAILY LOSS LIMIT REACHED — LIVE TRADING]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-          `<b>Trigger:</b> <code>${rec.dailyLosses} live losses today</code>.`,
+          `<b>Trigger:</b> <code>${triggerReason}</code>.`,
           `<b>Action:</b> Live trading paused on <b>${symbol}</b> until <b>12:00 AM UTC</b> to protect performance.`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<i>Remaining healthy pairs will continue scanning normally.</i>`
@@ -660,14 +659,15 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
       // Portfolio-Wide Consecutive Loss Breaker (Live real capital trades only):
       const maxPortfolioLosses = config.CIRCUIT_BREAKER.PORTFOLIO_CONSECUTIVE_LOSS_LIMIT || 3;
       if (dynamicState.portfolioConsecutiveLosses >= maxPortfolioLosses) {
-        const pauseMins = config.CIRCUIT_BREAKER.PORTFOLIO_LOSS_PAUSE_MINS || 60;
+        const pauseMins = config.CIRCUIT_BREAKER.PORTFOLIO_LOSS_PAUSE_MINS || 120;
         dynamicState.portfolioPauseUntil = now + (pauseMins * 60 * 1000);
         dynamicState.portfolioConsecutiveLosses = 0; // Reset counter
+        const pauseHours = (pauseMins / 60).toFixed(pauseMins % 60 === 0 ? 0 : 1);
         sendTelegramMessage([
           `⚠️ 🛡️ <b>[MYTRADA PORTFOLIO CIRCUIT BREAKER]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Trigger:</b> <code>${maxPortfolioLosses} consecutive losses</code> hit across portfolio (Live Trading).`,
-          `<b>Action:</b> Entire bot paused for <b>${pauseMins} minutes</b> to let market turbulence settle.`,
+          `<b>Action:</b> Entire bot paused for <b>${pauseMins} minutes (${pauseHours}h)</b> to let market turbulence settle.`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<i>Active positions will continue monitoring to TP/SL. Send /resume to override.</i>`
         ].join('\n')).catch(() => null);
@@ -905,21 +905,23 @@ const telegramHandlers = {
     const cooldowns = [];
     if (circuitBreakerState && circuitBreakerState.symbols) {
       for (const [sym, rec] of Object.entries(circuitBreakerState.symbols)) {
-        const isLiveLocked = (rec.dailyLosses || 0) >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2);
-        const isPaperLocked = (rec.paperDailyLosses || 0) >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2);
+        const isLiveLocked = (rec.dailyLosses || 0) >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2) || (rec.consecutiveLosses || 0) >= 2;
+        const isPaperLocked = (rec.paperDailyLosses || 0) >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2) || (rec.paperConsecutiveLosses || 0) >= 2;
 
         if (isLiveLocked) {
-          cooldowns.push(`• <code>${sym}</code>: 🛑 <b>LIVE LOCKED FOR TODAY</b> (${rec.dailyLosses} live losses hit — halts until 12 AM UTC)`);
+          const reason = (rec.consecutiveLosses || 0) >= 2 ? `${rec.consecutiveLosses} consecutive` : `${rec.dailyLosses} daily`;
+          cooldowns.push(`• <code>${sym}</code>: 🛑 <b>LIVE LOCKED FOR TODAY</b> (${reason} losses hit — halts until 12 AM UTC)`);
         } else if (rec.pauseUntil && now < rec.pauseUntil) {
           const rem = Math.ceil((rec.pauseUntil - now) / 60000);
           cooldowns.push(`• <code>${sym}</code>: ⏳ Live ${rem}m cooldown (${rec.dailyLosses || 0} loss today)`);
         }
 
         if (isPaperLocked) {
-          cooldowns.push(`• <code>${sym}</code>: 🔬 <b>5B PAPER LOCKED FOR TODAY</b> (${rec.paperDailyLosses} paper losses hit)`);
+          const reason = (rec.paperConsecutiveLosses || 0) >= 2 ? `${rec.paperConsecutiveLosses} consecutive` : `${rec.paperDailyLosses} daily`;
+          cooldowns.push(`• <code>${sym}</code>: 🔬 <b>PAPER LOCKED FOR TODAY</b> (${reason} paper losses hit)`);
         } else if (rec.paperPauseUntil && now < rec.paperPauseUntil) {
           const rem = Math.ceil((rec.paperPauseUntil - now) / 60000);
-          cooldowns.push(`• <code>${sym}</code>: 🔬 5B Paper ${rem}m cooldown (${rec.paperDailyLosses || 0} loss today)`);
+          cooldowns.push(`• <code>${sym}</code>: 🔬 Paper ${rem}m cooldown (${rec.paperDailyLosses || 0} loss today)`);
         }
 
         if (rec.trapZone && now < rec.trapZone.expiresAt) {
@@ -1113,15 +1115,30 @@ const telegramHandlers = {
       circuitBreakerState = loadCircuitBreakerState();
     }
 
-    // Unpause symbols that have not breached their daily limit,
-    // but PRESERVE dailyLosses and keep symbols with >= MAX_DAILY_LOSSES halted for the day!
+    // Unpause symbols that have not breached their limit,
+    // but PRESERVE dailyLosses and keep symbols with >= MAX_DAILY_LOSSES or >= 2 consecutive losses halted for the day!
     const maxLosses = config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2;
     if (circuitBreakerState.symbols) {
       for (const sym of Object.keys(circuitBreakerState.symbols)) {
         const rec = circuitBreakerState.symbols[sym];
-        if (rec.dailyLosses < maxLosses) {
+        // Live side
+        if ((rec.dailyLosses || 0) < maxLosses && (rec.consecutiveLosses || 0) < 2) {
           rec.pauseUntil = 0;
           rec.consecutiveLosses = 0;
+        } else {
+          const endOfDay = new Date();
+          endOfDay.setUTCHours(23, 59, 59, 999);
+          rec.pauseUntil = endOfDay.getTime();
+        }
+
+        // Paper side
+        if ((rec.paperDailyLosses || 0) < maxLosses && (rec.paperConsecutiveLosses || 0) < 2) {
+          rec.paperPauseUntil = 0;
+          rec.paperConsecutiveLosses = 0;
+        } else {
+          const endOfDay = new Date();
+          endOfDay.setUTCHours(23, 59, 59, 999);
+          rec.paperPauseUntil = endOfDay.getTime();
         }
       }
     }
