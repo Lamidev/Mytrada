@@ -106,6 +106,27 @@ function sendTelegramMessage(text) {
       res.on('end', () => {
         if (res.statusCode === 200) {
           resolve(true);
+        } else if (res.statusCode === 400) {
+          // 🛡️ Fail-Safe: If HTML entity parsing fails, retry as sanitized text so signal is never lost
+          console.warn(`[telegramBot] Outbound HTML failed (400): ${data}. Retrying as plain text...`);
+          const plainText = String(text || '').replace(/<[^>]+>/g, '');
+          const fallbackPayload = JSON.stringify({
+            chat_id: chatId,
+            text: plainText,
+            disable_web_page_preview: true
+          });
+          const fbReq = https.request({
+            ...options,
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(fallbackPayload)
+            }
+          }, (fbRes) => {
+            resolve(fbRes.statusCode === 200);
+          });
+          fbReq.on('error', () => resolve(false));
+          fbReq.write(fallbackPayload);
+          fbReq.end();
         } else {
           console.warn(`[telegramBot] Outbound message failed (${res.statusCode}):`, data);
           resolve(false);

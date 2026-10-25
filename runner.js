@@ -363,7 +363,7 @@ async function updatePairHealthOnLiveClose(symbol, outcome) {
     if (shouldQuarantine && !rec.isQuarantined) {
       rec.isQuarantined = true;
       rec.quarantineReason = (rec.consecutiveLosses >= 2 && isBufferThin)
-        ? `2 Consecutive Losses with Thin Profit Buffer (${rec.weeklyNetR >= 0 ? '+' : ''}${rec.weeklyNetR.toFixed(1)}R < 1.0R)`
+        ? `2 Consecutive Losses with Thin Profit Buffer (${rec.weeklyNetR >= 0 ? '+' : ''}${rec.weeklyNetR.toFixed(1)}R below 1.0R)`
         : `3 Consecutive Losses (Hard Safety Floor)`;
       rec.quarantinedAt = new Date().toISOString();
       rec.consecutivePaperWins = 0;
@@ -2576,9 +2576,10 @@ async function monitorMarket() {
       const isQuarantined = symHealth.isQuarantined === true;
 
       // ── INDEPENDENT STRATEGY COOLDOWN VERIFICATION (Option A) ──
+      const isMonitorOnly = Boolean(symConfig.monitorOnly);
       const is6proLockedState = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
-      const is6proPaper = is6proLockedState || isQuarantined || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
-      const is5bPaper = is6proLockedState || isQuarantined || (dynamicState.mode5b || 'LIVE') === 'PAPER';
+      const is6proPaper = is6proLockedState || isQuarantined || isMonitorOnly || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
+      const is5bPaper = is6proLockedState || isQuarantined || isMonitorOnly || (dynamicState.mode5b || 'LIVE') === 'PAPER';
 
       const is6proEnabled = !dynamicState.is6proPaused && (isBoth || dynamicState.activeStrategy === 'STRATEGY_6_PRO');
       const is5bEnabled = !dynamicState.is5bPaused && (isBoth || dynamicState.activeStrategy === 'STRATEGY_5B');
@@ -2690,7 +2691,16 @@ async function monitorMarket() {
 
           const setupId = `${symbol}_${setup.direction}_${strat.id}_${setup.candleEpoch}`;
           const existingActive = loadActiveTrades();
-          const symbolAlreadyActive = existingActive.some(t => t.symbol === symbol && t.strategy === strat.displayName);
+          const symbolAlreadyActive = existingActive.some(t => {
+            if (t.symbol !== symbol) return false;
+            if (strat.id === '5B') {
+              return (t.strategy || '').includes('5B') || (t.setupId || '').includes('_5B_');
+            }
+            if (strat.id === '6PRO') {
+              return (t.strategy || '').includes('6 Pro') || (t.setupId || '').includes('_6PRO_');
+            }
+            return false;
+          });
 
           // 👑 COUNTERFACTUAL SHADOW FILTER AUDIT
           if (setup.isBlocked) {
@@ -2793,8 +2803,9 @@ async function monitorMarket() {
             }
 
             if (isQuarantined) {
+              const safeReason = String(symHealth.quarantineReason || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
               alertLines.push(
-                `🛡️ <b>Quarantine Reason:</b> <code>${symHealth.quarantineReason}</code>`,
+                `🛡️ <b>Quarantine Reason:</b> <code>${safeReason}</code>`,
                 `⏳ <b>Graduation Progress:</b> <code>${symHealth.consecutivePaperWins || 0} / 2 Paper Wins</code>`
               );
             }

@@ -9,6 +9,7 @@
 ## 📑 Changelog Table of Contents
 1. [Active Production Snapshot](#active-production-snapshot)
 2. [Version History & Modification Logs](#version-history--modification-logs)
+   - [v5.10 — October 25, 2026 (Strategy-Family Active Trade Lock & Telegram HTML Sanitize)](#v510--october-25-2026)
    - [v5.9 — October 24, 2026 (2-Hour Portfolio Cooldown & Airtight 2-Loss Lockout Rule)](#v59--october-24-2026)
    - [v5.8 — September 17, 2026 (Dual-Timeframe 1H+5M AI Vision & 12-Pair Balanced Universe)](#v58--september-17-2026)
    - [v5.7 — September 17, 2026 (Gemini 2.5 Flash Multimodal Vision A/B Shadow Tracker)](#v57--september-17-2026)
@@ -44,6 +45,23 @@
 ---
 
 ## Version History & Modification Logs
+
+### v5.10 — October 25, 2026
+* **Author/Operator:** Antigravity / Lamidev
+* **Changes Made:**
+  - **Strategy-Family Active Trade Guard (Prevent Spike Re-Entries on Same Strategy)**:
+    - Updated `runner.js` (`symbolAlreadyActive`) to evaluate active trades by strategy family (`5B` vs `6PRO`) rather than dynamic string matching on `strat.displayName`.
+    - If Strategy 5B already has an active position on a symbol, Strategy 5B is strictly blocked from opening another position on that symbol if subsequent spikes form while the trade is still floating.
+    - Preserves independent dual-engine operation so 5B (Live) and 6 Pro (Paper) can still take their own single trade per pair.
+  - **Telegram Entry Alert HTML Sanitization & Fallback Guard**:
+    - Replaced unescaped `< 1.0R` with `below 1.0R` in `runner.js` auto-quarantine strings and escaped `<` and `>` in alert templates.
+    - In `telegramBot.js`, added an automated fail-safe fallback: if Telegram's API returns `HTTP 400 Bad Request` on HTML parse errors, the bot automatically retries sending as sanitized plain text so no entry or exit signal is ever dropped.
+  - **Incubation Pairs Cooldown Enforcement**:
+    - Updated `runner.js` to ensure `symConfig.monitorOnly` pairs (`CRASH150N`, `BOOM150N`, `BOOM1000`) evaluate `rec.paperPauseUntil` during scans, restoring the mandatory 60m cooldown on paper losses and wins.
+* **Fail-Safe Rollback Command:**
+  ```bash
+  git checkout b53062b -- runner.js telegramBot.js
+  ```
 
 ### v5.9 — October 24, 2026
 * **Author/Operator:** Antigravity / Lamidev
