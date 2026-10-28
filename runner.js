@@ -391,17 +391,39 @@ async function updatePairHealthOnLiveClose(symbol, outcome) {
   savePairHealthState(pairHealthState);
 }
 
-async function updatePairHealthOnPaperClose(symbol, outcome) {
+async function updatePairHealthOnPaperClose(symbol, outcome, trade = null) {
   const rec = getPairHealth(symbol);
   if (!rec.isQuarantined) return;
 
   if (outcome === 'WIN') {
+    // 🛡️ DUAL-ENGINE SETUP DEDUPLICATION GUARD:
+    // If multiple strategies (e.g. 5B and 6 Pro) both take paper trades on the same market setup/candle,
+    // only count ONE win towards graduation. A pair must prove itself across 2 INDEPENDENT market setups!
+    const setupEpoch = trade && (trade.candleEpoch || 0);
+    const triggerTime = trade && (trade.triggeredTime || 0);
+
+    const isSameEpoch = setupEpoch && rec.lastPaperWinEpoch && setupEpoch === rec.lastPaperWinEpoch;
+    const isSameTriggerWindow = triggerTime && rec.lastPaperWinTriggerTime && Math.abs(triggerTime - rec.lastPaperWinTriggerTime) < 15 * 60 * 1000;
+    const isInstantCloseDup = rec.lastPaperWinClosedAt && (Date.now() - rec.lastPaperWinClosedAt < 5 * 60 * 1000);
+
+    if (isSameEpoch || isSameTriggerWindow || isInstantCloseDup) {
+      console.log(`[QUARANTINE] 🛡️ Ignored duplicate dual-engine paper TP for ${symbol} (${trade && trade.strategy ? trade.strategy : 'Dual Engine'}). Already credited for this market setup.`);
+      return;
+    }
+
+    rec.lastPaperWinEpoch = setupEpoch;
+    rec.lastPaperWinTriggerTime = triggerTime;
+    rec.lastPaperWinClosedAt = Date.now();
     rec.consecutivePaperWins = (rec.consecutivePaperWins || 0) + 1;
+
     if (rec.consecutivePaperWins >= 2) {
       // 🏆 Proof-of-Health Achieved: Restore to Live Trading!
       rec.isQuarantined = false;
       rec.consecutiveLosses = 0;
       rec.consecutivePaperWins = 0;
+      rec.lastPaperWinEpoch = null;
+      rec.lastPaperWinTriggerTime = null;
+      rec.lastPaperWinClosedAt = null;
       rec.quarantineReason = null;
       rec.quarantinedAt = null;
 
@@ -430,9 +452,14 @@ async function updatePairHealthOnPaperClose(symbol, outcome) {
 
       await sendTelegramMessage(alertMsg);
       console.log(`\n🏆 [PAIR GRADUATION] ${symbol} achieved 2 winning paper trades -> Restored to Live Trading${isDailyLocked ? ' (active tomorrow after rollover)' : ''}!\n`);
+    } else {
+      console.log(`\n🔬 [QUARANTINE PROGRESS] ${symbol} recorded Paper Win 1/2. Waiting for next distinct setup to graduate.\n`);
     }
   } else if (outcome === 'LOSS') {
     rec.consecutivePaperWins = 0;
+    rec.lastPaperWinEpoch = null;
+    rec.lastPaperWinTriggerTime = null;
+    rec.lastPaperWinClosedAt = null;
   }
 
   savePairHealthState(pairHealthState);
@@ -481,7 +508,7 @@ function formatHealthTelegramHTML() {
       statusText = 'Permanent Sandbox';
     } else if (rec.isQuarantined) {
       badge = '🔴 <b>QUARANTINED</b>';
-      statusText = `Paper Mode (${rec.consecutivePaperWins || 0}/1 Win to Graduate)`;
+      statusText = `Paper Mode (${rec.consecutivePaperWins || 0}/2 Wins to Graduate)`;
       quarantinedCount++;
     } else if (rec.consecutiveLosses === 1) {
       badge = '🟡 <b>PROBATION</b>';
@@ -598,6 +625,24 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
 
   if (isPaper) {
     // ── 🔬 PAPER SANDBOX CIRCUIT BREAKER (Strategy 5B & Incubation) ──
+    // 🛡️ DUAL-ENGINE DEDUPLICATION:
+    // If 5B and 6 Pro both took paper trades on the same market setup, do not count the outcome twice!
+    const setupEpoch = tradeDetails && (tradeDetails.candleEpoch || 0);
+    const triggerTime = tradeDetails && (tradeDetails.triggeredTime || 0);
+
+    const isSameEpoch = setupEpoch && rec.lastPaperOutcomeEpoch && setupEpoch === rec.lastPaperOutcomeEpoch;
+    const isSameTriggerWindow = triggerTime && rec.lastPaperOutcomeTriggerTime && Math.abs(triggerTime - rec.lastPaperOutcomeTriggerTime) < 15 * 60 * 1000;
+    const isInstantCloseDup = rec.lastPaperOutcomeClosedAt && (now - rec.lastPaperOutcomeClosedAt < 5 * 60 * 1000);
+
+    if (isSameEpoch || isSameTriggerWindow || isInstantCloseDup) {
+      console.log(`[CIRCUIT BREAKER] 🛡️ Ignored duplicate dual-engine paper ${outcome} for ${symbol} circuit breaker. Already recorded for this setup.`);
+      return;
+    }
+
+    rec.lastPaperOutcomeEpoch = setupEpoch;
+    rec.lastPaperOutcomeTriggerTime = triggerTime;
+    rec.lastPaperOutcomeClosedAt = now;
+
     if (outcome === 'WIN') {
       rec.paperConsecutiveLosses = 0;
       rec.paperPauseUntil = Math.max(rec.paperPauseUntil || 0, now + (postWinMins * 60 * 1000));
@@ -1655,7 +1700,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           rMultiple: 1.3
         });
 
-        await updatePairHealthOnPaperClose(symbol, 'WIN');
+        await updatePairHealthOnPaperClose(symbol, 'WIN', trade);
         recordSymbolTradeOutcome(symbol, 'WIN', true, trade);
 
         const isMonitorOnly = config.SYMBOLS[symbol] && config.SYMBOLS[symbol].monitorOnly;
@@ -1742,7 +1787,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           rMultiple: -1.0
         });
 
-        await updatePairHealthOnPaperClose(symbol, 'LOSS');
+        await updatePairHealthOnPaperClose(symbol, 'LOSS', trade);
         recordSymbolTradeOutcome(symbol, 'LOSS', true, trade);
 
         const isMonitorOnly = config.SYMBOLS[symbol] && config.SYMBOLS[symbol].monitorOnly;

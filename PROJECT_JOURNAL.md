@@ -124,6 +124,15 @@ This chronological record documents the evolution of our work, experiments condu
   * Enforced that any pair suffering $\ge 2$ daily losses OR $\ge 2$ consecutive losses is immediately locked until 12:00 AM UTC.
   * Sealed `resumeBot()` and `reconcileTodayReset.js` to strictly preserve live and paper loss counters across reboots and command restarts.
 
+### Phase 7: Dual-Engine Quarantine Deduplication Guard & Strategy 6 Pro Superiority Audit (October 28, 2026)
+* **October 27–28 Comparative Audit:**
+  * Strategy 5B Enhanced (Live) achieved **+$632.87 USD net gain (7W / 5L, 58.3% WR)** across 12 live trades, growing equity from $6,714.35 to $7,347.22 USD.
+  * Strategy 6 Pro (Forward Sandbox) outperformed with **8W / 1L (88.9% WR, +9.4R)**.
+  * **The Forensic Root Cause:** Strategy 6 Pro completely eliminated the 2 consecutive live losses taken by 5B on `CRASH500` (Macro 77.3%) and `CRASH600` (Macro 83.1%) because 6 Pro enforces the strict **75.0% SMC Dealing Zone Ceiling**.
+* **Dual-Engine Quarantine & Circuit Breaker Deduplication Fix:**
+  * **The Flaw:** When an asset was quarantined, both Strategy 5B and Strategy 6 Pro entered paper trades on the exact same M5 setup. When the price hit TP, both trades called `updatePairHealthOnPaperClose`, incrementing `consecutivePaperWins` from 0 to 2 on a single market move and causing premature graduation. Similarly, on losses, paper circuit breaker daily losses were doubled.
+  * **The Fix:** Updated `updatePairHealthOnPaperClose` and `recordSymbolTradeOutcome` in `runner.js` with `setupEpoch` and `triggeredTime` deduplication guards. A pair is strictly credited with only 1 win or loss per distinct market setup cycle, requiring 2 separate market cycles to graduate back to Live.
+
 ---
 
 ## 💾 Trade Archive & Backtesting Data System

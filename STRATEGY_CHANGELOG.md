@@ -46,6 +46,19 @@
 
 ## Version History & Modification Logs
 
+### v5.11 — October 28, 2026
+* **Author/Operator:** Antigravity / Lamidev
+* **Changes Made:**
+  - **Dual-Engine Quarantine Graduation & Circuit Breaker Deduplication Guard**:
+    - In [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js), updated `updatePairHealthOnPaperClose` and `recordSymbolTradeOutcome` to pass `trade` details and check `candleEpoch`, `triggeredTime`, and recent close timestamps.
+    - Prevents multiple concurrent dual-engine trades (`Strategy 5B` and `Strategy 6 Pro`) on the exact same M5 market setup from incrementing `consecutivePaperWins` twice or doubling paper circuit breaker daily losses.
+    - Strictly enforces that quarantined assets must achieve wins across **2 distinct, independent market setups** before graduating to Live trading.
+    - Corrected typo in status monitor display from `/1 Win` to `/2 Wins to Graduate`.
+* **Fail-Safe Rollback Command:**
+  ```bash
+  git checkout b53062b -- runner.js
+  ```
+
 ### v5.10 — October 25, 2026
 * **Author/Operator:** Antigravity / Lamidev
 * **Changes Made:**
