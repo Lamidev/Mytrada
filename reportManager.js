@@ -248,6 +248,7 @@ function recordSignal(signalData) {
     exitPrice: null,
     pnlUSD: 0,
     pnlR: 0,
+    strategy: signalData.strategy || 'Strategy 5B Enhanced',
     aiVisionVerdict: signalData.aiVisionVerdict || null,
     aiVisionReason: signalData.aiVisionReason || null,
     aiVisionConfidence: signalData.aiVisionConfidence || null
@@ -454,8 +455,26 @@ function generateWeeklyReport() {
 
   let wins = 0, losses = 0, breakevens = 0, netUSD = 0, netR = 0;
   const perSymbol = {};
+  const perStrategy = {};
 
   closedThisWeek.forEach(t => {
+    // Strategy normalization
+    let sName = 'Strategy 5B Enhanced';
+    if (t.strategy) {
+      if (t.strategy.includes('6 Pro') || t.strategy.includes('6PRO')) {
+        sName = 'Strategy 6 Pro';
+      } else if (t.strategy.includes('5B') || t.strategy.includes('5b')) {
+        sName = 'Strategy 5B Enhanced';
+      } else {
+        sName = t.strategy;
+      }
+    }
+
+    if (!perStrategy[sName]) {
+      perStrategy[sName] = { wins: 0, losses: 0, breakevens: 0, pnlUSD: 0, pnlR: 0, total: 0, mode: 'LIVE' };
+    }
+    perStrategy[sName].total++;
+
     if (!perSymbol[t.symbol]) {
       perSymbol[t.symbol] = { wins: 0, losses: 0, breakevens: 0, pnlUSD: 0, pnlR: 0, total: 0 };
     }
@@ -464,22 +483,76 @@ function generateWeeklyReport() {
     if (t.outcome === 'WIN') {
       wins++;
       perSymbol[t.symbol].wins++;
+      perStrategy[sName].wins++;
     } else if (t.outcome === 'BREAKEVEN') {
       breakevens++;
       perSymbol[t.symbol].breakevens++;
+      perStrategy[sName].breakevens++;
     } else if (t.outcome === 'LOSS') {
       losses++;
       perSymbol[t.symbol].losses++;
+      perStrategy[sName].losses++;
     }
 
     netUSD += (t.pnlUSD || 0);
     netR += (t.pnlR || 0);
     perSymbol[t.symbol].pnlUSD += (t.pnlUSD || 0);
     perSymbol[t.symbol].pnlR += (t.pnlR || 0);
+    perStrategy[sName].pnlUSD += (t.pnlUSD || 0);
+    perStrategy[sName].pnlR += (t.pnlR || 0);
+  });
+
+  Object.keys(perStrategy).forEach(k => {
+    const s = perStrategy[k];
+    s.winRate = s.total > 0 ? ((s.wins / s.total) * 100).toFixed(1) : "0.0";
   });
 
   const totalClosed = closedThisWeek.length;
   const winRate = totalClosed > 0 ? ((wins / totalClosed) * 100).toFixed(1) : "0.0";
+
+  // Also extract Paper / Incubation trades for the week
+  const incubationHistory = loadIncubationHistory();
+  const paperThisWeek = incubationHistory.filter(t => t.time && new Date(t.time) >= oneWeekAgo);
+  const paperPerStrategy = {};
+  let paperTotalWins = 0, paperTotalLosses = 0, paperTotalUSD = 0, paperTotalR = 0;
+
+  paperThisWeek.forEach(t => {
+    let sName = 'Strategy 5B Enhanced';
+    if (t.strategy) {
+      if (t.strategy.includes('6 Pro') || t.strategy.includes('6PRO')) {
+        sName = 'Strategy 6 Pro';
+      } else if (t.strategy.includes('5B') || t.strategy.includes('5b')) {
+        sName = 'Strategy 5B Enhanced';
+      } else {
+        sName = t.strategy;
+      }
+    }
+
+    if (!paperPerStrategy[sName]) {
+      paperPerStrategy[sName] = { wins: 0, losses: 0, pnlUSD: 0, pnlR: 0, total: 0, mode: 'PAPER' };
+    }
+    paperPerStrategy[sName].total++;
+
+    if (t.outcome === 'WIN') {
+      paperTotalWins++;
+      paperPerStrategy[sName].wins++;
+    } else if (t.outcome === 'LOSS') {
+      paperTotalLosses++;
+      paperPerStrategy[sName].losses++;
+    }
+
+    const pUSD = (t.pnlUSD || 0);
+    const pR = (t.rMultiple || t.pnlR || 0);
+    paperTotalUSD += pUSD;
+    paperTotalR += pR;
+    paperPerStrategy[sName].pnlUSD += pUSD;
+    paperPerStrategy[sName].pnlR += pR;
+  });
+
+  Object.keys(paperPerStrategy).forEach(k => {
+    const s = paperPerStrategy[k];
+    s.winRate = s.total > 0 ? ((s.wins / s.total) * 100).toFixed(1) : "0.0";
+  });
 
   const previousAnchorBalance = getWeeklyAnchorBalance();
   const newAccountBalance = getCurrentAccountBalance();
@@ -510,6 +583,17 @@ function generateWeeklyReport() {
     netUSD,
     netR,
     perSymbol,
+    perStrategy,
+    paperStats: {
+      total: paperThisWeek.length,
+      wins: paperTotalWins,
+      losses: paperTotalLosses,
+      winRate: paperThisWeek.length > 0 ? ((paperTotalWins / paperThisWeek.length) * 100).toFixed(1) : "0.0",
+      pnlUSD: paperTotalUSD,
+      pnlR: paperTotalR,
+      perStrategy: paperPerStrategy,
+      trades: paperThisWeek
+    },
     mvpSymbol: mvpPnL > 0 ? `${mvpSymbol} [${mvpStats}]` : "Balanced",
     closedTrades: closedThisWeek
   };
@@ -610,6 +694,37 @@ function formatReportTelegramHTML(report) {
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
   ];
 
+  // ── STRATEGY PERFORMANCE BREAKDOWN (WEEKLY ONLY) ──
+  if (report.period === 'WEEKLY') {
+    const liveStrats = report.perStrategy || {};
+    const paperStrats = (report.paperStats && report.paperStats.perStrategy) || {};
+    const allStratKeys = Array.from(new Set([...Object.keys(liveStrats), ...Object.keys(paperStrats)]));
+
+    if (allStratKeys.length > 0) {
+      lines.push(`⚡ <b>STRATEGY PERFORMANCE BREAKDOWN:</b>`);
+      allStratKeys.forEach(sName => {
+        const live = liveStrats[sName];
+        const paper = paperStrats[sName];
+        const icon = sName.includes('6 Pro') ? '👑' : '🚀';
+
+        if (live && live.total > 0) {
+          const pSign = live.pnlUSD >= 0 ? '+' : '-';
+          lines.push(`${icon} <b>${sName} [LIVE]:</b>`);
+          lines.push(`  • <code>${live.total} Trades (${live.wins}W / ${live.losses}L • ${live.winRate}% WR)</code>`);
+          lines.push(`  • <b>Realized PnL:</b> <code>${pSign}$${Math.abs(live.pnlUSD).toFixed(2)} USD (${pSign}${Math.abs(live.pnlR).toFixed(1)}R)</code>`);
+        }
+
+        if (paper && paper.total > 0) {
+          const pSign = paper.pnlUSD >= 0 ? '+' : '-';
+          lines.push(`🔬 <b>${sName} [PAPER SANDBOX]:</b>`);
+          lines.push(`  • <code>${paper.total} Trades (${paper.wins}W / ${paper.losses}L • ${paper.winRate}% WR)</code>`);
+          lines.push(`  • <b>Theoretical PnL:</b> <code>${pSign}$${Math.abs(paper.pnlUSD).toFixed(2)} USD (${pSign}${Math.abs(paper.pnlR).toFixed(1)}R)</code>`);
+        }
+      });
+      lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+    }
+  }
+
   // ── PAIR-BY-PAIR PERFORMANCE SUMMARY ──
   const perSymbol = report.perSymbol || {};
   const symbolKeys = Object.keys(perSymbol);
@@ -627,7 +742,16 @@ function formatReportTelegramHTML(report) {
 
   // ── WEEKLY COMPOUNDING RE-ANCHOR (SUNDAY END-OF-WEEK ONLY) ──
   if (report.period === 'WEEKLY') {
-    const riskPercent = config.RISK_PERCENT || 3.0;
+    let riskPercent = config.RISK_PERCENT || 3.0;
+    try {
+      const dynamicStatePath = path.join(CACHE_DIR, 'dynamic_state.json');
+      if (fs.existsSync(dynamicStatePath)) {
+        const ds = JSON.parse(fs.readFileSync(dynamicStatePath, 'utf8'));
+        if (ds && typeof ds.customRiskPercent === 'number' && ds.customRiskPercent > 0) {
+          riskPercent = ds.customRiskPercent;
+        }
+      }
+    } catch (e) {}
     const newWeekRisk = Math.max(config.MIN_RISK_AMOUNT_USD || 3.0, (report.newBalance * (riskPercent / 100)));
     const newWeekTP = newWeekRisk * (config.REWARD_RATIO || 1.3);
     const growthSign = report.newBalance >= report.startingBalance ? '📈' : '🛡️';
@@ -637,7 +761,7 @@ function formatReportTelegramHTML(report) {
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
     lines.push(`💵 <b>Previous Week Start Balance:</b> <code>$${report.startingBalance.toFixed(2)} USD</code>`);
     lines.push(`💰 <b>New Week Account Balance:</b> <code>$${report.newBalance.toFixed(2)} USD</code>`);
-    lines.push(`🎯 <b>This Week's Fixed Trade Risk (3.0%):</b> <code>$${newWeekRisk.toFixed(2)} USD / trade (${growthLabel})</code>`);
+    lines.push(`🎯 <b>This Week's Fixed Trade Risk (${riskPercent.toFixed(1)}%):</b> <code>$${newWeekRisk.toFixed(2)} USD / trade (${growthLabel})</code>`);
     lines.push(`🏆 <b>This Week's Target TP (1.3R):</b> <code>+$${newWeekTP.toFixed(2)} USD / win</code>`);
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
     lines.push(`🚀 <i>Position sizes locked for the upcoming week's trading sessions!</i>`);
@@ -645,19 +769,31 @@ function formatReportTelegramHTML(report) {
   }
 
   // ── PAPER FORWARD TEST / INCUBATION AUDIT SUMMARY ──
+  const isWeekly = report.period === 'WEEKLY';
   const incubationHistory = loadIncubationHistory();
-  const incTargetDate = report.date || report.targetDateStr || new Date().toISOString().split('T')[0];
-  const incToday = incubationHistory.filter(s => getDateString(s.time) === incTargetDate);
-  if (incToday.length > 0) {
-    const incWins = incToday.filter(s => s.outcome === 'WIN');
-    const incLosses = incToday.filter(s => s.outcome === 'LOSS');
-    const incWinRate = incToday.length > 0 ? ((incWins.length / incToday.length) * 100).toFixed(1) : '0.0';
-    const incProfitUSD = incToday.reduce((acc, s) => acc + (s.pnlUSD || 0), 0);
-    const incNetR = incToday.reduce((acc, s) => acc + (s.rMultiple || s.pnlR || 0), 0);
+  let incTrades = [];
+  if (isWeekly) {
+    if (report.paperStats && report.paperStats.trades) {
+      incTrades = report.paperStats.trades;
+    } else {
+      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      incTrades = incubationHistory.filter(s => s.time && new Date(s.time) >= oneWeekAgo);
+    }
+  } else {
+    const incTargetDate = report.date || report.targetDateStr || new Date().toISOString().split('T')[0];
+    incTrades = incubationHistory.filter(s => getDateString(s.time) === incTargetDate);
+  }
+
+  if (incTrades.length > 0) {
+    const incWins = incTrades.filter(s => s.outcome === 'WIN');
+    const incLosses = incTrades.filter(s => s.outcome === 'LOSS');
+    const incWinRate = incTrades.length > 0 ? ((incWins.length / incTrades.length) * 100).toFixed(1) : '0.0';
+    const incProfitUSD = incTrades.reduce((acc, s) => acc + (s.pnlUSD || 0), 0);
+    const incNetR = incTrades.reduce((acc, s) => acc + (s.rMultiple || s.pnlR || 0), 0);
 
     // Group by symbol
     const incPerSymbol = {};
-    incToday.forEach(s => {
+    incTrades.forEach(s => {
       const sym = s.symbol || 'OTHER';
       if (!incPerSymbol[sym]) incPerSymbol[sym] = { wins: 0, losses: 0, total: 0, pnlUSD: 0, pnlR: 0 };
       incPerSymbol[sym].total++;
@@ -667,9 +803,10 @@ function formatReportTelegramHTML(report) {
       incPerSymbol[sym].pnlR += (s.rMultiple || s.pnlR || 0);
     });
 
-    lines.push(`🔬 <b>[PAPER FORWARD TEST — DAILY SUMMARY]</b>`);
+    const bannerTitle = isWeekly ? 'WEEKLY AUDIT SUMMARY' : 'DAILY SUMMARY';
+    lines.push(`🔬 <b>[PAPER FORWARD TEST — ${bannerTitle}]</b>`);
     lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
-    lines.push(`🧪 <b>Paper Sandbox Trades:</b> <code>${incToday.length} Trades (${incWins.length}W / ${incLosses.length}L • ${incWinRate}% WR)</code>`);
+    lines.push(`🧪 <b>Paper Sandbox Trades:</b> <code>${incTrades.length} Trades (${incWins.length}W / ${incLosses.length}L • ${incWinRate}% WR)</code>`);
     lines.push(`📈 <b>Theoretical Net PnL:</b> <code>${incProfitUSD >= 0 ? '+' : ''}$${incProfitUSD.toFixed(2)} USD (${incNetR >= 0 ? '+' : ''}${incNetR.toFixed(1)}R)</code>`);
     lines.push(`💵 <b>Live Capital Impact:</b> <code>$0.00 USD (Real Risk Zero)</code>`);
     

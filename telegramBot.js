@@ -319,8 +319,10 @@ async function handleCommand(rawText, handlers) {
         `• <code>/mode gold paper</code> | <code>/mode gold live</code> ➜ Gold mode`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🛡️ <b>RISK, QUARANTINE & GRADUATION:</b>`,
-        `• <code>/target 250</code> ➜ Auto-close all & lock profit at +$250 (or <code>/target off</code>)`,
-        `• <code>/maxloss 150</code> ➜ Auto-close all & stop loss floor at -$150 (or <code>/maxloss off</code>)`,
+        `• <code>/risk 3.0</code> ➜ Set risk % anchored to start-of-week equity`,
+        `• <code>/autotarget 3 3</code> ➜ Auto target & loss floor (e.g. 3 wins / 3 losses)`,
+        `• <code>/target 250</code> ➜ Override daily profit target (or <code>/target 3w</code>)`,
+        `• <code>/maxloss 150</code> ➜ Override daily max loss floor (or <code>/maxloss 3l</code>)`,
         `• <code>/promote CRASH150N</code> ➜ Graduate incubation pair to Live Trading`,
         `• <code>/demote CRASH150N</code> ➜ Demote pair back to Incubation Sandbox`,
         `• <code>/quarantine BOOM300N</code> ➜ Move pair to Paper Mode ($0 risk)`,
@@ -536,17 +538,29 @@ async function handleCommand(rawText, handlers) {
     case '/target': {
       if (!arg1) {
         const currentTarget = handlers.getDailyTarget ? handlers.getDailyTarget() : 0;
-        await sendTelegramMessage(`🎯 Current Daily Profit Target: <b>${currentTarget > 0 ? `$${currentTarget.toFixed(2)} USD` : 'Disabled (Full Session)'}</b>\n\nUsage: <code>/target 250</code> or <code>/target off</code>`);
+        await sendTelegramMessage(`🎯 Current Daily Profit Target: <b>${currentTarget > 0 ? `$${currentTarget.toFixed(2)} USD` : 'Disabled (Full Session)'}</b>\n\nUsage: <code>/target 250</code>, <code>/target 3w</code>, or <code>/target off</code>`);
         break;
       }
 
       if (arg1.toLowerCase() === 'off' || arg1 === '0') {
         if (handlers.setDailyTarget) handlers.setDailyTarget(0);
         await sendTelegramMessage(`🎯 <b>Daily Profit Target Disabled.</b> Bot will scan for full session without daily cap.`);
+      } else if (arg1.toLowerCase().endsWith('w')) {
+        const wins = parseFloat(arg1);
+        if (isNaN(wins) || wins <= 0) {
+          await sendTelegramMessage(`⚠️ Invalid target wins multiplier. Example: <code>/target 3w</code> or <code>/target 5w</code>`);
+        } else if (handlers.setAutoTargets && handlers.getAutoTargets) {
+          const cur = handlers.getAutoTargets();
+          const res = await handlers.setAutoTargets(wins, cur.maxLossMultiplier);
+          await sendTelegramMessage([
+            `🎯 <b>Daily Profit Target updated to:</b> <code>+$${res.dailyTargetUSD.toFixed(2)} USD</code> (${res.targetMultiplier} Wins • +${(res.targetMultiplier * 1.3).toFixed(1)}R Target)`,
+            `🏦 <b>Week Start Anchor:</b> <code>$${res.balance.toFixed(2)} USD</code> (Risk: <b>$${res.riskUSD.toFixed(2)} USD</b> @ ${res.riskPercent.toFixed(1)}%)`
+          ].join('\n'));
+        }
       } else {
         const val = parseFloat(arg1);
         if (isNaN(val) || val <= 0) {
-          await sendTelegramMessage(`⚠️ Invalid target amount. Example: <code>/target 300</code>`);
+          await sendTelegramMessage(`⚠️ Invalid target amount. Example: <code>/target 300</code> or <code>/target 3w</code>`);
         } else {
           if (handlers.setDailyTarget) {
             const res = await handlers.setDailyTarget(val);
@@ -565,17 +579,29 @@ async function handleCommand(rawText, handlers) {
     case '/losslimit': {
       if (!arg1) {
         const currentLoss = handlers.getDailyMaxLoss ? handlers.getDailyMaxLoss() : 0;
-        await sendTelegramMessage(`🛡️ Current Daily Max Loss Floor: <b>${currentLoss > 0 ? `-$${currentLoss.toFixed(2)} USD` : 'Disabled (No Floor)'}</b>\n\nUsage: <code>/maxloss 200</code> or <code>/maxloss off</code>`);
+        await sendTelegramMessage(`🛡️ Current Daily Max Loss Floor: <b>${currentLoss > 0 ? `-$${currentLoss.toFixed(2)} USD` : 'Disabled (No Floor)'}</b>\n\nUsage: <code>/maxloss 200</code>, <code>/maxloss 3l</code>, or <code>/maxloss off</code>`);
         break;
       }
 
       if (arg1.toLowerCase() === 'off' || arg1 === '0') {
         if (handlers.setDailyMaxLoss) handlers.setDailyMaxLoss(0);
         await sendTelegramMessage(`🛡️ <b>Daily Max Loss Floor Disabled.</b> Bot will trade without a daily loss shutdown.`);
+      } else if (arg1.toLowerCase().endsWith('l')) {
+        const losses = parseFloat(arg1);
+        if (isNaN(losses) || losses <= 0) {
+          await sendTelegramMessage(`⚠️ Invalid loss floor multiplier. Example: <code>/maxloss 2l</code> or <code>/maxloss 3l</code>`);
+        } else if (handlers.setAutoTargets && handlers.getAutoTargets) {
+          const cur = handlers.getAutoTargets();
+          const res = await handlers.setAutoTargets(cur.targetMultiplier, losses);
+          await sendTelegramMessage([
+            `🛡️ <b>Daily Max Loss Floor updated to:</b> <code>-$${res.dailyMaxLossUSD.toFixed(2)} USD</code> (${res.maxLossMultiplier} Losses • -${res.maxLossMultiplier.toFixed(1)}R Floor)`,
+            `🏦 <b>Week Start Anchor:</b> <code>$${res.balance.toFixed(2)} USD</code> (Risk: <b>$${res.riskUSD.toFixed(2)} USD</b> @ ${res.riskPercent.toFixed(1)}%)`
+          ].join('\n'));
+        }
       } else {
         const val = parseFloat(arg1);
         if (isNaN(val) || val <= 0) {
-          await sendTelegramMessage(`⚠️ Invalid loss amount. Example: <code>/maxloss 200</code> or <code>/maxloss off</code>`);
+          await sendTelegramMessage(`⚠️ Invalid loss amount. Example: <code>/maxloss 200</code> or <code>/maxloss 3l</code>`);
         } else {
           if (handlers.setDailyMaxLoss) {
             const res = await handlers.setDailyMaxLoss(val);
@@ -586,6 +612,54 @@ async function handleCommand(rawText, handlers) {
             }
           }
         }
+      }
+      break;
+    }
+
+    case '/autotarget':
+    case '/autogoal':
+    case '/targets': {
+      if (!arg1) {
+        if (handlers.getAutoTargets) {
+          const res = handlers.getAutoTargets();
+          await sendTelegramMessage([
+            `🎯 <b>[MYTRADA AUTONOMOUS TARGET CONTROLLER]</b>`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `🏦 <b>Week Start Anchor:</b> <code>$${res.balance.toFixed(2)} USD</code>`,
+            `🛡️ <b>Trade Risk:</b> <code>${res.riskPercent.toFixed(1)}% ($${res.riskUSD.toFixed(2)} USD / trade)</code>`,
+            `🎯 <b>Daily Profit Target:</b> <code>+$${res.dailyTargetUSD.toFixed(2)} USD</code> (${res.targetMultiplier} Wins • +${(res.targetMultiplier * 1.3).toFixed(1)}R)`,
+            `🛡️ <b>Daily Max Loss Floor:</b> <code>-$${res.dailyMaxLossUSD.toFixed(2)} USD</code> (${res.maxLossMultiplier} Losses • -${res.maxLossMultiplier.toFixed(1)}R)`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `💡 <b>Commands & Shortcuts:</b>`,
+            `• <code>/autotarget 3</code> ➔ Set 3 wins target (+3.9R) & 3 losses floor (-3.0R)`,
+            `• <code>/autotarget 5 3</code> ➔ Set 5 wins target (+6.5R) & 3 losses floor (-3.0R)`,
+            `• <code>/autotarget 4 2</code> ➔ Set 4 wins target (+5.2R) & 2 losses floor (-2.0R)`,
+            `• <code>/target 500</code> (or <code>/target 4w</code>) ➔ Custom target`,
+            `• <code>/maxloss 300</code> (or <code>/maxloss 2l</code>) ➔ Custom floor`
+          ].join('\n'));
+        }
+        break;
+      }
+
+      const wins = parseFloat(arg1);
+      const losses = arg2 ? parseFloat(arg2) : wins;
+
+      if (isNaN(wins) || wins <= 0 || isNaN(losses) || losses <= 0) {
+        await sendTelegramMessage(`⚠️ Invalid target multipliers.\nExample: <code>/autotarget 5 3</code> (5 wins target, 3 losses floor) or <code>/autotarget 3</code>`);
+        break;
+      }
+
+      if (handlers.setAutoTargets) {
+        const res = await handlers.setAutoTargets(wins, losses);
+        await sendTelegramMessage([
+          `🎯 🟢 <b>[AUTONOMOUS TARGETS CONFIGURED]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `🏦 <b>Week Start Anchor:</b> <code>$${res.balance.toFixed(2)} USD</code> (Risk: <b>$${res.riskUSD.toFixed(2)} USD</b> @ ${res.riskPercent.toFixed(1)}%)`,
+          `🎯 <b>Daily Profit Target:</b> <code>+$${res.dailyTargetUSD.toFixed(2)} USD</code> (${res.targetMultiplier} Wins • +${(res.targetMultiplier * 1.3).toFixed(1)}R)`,
+          `🛡️ <b>Daily Max Loss Floor:</b> <code>-$${res.dailyMaxLossUSD.toFixed(2)} USD</code> (${res.maxLossMultiplier} Losses • -${res.maxLossMultiplier.toFixed(1)}R)`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `🚀 <i>Auto targets will recalculate every morning and every Sunday midnight weekly anchor automatically!</i>`
+        ].join('\n'));
       }
       break;
     }
@@ -778,11 +852,18 @@ async function handleCommand(rawText, handlers) {
     case '/risk': {
       const pct = parseFloat(arg1);
       if (isNaN(pct) || pct <= 0 || pct > 10) {
-        await sendTelegramMessage(`⚠️ Invalid risk percentage (Allowed: 0.5% – 10.0%). Example: <code>/risk 1.5</code>`);
+        await sendTelegramMessage(`⚠️ Invalid risk percentage (Allowed: 0.5% – 10.0%). Example: <code>/risk 3.0</code>`);
       } else {
         if (handlers.setRiskPercent) {
-          handlers.setRiskPercent(pct);
-          await sendTelegramMessage(`🛡️ <b>Trade Risk Percentage updated to:</b> <code>${pct.toFixed(1)}% per trade</code>`);
+          const res = handlers.setRiskPercent(pct);
+          await sendTelegramMessage([
+            `🛡️ <b>Trade Risk Percentage updated to:</b> <code>${pct.toFixed(1)}%</code>`,
+            `🏦 <b>Week Start Anchor:</b> <code>$${res.balance.toFixed(2)} USD</code> (Risk: <b>$${res.riskUSD.toFixed(2)} USD</b> / trade)`,
+            `🎯 <b>Daily Profit Target auto-updated to:</b> <code>+$${res.dailyTargetUSD.toFixed(2)} USD</code> (${res.targetMultiplier} Wins • +${(res.targetMultiplier * 1.3).toFixed(1)}R Target)`,
+            `🛡️ <b>Daily Max Loss Floor auto-updated to:</b> <code>-$${res.dailyMaxLossUSD.toFixed(2)} USD</code> (${res.maxLossMultiplier} Losses • -${res.maxLossMultiplier.toFixed(1)}R Floor)`,
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `💡 <i>Risk & targets are anchored to start-of-week equity ($${res.balance.toFixed(2)} USD) and will re-anchor next Sunday.</i>`
+          ].join('\n'));
         }
       }
       break;
