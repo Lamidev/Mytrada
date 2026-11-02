@@ -87,8 +87,8 @@ module.exports = {
   // Strategy 5B Macro Dealing Range Guard (Momentum Corridor)
   STRATEGY_5B: {
     ENABLED: true,
-    MAX_BUY_RANGE_PCT: 85.0,             // 🌐 Wide Open Scout: Allows momentum buys up to 85% range
-    MIN_SELL_RANGE_PCT: 15.0,            // 🌐 Wide Open Scout: Allows momentum sells down to 15% range
+    MAX_BUY_RANGE_PCT: 80.0,             // 🌐 Momentum Corridor: Allows buys up to 80% range (avoids top 20% traps)
+    MIN_SELL_RANGE_PCT: 20.0,            // 🌐 Momentum Corridor: Allows sells down to 20% range (avoids bottom 20% traps)
   },
 
   // Trend-Regime Multi-Timeframe Cascade Filter

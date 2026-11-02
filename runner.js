@@ -615,14 +615,22 @@ function isSymbolInCooldown(symbol, isPaper = false, currentPrice = null) {
     return { inCooldown: true, reason };
   }
 
-  // 🛡️ Same-Zone Re-entry Trap Armor: Prevents double-dipping at the same failed price level
+  // 🛡️ Option 3: 1H Candle Reset & Runaway Continuation Trap Armor
   if (rec.trapZone && now < rec.trapZone.expiresAt) {
     if (currentPrice !== null && typeof currentPrice === 'number' && !isNaN(currentPrice)) {
-      if (currentPrice >= rec.trapZone.zoneMin && currentPrice <= rec.trapZone.zoneMax) {
-        const remMins = Math.ceil((rec.trapZone.expiresAt - now) / 60000);
-        return { 
-          inCooldown: true, 
-          reason: `Same-Zone Trap: Price (${currentPrice.toFixed(2)}) is inside failed zone [${rec.trapZone.zoneMin.toFixed(2)} - ${rec.trapZone.zoneMax.toFixed(2)}] (${remMins}m remaining)` 
+      const remMins = Math.ceil((rec.trapZone.expiresAt - now) / 60000);
+      const isSell = rec.trapZone.direction === 'SELL';
+      const isBuy = rec.trapZone.direction === 'BUY';
+      const isAdverseRunaway = (isSell && currentPrice >= rec.trapZone.zoneMin) || (isBuy && currentPrice <= rec.trapZone.zoneMax);
+
+      if (isAdverseRunaway) {
+        const isInsideZone = currentPrice >= rec.trapZone.zoneMin && currentPrice <= rec.trapZone.zoneMax;
+        const reasonDesc = isInsideZone
+          ? `inside failed zone [${rec.trapZone.zoneMin.toFixed(2)} - ${rec.trapZone.zoneMax.toFixed(2)}]`
+          : (isSell ? `in runaway continuation spike above failed entry (${currentPrice.toFixed(2)} > ${rec.trapZone.failedPrice.toFixed(2)})` : `in runaway continuation dump below failed entry (${currentPrice.toFixed(2)} < ${rec.trapZone.failedPrice.toFixed(2)})`);
+        return {
+          inCooldown: true,
+          reason: `1H Trap Armor: Price is ${reasonDesc} (${remMins}m cooldown remaining)`
         };
       }
     }
@@ -2293,15 +2301,14 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
 
-    // 1. Multi-Candle Confirmation: Last confirmCount candles must all be closed RED (close < open)
-    let hasConfirm = true;
-    const confirmCandles = [];
-    for (let cIdx = 0; cIdx < confirmCount; cIdx++) {
+    // 1. Multi-Candle Confirmation: Check closed RED candles (close < open)
+    let confirmCandles = [];
+    for (let cIdx = 0; cIdx < 2; cIdx++) {
       const c = ltfCandles[ltfCandles.length - 1 - cIdx];
-      if (!c || c.close >= c.open) { hasConfirm = false; break; }
+      if (!c || c.close >= c.open) break;
       confirmCandles.push(c);
     }
-    if (!hasConfirm || confirmCandles.length < confirmCount) return null;
+    if (confirmCandles.length < 1) return null;
 
     const c0 = confirmCandles[0];
     const c0Range = c0.high - c0.low;
@@ -2313,13 +2320,23 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (!atr || atr === 0) return null;
 
     // 2. Dynamic Spike Exhaustion: 1 Monster Spike (>=1.5x ATR) OR 2-3 Spike Cluster (>=1.2x ATR)
-    const s0 = ltfCandles[ltfCandles.length - 1 - confirmCount];
-    if (!s0 || s0.close <= s0.open) return null;
+    let activeConfirmCount = confirmCandles.length;
+    let s0 = ltfCandles[ltfCandles.length - 1 - activeConfirmCount];
+
+    if (!s0 || s0.close <= s0.open) {
+      if (activeConfirmCount === 2) {
+        activeConfirmCount = 1;
+        confirmCandles = [confirmCandles[0]];
+        s0 = ltfCandles[ltfCandles.length - 1 - activeConfirmCount];
+      }
+      if (!s0 || s0.close <= s0.open) return null;
+    }
+
     const spikeCandles = [s0];
     const s0Range = s0.high - s0.low;
 
     for (let s = 1; s <= 2; s++) {
-      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
+      const c = ltfCandles[ltfCandles.length - 1 - activeConfirmCount - s];
       if (c && c.close > c.open) {
         spikeCandles.push(c);
       } else {
@@ -2335,8 +2352,15 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
 
     if (!isSingleMonster && !isMultiCluster) return null;
 
-    const spikeCountLabel = isSingleMonster ? '1 Monster Spike' : `${spikeCandles.length} Spikes`;
+    // 🛡️ Option 4: Super-Monster Spike Guard (>= 2.5x ATR requires 2 confirmation candles)
+    const isSuperMonster = s0Range >= (atr * 2.50) || spikeClusterRange >= (atr * 2.50);
+    if (isSuperMonster && activeConfirmCount < 2) {
+      return null;
+    }
 
+    const spikeCountLabel = isSuperMonster
+      ? (isSingleMonster ? '1 Super-Monster Spike (2x 5M Confirm)' : `${spikeCandles.length} Spikes (Super-Cluster 2x 5M Confirm)`)
+      : (isSingleMonster ? '1 Monster Spike' : `${spikeCandles.length} Spikes`);
     // 👑 5M 50 EMA Value Zone Guard: reject if price has not pulled back near the value zone
     const ltfCloses = ltfCandles.map(c => c.close);
     const ltfEMA = calculateEMA(ltfCloses, 50);
@@ -2351,7 +2375,7 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
     if (totalRecoveryBody < (lastSpikeRange * minDisplacementRatio)) return null;
 
-    const valueZoneTouched = `Price Action Displacement (${confirmCount}x 5M Recovery >=20%)`;
+    const valueZoneTouched = `Price Action Displacement (${activeConfirmCount}x 5M Recovery >=20%)`;
 
     const entry = c0.close;
     const sl = spikePeak + (atr * 1.5);
@@ -2361,8 +2385,8 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const tp = entry - (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
-    const minSell5B = (config.STRATEGY_5B && config.STRATEGY_5B.MIN_SELL_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MIN_SELL_RANGE_PCT : 15.0;
-    const maxBuy5B = (config.STRATEGY_5B && config.STRATEGY_5B.MAX_BUY_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MAX_BUY_RANGE_PCT : 85.0;
+    const minSell5B = (config.STRATEGY_5B && config.STRATEGY_5B.MIN_SELL_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MIN_SELL_RANGE_PCT : 20.0;
+    const maxBuy5B = (config.STRATEGY_5B && config.STRATEGY_5B.MAX_BUY_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MAX_BUY_RANGE_PCT : 80.0;
     const exhaustion5B = evaluateMacroExhaustion(symbol, entry, 'SELL', htf1hCandles, minSell5B, maxBuy5B);
 
     let isBlocked = exhaustion5B.isExhausted;
@@ -2412,15 +2436,14 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
     if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
 
-    // 1. Multi-Candle Confirmation: Last confirmCount candles must all be closed GREEN (close > open)
-    let hasConfirm = true;
-    const confirmCandles = [];
-    for (let cIdx = 0; cIdx < confirmCount; cIdx++) {
+    // 1. Multi-Candle Confirmation: Check closed GREEN candles (close > open)
+    let confirmCandles = [];
+    for (let cIdx = 0; cIdx < 2; cIdx++) {
       const c = ltfCandles[ltfCandles.length - 1 - cIdx];
-      if (!c || c.close <= c.open) { hasConfirm = false; break; }
+      if (!c || c.close <= c.open) break;
       confirmCandles.push(c);
     }
-    if (!hasConfirm || confirmCandles.length < confirmCount) return null;
+    if (confirmCandles.length < 1) return null;
 
     const c0 = confirmCandles[0];
     const c0Range = c0.high - c0.low;
@@ -2432,13 +2455,23 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     if (!atr || atr === 0) return null;
 
     // 2. Dynamic Crash Exhaustion: 1 Monster Crash (>=1.5x ATR) OR 2-3 Crash Cluster (>=1.2x ATR)
-    const s0 = ltfCandles[ltfCandles.length - 1 - confirmCount];
-    if (!s0 || s0.close >= s0.open) return null;
+    let activeConfirmCount = confirmCandles.length;
+    let s0 = ltfCandles[ltfCandles.length - 1 - activeConfirmCount];
+
+    if (!s0 || s0.close >= s0.open) {
+      if (activeConfirmCount === 2) {
+        activeConfirmCount = 1;
+        confirmCandles = [confirmCandles[0]];
+        s0 = ltfCandles[ltfCandles.length - 1 - activeConfirmCount];
+      }
+      if (!s0 || s0.close >= s0.open) return null;
+    }
+
     const crashCandles = [s0];
     const s0Range = s0.high - s0.low;
 
     for (let s = 1; s <= 2; s++) {
-      const c = ltfCandles[ltfCandles.length - 1 - confirmCount - s];
+      const c = ltfCandles[ltfCandles.length - 1 - activeConfirmCount - s];
       if (c && c.close < c.open) {
         crashCandles.push(c);
       } else {
@@ -2454,8 +2487,15 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
 
     if (!isSingleMonster && !isMultiCluster) return null;
 
-    const spikeCountLabel = isSingleMonster ? '1 Monster Spike' : `${crashCandles.length} Spikes`;
+    // 🛡️ Option 4: Super-Monster Crash Guard (>= 2.5x ATR requires 2 confirmation candles)
+    const isSuperMonster = s0Range >= (atr * 2.50) || crashClusterRange >= (atr * 2.50);
+    if (isSuperMonster && activeConfirmCount < 2) {
+      return null;
+    }
 
+    const spikeCountLabel = isSuperMonster
+      ? (isSingleMonster ? '1 Super-Monster Spike (2x 5M Confirm)' : `${crashCandles.length} Spikes (Super-Cluster 2x 5M Confirm)`)
+      : (isSingleMonster ? '1 Monster Spike' : `${crashCandles.length} Spikes`);
     // 👑 5M 50 EMA Value Zone Guard: reject if price has not pulled back near the value zone (overbought ceiling)
     const ltfCloses = ltfCandles.map(c => c.close);
     const ltfEMA = calculateEMA(ltfCloses, 50);
@@ -2470,7 +2510,7 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
     if (totalRecoveryBody < (lastSpikeRange * minDisplacementRatio)) return null;
 
-    const valueZoneTouched = `Price Action Displacement (${confirmCount}x 5M Recovery >=20%)`;
+    const valueZoneTouched = `Price Action Displacement (${activeConfirmCount}x 5M Recovery >=20%)`;
 
     const entry = c0.close;
     const sl = crashTrough - (atr * 1.5);
@@ -2480,8 +2520,8 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const tp = entry + (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
-    const minSell5B = (config.STRATEGY_5B && config.STRATEGY_5B.MIN_SELL_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MIN_SELL_RANGE_PCT : 15.0;
-    const maxBuy5B = (config.STRATEGY_5B && config.STRATEGY_5B.MAX_BUY_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MAX_BUY_RANGE_PCT : 85.0;
+    const minSell5B = (config.STRATEGY_5B && config.STRATEGY_5B.MIN_SELL_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MIN_SELL_RANGE_PCT : 20.0;
+    const maxBuy5B = (config.STRATEGY_5B && config.STRATEGY_5B.MAX_BUY_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MAX_BUY_RANGE_PCT : 80.0;
     const exhaustion5B = evaluateMacroExhaustion(symbol, entry, 'BUY', htf1hCandles, minSell5B, maxBuy5B);
 
     let isBlocked = exhaustion5B.isExhausted;
