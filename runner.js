@@ -2966,7 +2966,7 @@ async function monitorMarket() {
       if (isBoth) {
         if (canRun5B) {
           let displayName = 'Strategy 5B Pro';
-          if (is6proLockedState) displayName = 'Strategy 5B (Target-Locked Paper)';
+          if (is6proLockedState) displayName = 'Strategy 5B Pro (Target-Locked Paper)';
           else if (isQuarantined) displayName = 'Strategy 5B (Quarantined Paper)';
 
           strategiesToRun.push({
@@ -3007,7 +3007,7 @@ async function monitorMarket() {
       } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
         if (canRun5B) {
           let displayName = 'Strategy 5B Pro';
-          if (is6proLockedState) displayName = 'Strategy 5B (Target-Locked Paper)';
+          if (is6proLockedState) displayName = 'Strategy 5B Pro (Target-Locked Paper)';
           else if (isQuarantined) displayName = 'Strategy 5B (Quarantined Paper)';
 
           strategiesToRun.push({
