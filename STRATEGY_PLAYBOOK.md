@@ -20,6 +20,9 @@
 12. [Head-to-Head Master Comparison Table ($100 Account)](#11-head-to-head-master-comparison-table-100-account)
 13. [Small Account Sizing & Risk Management Guide ($50 & $100 Accounts)](#12-small-account-sizing--risk-management-guide-50--100-accounts)
 14. [Production Configuration & Deployment Guide](#13-production-configuration--deployment-guide)
+23. 15. [Strategy 6 Pro: Institutional SMC Dealing Zone (Benchmark Record)](#15-strategy-6-pro-institutional-smc-dealing-zone-benchmark-record)
+24. 16. [Strategy 5B Pro: Unified Flagship Production Engine](#16-strategy-5b-pro-unified-flagship-production-engine)
+25. 17. [Strategy SMC Sweep: Non-Spike Institutional Liquidity Engine](#17-strategy-smc-sweep-non-spike-institutional-liquidity-engine)
 
 ---
 
@@ -235,3 +238,79 @@ module.exports = {
 
 ---
 *Playbook v5.0 — Maintained by Antigravity Quantitative Trading Assistant for Mytrada.*
+
+
+---
+
+## 15. Strategy 6 Pro: Institutional SMC Dealing Zone (Benchmark Record)
+
+> **Status:** 🏛️ **Retained Benchmark Record.** Preserved for historical comparison and empirical research.
+
+### Core Philosophy & Rules:
+1. **Dealing Zone Range:** Strict **25% Floor / 75% Ceiling**.
+   * Rejects Crash BUYs when price is $> 75\%$ of the 24H dealing range (overbought avoidance).
+   * Rejects Boom SELLs when price is $< 25\%$ of the 24H dealing range (oversold avoidance).
+2. **Cascade Guard:** Rejects entries if 3 consecutive 1H bars are expanding adversely.
+3. **Trigger:** Calls the underlying 5B spike pullback trigger but filters aggressively.
+4. **Empirical Findings (67 Days / 12 Pairs):**
+   * Total Trades: 457 trades (239W / 218L)
+   * Win Rate: **52.3%**
+   * Total Net Realized PnL: **+$8,866.63 USD**
+   * Daily Target-Hit Days (+3.9R): **20 Days (29.9%)**
+   * **Why 5B Pro Outperformed It:** In synthetic indices, strong trends often stay between 65% and 80% range for hours. 6 Pro's strict 75% ceiling filtered out these winning continuation runners, cutting its profit output by nearly 50%.
+
+---
+
+## 16. Strategy 5B Pro: Unified Flagship Production Engine
+
+> **Status:** 👑 **Active Flagship Live Trading Engine.** The official unification of 5B momentum speed with full SMC defensive armor.
+
+### The 5 Architectural Pillars:
+1. **The 20%–80% Institutional Momentum Corridor:**
+   * Unlike 6 Pro's strict 75% cap, 5B Pro allows entries up to **80% of the dealing range**.
+   * Captures powerful trending continuation runs between 65% and 80% that made 5B generate **+$16,698.57 USD** (+74.8R) with a **60.1% Win Rate**.
+2. **The 2-Win Profit Lock per Symbol:**
+   * Eliminates single-pair overtrading into daily extremes.
+   * When any single pair banks **2 consecutive wins (+2.6R)** in a day, that asset is put on an automatic **3-Hour (180 min) Profit Lock**. All other 11 pairs remain scanning.
+3. **1H Runaway Squeeze Trap Armor:**
+   * Evaluates the failed stop loss price. If the market continues breaking adversely beyond the SL, all re-entries on that pair are blocked until a 1H reset occurs.
+4. **Super-Monster Spike Volatility Guard:**
+   * Standard spikes: Fast 1x 5M candle confirmation.
+   * Super-Monster Spikes ($\ge 2.5\times$ ATR): Requires **2 consecutive 5M confirmation candles** before entry, eliminating premature knife-catching.
+5. **Universal Tiered Circuit Breakers:**
+   * 60m post-win breathing pause.
+   * 60m cooldown after 1 loss.
+   * Full day lockout after 2 losses per symbol.
+   * +3.9R Daily Profit Target (3 Wins) / -3.0R Daily Max Loss Floor (3 Losses).
+
+---
+
+## 17. Strategy SMC Sweep: Non-Spike Institutional Liquidity Engine
+
+> **Status:** 🔬 **Active Paper Sandbox Forward-Test Engine.** Completely uncorrelated second engine.
+
+### Core Philosophy (0% Spike Reliance):
+Trades purely on institutional liquidity manipulation (fakeout sweeps) and absorption without waiting for spike events.
+
+### The 4 Execution Steps:
+1. **1H Macro Trend Alignment & Dealing Range Anchor:**
+   * Crash: 1H Price $\ge$ 50 EMA and Range $\le 60\%$ (Discount Zone only).
+   * Boom: 1H Price $\le$ 50 EMA and Range $\ge 40\%$ (Premium Zone only).
+   * Anti-Cascade Guard: Rejects entry if 3 consecutive 1H bars are pushing opposite.
+2. **15M Fractal Liquidity Sweep:**
+   * Detects established 15M Swing Highs and Swing Lows.
+   * Price wicks beyond the 15M swing point to trigger breakout stop losses (fakeout liquidity grab).
+3. **5M Structural Absorption Rejection:**
+   * Price fails to hold outside the 15M swing point and immediately closes back inside the range on the 5M chart.
+   * Crash: Confirmed by a solid 5M green candle close back above the swept low.
+   * Boom: Confirmed by a solid 5M red candle close back below the swept high.
+4. **Execution & Risk-to-Reward:**
+   * **Entry:** At 5M bar close.
+   * **Stop Loss:** Sweep Wick Extreme $\pm 0.3\times$ ATR buffer.
+   * **Take Profit:** **1:1.3 R:R** (Synergistic with the +3.9R Daily Target).
+5. **Empirical 1-Month Backtest Results (12 Pairs / 103,680 Candles):**
+   * Total Trades: **275 Trades** (~4.7 trades / day across 12 pairs)
+   * Win Rate: **58.9%** (162 Wins / 113 Losses)
+   * Net Realized PnL: **+$21,788.98 USD (+95.1R)**
+   * Target-Hit Days (+3.9R): **16 Days (53.3% of month)**
+   * Max-Loss Days (-3.0R): **2 Days (3.4%)**

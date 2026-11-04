@@ -215,3 +215,32 @@ pm2 logs mytrada --lines 50
   1. Open [`PROJECT_JOURNAL.md`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/PROJECT_JOURNAL.md) (this document) to review the exact rules and state of the system.
   2. Send `/status` and `/summary` to `@Myvixtrada_bot` on Telegram to see current equity, open trades, and today's performance.
   3. Run `node exportTradesForBacktest.js` to inspect recent trade performance.
+
+
+---
+
+## 📅 November 4, 2026: The Strategy 5B Pro Unification & Strategy SMC Sweep Sandbox Engine
+
+### 1. Strategy 5B Pro Unified Flagship Model
+* **Background:** 5B proved to be the highest-earning engine in Mytrada's history, banking **+$16,698.57 USD** (+74.8R) with a **60.1% Win Rate** across 67 days (39 Target-Hit Days). However, on choppy days it was vulnerable to single-pair overtrading into daily extremes.
+* **The Solution:** Strategy 5B was officially upgraded to **Strategy 5B Pro**, incorporating the complete institutional defense framework:
+  1. **20%–80% Institutional Momentum Corridor:** Allows trend continuations up to 80% while blocking extreme top/bottom exhaustion.
+  2. **2-Win Profit Lock per Symbol:** Pauses any symbol for 180 minutes (3 hours) after banking 2 consecutive wins (+2.6R).
+  3. **1H Runaway Squeeze Trap Armor:** Blocks adverse re-entries past failed Stop Losses.
+  4. **Super-Monster Spike Guard:** Requires 2 consecutive 5M confirmation candles on spikes $\ge 2.5\times$ ATR.
+
+### 2. Strategy 6 Pro Benchmark Preserved
+* Strategy 6 Pro (strict 25%-75% SMC range) is retained in the playbook and codebase as a quantitative benchmark record.
+* Empirical head-to-head backtest demonstrated that 6 Pro underperformed 5B by -$7,831 USD due to over-filtering the 65%–80% momentum zone.
+
+### 3. Strategy SMC Sweep: Non-Spike Forward-Test Engine
+* **The Need:** Rather than running an 85% duplicate (6 Pro) in the sandbox, a completely uncorrelated second engine was designed.
+* **The Mechanics:**
+  - 1H 50 EMA Macro Trend + 24H Dealing Range (Discount < 60% for Crash / Premium > 40% for Boom).
+  - 15M Fractal Swing Liquidity Sweep.
+  - 5M Structural Absorption Rejection Entry.
+  - Invalidation Stop Loss: Sweep Extreme $\pm 0.3\times$ ATR buffer.
+  - Take Profit: 1:1.3 R:R (0% spike reliance).
+* **Empirical 1-Month Results (12 Pairs / 103,680 Candles):**
+  - **+$21,788.98 USD Net Profit (+95.1R)** | **58.9% Win Rate** | **16 Target-Hit Days (53.3%)**
+* **Active Status:** Deployed to the Paper Sandbox for live forward-test benchmarking alongside 5B Pro Live.

@@ -46,6 +46,31 @@
 
 ## Version History & Modification Logs
 
+### v5.12 — November 4, 2026 (Strategy 5B Pro Unification & Strategy SMC Sweep Deployment)
+* **Author/Operator:** Antigravity / Lamidev
+* **Changes Made:**
+  - **Strategy 5B Pro Flagship Unification**:
+    - Unifies 5B momentum speed with full SMC defense:
+      1. Momentum Corridor tightened to `[20%-80%]` in `config.js`.
+      2. Option 3: 1H Runaway Squeeze Trap Armor (blocks adverse re-entries past failed SLs).
+      3. Option 4: Super-Monster Spike Guard (requires 2 consecutive 5M confirmation candles on spikes $\ge 2.5\times$ ATR).
+      4. 2-Win Profit Lock per symbol (180-minute pause after banking 2 consecutive wins).
+    - Signal branding, reports, and /status banner officially updated to **`Strategy 5B Pro`**.
+  - **Strategy 6 Pro Retained as Historical Benchmark**:
+    - Preserved in `backtestSMC6Pro.js` and playbook for quantitative record.
+  - **Strategy SMC Sweep (Strategy 7 Non-Spike Engine) Deployed to Paper Sandbox**:
+    - Replaced the duplicate 6 Pro sandbox slot with **`Strategy SMC Sweep`**.
+    - Pure structural price action: 1H Trend (50 EMA) + 24H Dealing Range (Discount < 60% / Premium > 40%) + 15M Fractal Liquidity Sweep + 5M Absorption Rejection.
+    - Zero spike reliance. 1:1.3 R:R.
+    - 1-Month Backtest: 275 trades, 58.9% WR, +$21,788.98 USD (+95.1R), 16 target-hit days.
+  - **Telegram Control Center Cleanup**:
+    - Cleaned out legacy `6pro` commands from `/strategy`, `/help`, and `/mode`.
+    - Active commands: `/strategy 5b` (Live), `/strategy sweep` (Paper), `/strategy both` (Dual Engine).
+* **Fail-Safe Rollback Command:**
+  ```bash
+  git checkout 543834e -- runner.js config.js telegramBot.js
+  ```
+
 ### v5.11 — October 28, 2026
 * **Author/Operator:** Antigravity / Lamidev
 * **Changes Made:**
