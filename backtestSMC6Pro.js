@@ -498,6 +498,8 @@ async function runComparisonBacktest() {
     let normalDays = 0;
     let totalRealized = 0;
 
+    let dailyPnlMap = {};
+
     for (const [day, dayTrades] of Object.entries(dayMap)) {
       let pnl = 0;
       let locked = false;
@@ -533,9 +535,10 @@ async function runComparisonBacktest() {
 
       if (!locked) normalDays++;
       totalRealized += pnl;
+      dailyPnlMap[day] = pnl;
     }
 
-    return { totalDays: Object.keys(dayMap).length, targetHitDays, maxLossDays, normalDays, totalRealized };
+    return { totalDays: Object.keys(dayMap).length, targetHitDays, maxLossDays, normalDays, totalRealized, dailyPnlMap };
   }
 
   // Collect all trades across symbols
@@ -561,6 +564,26 @@ async function runComparisonBacktest() {
 
   console.log(`• STRATEGY 5B:    ${sim5B.targetHitDays} Target-Hit Days (100% Bagged) | ${sim5B.maxLossDays} Loss-Floor Days | Total Session PnL: +$${sim5B.totalRealized.toFixed(2)}`);
   console.log(`• STRATEGY 6 PRO: ${sim6Pro.targetHitDays} Target-Hit Days (100% Bagged) | ${sim6Pro.maxLossDays} Loss-Floor Days | Total Session PnL: +$${sim6Pro.totalRealized.toFixed(2)}`);
+  console.log(`=================================================================================================================\n`);
+
+  // 4-WAY HEAD-TO-HEAD MATRIX
+  const allDays = Array.from(new Set([...Object.keys(sim5B.dailyPnlMap), ...Object.keys(sim6Pro.dailyPnlMap)])).sort();
+  let bothProfit = 0, bothLoss = 0, fiveBWin_sixLoss = 0, sixWin_fiveBLoss = 0;
+
+  for (const day of allDays) {
+    const p5 = sim5B.dailyPnlMap[day] || 0;
+    const p6 = sim6Pro.dailyPnlMap[day] || 0;
+    if (p5 > 0 && p6 > 0) bothProfit++;
+    else if (p5 < 0 && p6 < 0) bothLoss++;
+    else if (p5 > 0 && p6 <= 0) fiveBWin_sixLoss++;
+    else if (p6 > 0 && p5 <= 0) sixWin_fiveBLoss++;
+  }
+
+  console.log(`📊 4-WAY DAILY HEAD-TO-HEAD MATRIX (${allDays.length} Active Days):`);
+  console.log(`  1. BOTH Ended in Profit:              ${bothProfit} Days (${((bothProfit/allDays.length)*100).toFixed(1)}%)`);
+  console.log(`  2. BOTH Ended in Loss:                ${bothLoss} Days (${((bothLoss/allDays.length)*100).toFixed(1)}%)`);
+  console.log(`  3. 5B in Profit & 6 Pro in Loss:      ${fiveBWin_sixLoss} Days (${((fiveBWin_sixLoss/allDays.length)*100).toFixed(1)}%)`);
+  console.log(`  4. 6 Pro in Profit & 5B in Loss:      ${sixWin_fiveBLoss} Days (${((sixWin_fiveBLoss/allDays.length)*100).toFixed(1)}%)`);
   console.log(`=================================================================================================================\n`);
 }
 

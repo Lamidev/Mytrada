@@ -609,10 +609,22 @@ function isSymbolInCooldown(symbol, isPaper = false, currentPrice = null) {
   const now = Date.now();
   if (pauseUntil && now < pauseUntil) {
     const remMins = Math.ceil((pauseUntil - now) / 60000);
-    const reason = (consecLosses === 0 && dailyLosses < maxDaily)
-      ? `${isPaper ? 'Paper post-win' : 'Post-win'} breathing room (${remMins}m remaining)`
-      : `${isPaper ? 'Paper cooldown' : 'Cooldown'} active — ${remMins}m remaining`;
+    const isWinLock = isPaper ? rec.isPaperWinLocked : rec.isWinLocked;
+    let reason;
+    if (isWinLock) {
+      reason = `${isPaper ? 'Paper symbol' : 'Symbol'} 2-Win Profit Lock active (${remMins}m remaining)`;
+    } else if (consecLosses === 0 && dailyLosses < maxDaily) {
+      reason = `${isPaper ? 'Paper post-win' : 'Post-win'} breathing room (${remMins}m remaining)`;
+    } else {
+      reason = `${isPaper ? 'Paper cooldown' : 'Cooldown'} active — ${remMins}m remaining`;
+    }
     return { inCooldown: true, reason };
+  } else if (pauseUntil && now >= pauseUntil) {
+    if (isPaper) {
+      rec.isPaperWinLocked = false;
+    } else {
+      rec.isWinLocked = false;
+    }
   }
 
   // 🛡️ Option 3: 1H Candle Reset & Runaway Continuation Trap Armor
@@ -653,9 +665,13 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
     circuitBreakerState.symbols[symbol] = {
       consecutiveLosses: 0,
       dailyLosses: 0,
+      consecutiveWins: 0,
+      isWinLocked: false,
       pauseUntil: 0,
       paperConsecutiveLosses: 0,
       paperDailyLosses: 0,
+      paperConsecutiveWins: 0,
+      isPaperWinLocked: false,
       paperPauseUntil: 0
     };
   }
@@ -707,8 +723,18 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
 
     if (outcome === 'WIN') {
       rec.paperConsecutiveLosses = 0;
-      rec.paperPauseUntil = Math.max(rec.paperPauseUntil || 0, now + (postWinMins * 60 * 1000));
+      rec.paperConsecutiveWins = (rec.paperConsecutiveWins || 0) + 1;
+      const maxWinsPerSymbol = config.CIRCUIT_BREAKER.MAX_CONSECUTIVE_WINS_PER_SYMBOL || 2;
+      const winLockMins = config.CIRCUIT_BREAKER.SYMBOL_WIN_LOCK_MINS || 180;
+      if (rec.paperConsecutiveWins >= maxWinsPerSymbol) {
+        rec.paperPauseUntil = Math.max(rec.paperPauseUntil || 0, now + (winLockMins * 60 * 1000));
+        rec.isPaperWinLocked = true;
+      } else {
+        rec.paperPauseUntil = Math.max(rec.paperPauseUntil || 0, now + (postWinMins * 60 * 1000));
+      }
     } else if (outcome === 'LOSS') {
+      rec.paperConsecutiveWins = 0;
+      rec.isPaperWinLocked = false;
       rec.paperConsecutiveLosses = (rec.paperConsecutiveLosses || 0) + 1;
       rec.paperDailyLosses = (rec.paperDailyLosses || 0) + 1;
 
@@ -736,9 +762,31 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
     // ── 👑 LIVE REAL TRADING CIRCUIT BREAKER (Strategy 6 Pro) ──
     if (outcome === 'WIN') {
       rec.consecutiveLosses = 0;
+      rec.consecutiveWins = (rec.consecutiveWins || 0) + 1;
       dynamicState.portfolioConsecutiveLosses = 0;
-      rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (postWinMins * 60 * 1000));
+
+      const maxWinsPerSymbol = config.CIRCUIT_BREAKER.MAX_CONSECUTIVE_WINS_PER_SYMBOL || 2;
+      const winLockMins = config.CIRCUIT_BREAKER.SYMBOL_WIN_LOCK_MINS || 180;
+
+      if (rec.consecutiveWins >= maxWinsPerSymbol) {
+        rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (winLockMins * 60 * 1000));
+        rec.isWinLocked = true;
+        const lockHours = (winLockMins / 60).toFixed(winLockMins % 60 === 0 ? 0 : 1);
+        sendTelegramMessage([
+          `🏆 🛡️ <b>[SYMBOL PROFIT LOCK ACTIVATED — LIVE TRADING]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Trigger:</b> <code>${rec.consecutiveWins} consecutive wins</code> banked today (+${(rec.consecutiveWins * 1.3).toFixed(1)}R).`,
+          `<b>Action:</b> Live trading paused on <b>${symbol}</b> for <b>${winLockMins} minutes (${lockHours}h)</b> to lock in gains and prevent late-trend exhaustion reversals.`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `👑 <i>Remaining healthy pairs will continue scanning normally.</i>`
+        ].join('\n')).catch(() => null);
+      } else {
+        rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (postWinMins * 60 * 1000));
+      }
     } else if (outcome === 'LOSS') {
+      rec.consecutiveWins = 0;
+      rec.isWinLocked = false;
       rec.consecutiveLosses = (rec.consecutiveLosses || 0) + 1;
       rec.dailyLosses = (rec.dailyLosses || 0) + 1;
       dynamicState.portfolioConsecutiveLosses = (dynamicState.portfolioConsecutiveLosses || 0) + 1;
@@ -1020,7 +1068,11 @@ const telegramHandlers = {
           cooldowns.push(`• <code>${sym}</code>: 🛑 <b>LIVE LOCKED FOR TODAY</b> (${reason} losses hit — halts until 12 AM UTC)`);
         } else if (rec.pauseUntil && now < rec.pauseUntil) {
           const rem = Math.ceil((rec.pauseUntil - now) / 60000);
-          cooldowns.push(`• <code>${sym}</code>: ⏳ Live ${rem}m cooldown (${rec.dailyLosses || 0} loss today)`);
+          if (rec.isWinLocked) {
+            cooldowns.push(`• <code>${sym}</code>: 🏆 <b>2-WIN PROFIT LOCK</b> (${rem}m left — banked ${rec.consecutiveWins || 2} wins)`);
+          } else {
+            cooldowns.push(`• <code>${sym}</code>: ⏳ Live ${rem}m cooldown (${rec.dailyLosses || 0} loss today)`);
+          }
         }
 
         if (isPaperLocked) {
@@ -1028,7 +1080,11 @@ const telegramHandlers = {
           cooldowns.push(`• <code>${sym}</code>: 🔬 <b>PAPER LOCKED FOR TODAY</b> (${reason} paper losses hit)`);
         } else if (rec.paperPauseUntil && now < rec.paperPauseUntil) {
           const rem = Math.ceil((rec.paperPauseUntil - now) / 60000);
-          cooldowns.push(`• <code>${sym}</code>: 🔬 Paper ${rem}m cooldown (${rec.paperDailyLosses || 0} loss today)`);
+          if (rec.isPaperWinLocked) {
+            cooldowns.push(`• <code>${sym}</code>: 🔬 🏆 <b>PAPER 2-WIN PROFIT LOCK</b> (${rem}m left)`);
+          } else {
+            cooldowns.push(`• <code>${sym}</code>: 🔬 Paper ${rem}m cooldown (${rec.paperDailyLosses || 0} loss today)`);
+          }
         }
 
         if (rec.trapZone && now < rec.trapZone.expiresAt) {
@@ -1232,6 +1288,7 @@ const telegramHandlers = {
         if ((rec.dailyLosses || 0) < maxLosses && (rec.consecutiveLosses || 0) < 2) {
           rec.pauseUntil = 0;
           rec.consecutiveLosses = 0;
+          rec.isWinLocked = false;
         } else {
           const endOfDay = new Date();
           endOfDay.setUTCHours(23, 59, 59, 999);
@@ -1552,16 +1609,24 @@ const telegramHandlers = {
         if (t === 'paper' || t === '5b') {
           rec.paperPauseUntil = 0;
           rec.paperConsecutiveLosses = 0;
+          rec.paperConsecutiveWins = 0;
+          rec.isPaperWinLocked = false;
           if (rec.paperDailyLosses >= 2) rec.paperDailyLosses = 1;
         } else if (t === 'live' || t === '6pro') {
           rec.pauseUntil = 0;
           rec.consecutiveLosses = 0;
+          rec.consecutiveWins = 0;
+          rec.isWinLocked = false;
           if (rec.dailyLosses >= 2) rec.dailyLosses = 1;
         } else {
           rec.pauseUntil = 0;
           rec.consecutiveLosses = 0;
+          rec.consecutiveWins = 0;
+          rec.isWinLocked = false;
           rec.paperPauseUntil = 0;
           rec.paperConsecutiveLosses = 0;
+          rec.paperConsecutiveWins = 0;
+          rec.isPaperWinLocked = false;
           if (rec.dailyLosses >= 2) rec.dailyLosses = 1;
           if (rec.paperDailyLosses >= 2) rec.paperDailyLosses = 1;
         }

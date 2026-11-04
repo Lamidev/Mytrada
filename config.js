@@ -63,6 +63,8 @@ module.exports = {
   CIRCUIT_BREAKER: {
     ENABLED: true,
     POST_WIN_PAUSE_MINS: 60,             // 👑 Universal 60m Cooldown after WIN (12x M5 bars / 1 full 1H candle cycle)
+    MAX_CONSECUTIVE_WINS_PER_SYMBOL: 2,  // 👑 2 Wins on a single symbol = 3-hour profit lock (prevents late-trend giveback)
+    SYMBOL_WIN_LOCK_MINS: 180,           // 👑 3-Hour (180 mins) profit lock duration on that symbol
     TIER_1_PAUSE_MINS: 60,               // 👑 Universal 60m Cooldown after LOSS (12x M5 bars / 1 full 1H candle cycle)
     TIER_2_PAUSE_MINS: 60,               // 60-minute pause on symbol after 2 consecutive losses
     MAX_DAILY_LOSSES_PER_SYMBOL: 2,      // 👑 2 Daily Losses = Halted on symbol for remainder of day
