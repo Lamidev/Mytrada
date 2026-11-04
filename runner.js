@@ -2466,7 +2466,7 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
         blockedReason = `Active 1H Bar Guard: Current 1H candle is Bullish Green (${current1hCandle.close.toFixed(2)} > open ${current1hCandle.open.toFixed(2)})`;
       }
     }
-    const valuationLabel = `Macro Range: ${exhaustion5B.rangePct.toFixed(1)}% (5B Momentum Zone [${minSell5B.toFixed(0)}%-${maxBuy5B.toFixed(0)}%])`;
+    const valuationLabel = `Macro Range: ${exhaustion5B.rangePct.toFixed(1)}% (5B Pro SMC Corridor [${minSell5B.toFixed(0)}%-${maxBuy5B.toFixed(0)}%])`;
     const liquidityLabel = `SMC Anchor (PDH/PDL Range)`;
 
     return {
@@ -2601,7 +2601,7 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
         blockedReason = `Active 1H Bar Guard: Current 1H candle is Bearish Red (${current1hCandle.close.toFixed(2)} < open ${current1hCandle.open.toFixed(2)})`;
       }
     }
-    const valuationLabel = `Macro Range: ${exhaustion5B.rangePct.toFixed(1)}% (5B Momentum Zone [${minSell5B.toFixed(0)}%-${maxBuy5B.toFixed(0)}%])`;
+    const valuationLabel = `Macro Range: ${exhaustion5B.rangePct.toFixed(1)}% (5B Pro SMC Corridor [${minSell5B.toFixed(0)}%-${maxBuy5B.toFixed(0)}%])`;
     const liquidityLabel = `SMC Anchor (PDH/PDL Range)`;
 
     return {
