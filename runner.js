@@ -1115,11 +1115,11 @@ const telegramHandlers = {
     let stratBadge = '🟡 <b>STANDBY (Awaiting /strategy command)</b>';
     if (dynamicState.activeStrategy === 'BOTH') {
       const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (dynamicState.mode5b === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      const mode6Label = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.mode6pro === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      stratBadge = `⚡ <b>DUAL ENGINE</b> (6 Pro: ${mode6Label} | 5B: ${mode5bLabel})`;
+      const modeSweepLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.mode6pro === 'LIVE' ? '🟢 LIVE' : '🔬 PAPER');
+      stratBadge = `⚡ <b>DUAL ENGINE</b> (5B Pro: ${mode5bLabel} | SMC Sweep: ${modeSweepLabel})`;
     } else if (dynamicState.activeStrategy === 'STRATEGY_6_PRO') {
-      const mode6Label = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.executionMode === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      stratBadge = `👑 <b>Strategy 6 Pro</b> (${mode6Label})`;
+      const modeSweepLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.mode6pro === 'LIVE' ? '🟢 LIVE' : '🔬 PAPER');
+      stratBadge = `🔬 <b>Strategy SMC Sweep</b> (${modeSweepLabel})`;
     } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
       const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (dynamicState.executionMode === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
       stratBadge = `🚀 <b>Strategy 5B Pro</b> (${mode5bLabel})`;
@@ -2633,62 +2633,147 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
   return null;
 }
 
-// ── STRATEGY 6 PRO: GODEYES INSTITUTIONAL SMC MEMORY BRAIN ──
-function detectStrategy6ProSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
-  // 1. Evaluate baseline spike exhaustion & 5M confirmation trigger
-  const baseSetup = detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol);
-  if (!baseSetup) return null;
+// ── STRATEGY SMC SWEEP: 15M LIQUIDITY SWEEP & 5M STRUCTURAL REJECTION (NON-SPIKE) ──
+function detectStrategySMCSweepSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
+  if (!ltfCandles || ltfCandles.length < 35 || !htf1hCandles || htf1hCandles.length < 50) return null;
 
-  // 2. 👑 Active 1-Hour Candle Momentum Guard (Anti-Knife-Catching & Anti-Squeeze)
-  const active1hCfg = config.ACTIVE_1H_CANDLE_GUARD || {};
-  if (active1hCfg.ENABLED && htf1hCandles && htf1hCandles.length > 0) {
-    const current1hCandle = htf1hCandles[htf1hCandles.length - 1];
-    if (baseSetup.direction === 'BUY' && current1hCandle.close < current1hCandle.open) {
-      return {
-        ...baseSetup,
-        strategy: 'Strategy 6 Pro',
-        isBlocked: true,
-        blockedReason: `Active 1H Bar Guard: Current 1H candle is Bearish Red (${current1hCandle.close.toFixed(2)} < open ${current1hCandle.open.toFixed(2)})`
-      };
-    }
-    if (baseSetup.direction === 'SELL' && current1hCandle.close > current1hCandle.open) {
-      return {
-        ...baseSetup,
-        strategy: 'Strategy 6 Pro',
-        isBlocked: true,
-        blockedReason: `Active 1H Bar Guard: Current 1H candle is Bullish Green (${current1hCandle.close.toFixed(2)} > open ${current1hCandle.open.toFixed(2)})`
-      };
-    }
-  }
+  // 1. 1H Macro Trend Alignment & Dealing Range Equilibrium Filter
+  const h1Closes = htf1hCandles.map(c => c.close);
+  const h1Ema50 = calculateEMA(h1Closes, 50);
+  const lastH1Close = h1Closes[h1Closes.length - 1];
+  const lastH1Ema = h1Ema50[h1Ema50.length - 1];
+  if (!lastH1Ema) return null;
 
-  // 3. 👑 Strategy 6 Pro Macro Cascade Guard (Exclusive to 6 Pro - Anti-Knife-Catching & Anti-Squeeze)
+  // 24H Dealing Range
+  const h1Lookback = htf1hCandles.slice(Math.max(0, htf1hCandles.length - 24));
+  const dayHigh = Math.max(...h1Lookback.map(c => c.high));
+  const dayLow = Math.min(...h1Lookback.map(c => c.low));
+  const dayRange = dayHigh - dayLow;
+  if (dayRange <= 0) return null;
+
+  const currentPrice = ltfCandles[ltfCandles.length - 1].close;
+  const rangePct = ((currentPrice - dayLow) / dayRange) * 100;
+
+  // Anti-Cascade Guard
   const cascade = isMacroCascadeActive(htf1hCandles, mode);
-  if (cascade.isCascading) {
-    return {
-      ...baseSetup,
-      strategy: 'Strategy 6 Pro',
-      isBlocked: true,
-      blockedReason: `Macro Cascade Guard: ${cascade.reason || 'Active 1H Continuation Waterfall'}`
-    };
+  if (cascade.isCascading) return null;
+
+  // Crash Sweep: Only in Discount (< 60% range) and 1H Trend Bullish
+  // Boom Sweep: Only in Premium (> 40% range) and 1H Trend Bearish
+  if (mode === 'CRASH') {
+    if (lastH1Close < lastH1Ema) return null;
+    if (rangePct > 60.0) return null;
+  } else {
+    if (lastH1Close > lastH1Ema) return null;
+    if (rangePct < 40.0) return null;
   }
 
-  // 4. 👑 Strategy 6 Pro Institutional SMC Dealing Zone Guard (Strict 25% Floor / 75% Ceiling)
-  const minSell6Pro = (config.GODEYES && config.GODEYES.MIN_SELL_RANGE_PCT) !== undefined ? config.GODEYES.MIN_SELL_RANGE_PCT : 25.0;
-  const maxBuy6Pro = (config.GODEYES && config.GODEYES.MAX_BUY_RANGE_PCT) !== undefined ? config.GODEYES.MAX_BUY_RANGE_PCT : 75.0;
-  const exhaustion = evaluateMacroExhaustion(symbol, baseSetup.entry, baseSetup.direction, htf1hCandles, minSell6Pro, maxBuy6Pro);
+  // 2. Aggregate 5M candles to 15M candles to find genuine 15M swing levels
+  const m15Candles = [];
+  for (let i = 0; i < ltfCandles.length; i += 3) {
+    const chunk = ltfCandles.slice(i, i + 3);
+    if (chunk.length < 3) break;
+    m15Candles.push({
+      time: chunk[0].time,
+      open: chunk[0].open,
+      high: Math.max(...chunk.map(c => c.high)),
+      low: Math.min(...chunk.map(c => c.low)),
+      close: chunk[2].close
+    });
+  }
+  if (m15Candles.length < 10) return null;
 
-  const isBlocked = baseSetup.isBlocked || exhaustion.isExhausted;
-  const blockedReason = baseSetup.isBlocked ? baseSetup.blockedReason : (exhaustion.reason ? `6 Pro Dealing Zone: ${exhaustion.reason}` : null);
-  const zoneDesc = baseSetup.direction === 'SELL' ? `Min ${minSell6Pro.toFixed(0)}% Floor` : `Max ${maxBuy6Pro.toFixed(0)}% Ceiling`;
+  // Find 15M fractal swing points
+  const swingLows = [];
+  const swingHighs = [];
+  for (let j = 2; j < m15Candles.length - 2; j++) {
+    const prev1 = m15Candles[j - 1], prev2 = m15Candles[j - 2];
+    const curr = m15Candles[j];
+    const next1 = m15Candles[j + 1], next2 = m15Candles[j + 2];
+    if (curr.low < prev1.low && curr.low < prev2.low && curr.low < next1.low && curr.low < next2.low) {
+      swingLows.push(curr.low);
+    }
+    if (curr.high > prev1.high && curr.high > prev2.high && curr.high > next1.high && curr.high > next2.high) {
+      swingHighs.push(curr.high);
+    }
+  }
 
-  return {
-    ...baseSetup,
-    strategy: 'Strategy 6 Pro',
-    valuationLabel: `Macro Range: ${exhaustion.rangePct.toFixed(1)}% (SMC Dealing Zone [${zoneDesc}])`,
-    liquidityLabel: `SMC Anchor (PDH/PDL Range)`,
-    isBlocked,
-    blockedReason
-  };
+  const atr = calculateATR(ltfCandles, 14);
+  if (!atr || atr === 0) return null;
+
+  const c0 = ltfCandles[ltfCandles.length - 1]; // latest closed 5M bar
+  const c1 = ltfCandles[ltfCandles.length - 2]; // preceding 5M bar
+
+  // 3. Liquidity Sweep Detection & 5M Absorption Rejection
+  if (mode === 'CRASH' && swingLows.length > 0) {
+    const targetLow = swingLows[swingLows.length - 1];
+    const sweptLow = (c1.low < targetLow || c0.low < targetLow) && c0.close > targetLow;
+    const isBullishCandle = c0.close > c0.open;
+
+    if (sweptLow && isBullishCandle) {
+      const sweepExtreme = Math.min(c0.low, c1.low);
+      const stopLoss = sweepExtreme - (atr * 0.3);
+      const entry = c0.close;
+      const slDist = entry - stopLoss;
+      if (slDist <= 0 || slDist > atr * 5.0) return null;
+
+      const tp = entry + (slDist * 1.3);
+
+      return {
+        strategy: 'Strategy SMC Sweep',
+        direction: 'BUY',
+        type: 'bullish',
+        entry,
+        sl: stopLoss,
+        tp,
+        slDistance: slDist,
+        htf4hTrend: lastH1Close >= lastH1Ema ? 'bullish' : 'bearish',
+        htf1hTrend: 'bullish',
+        dailyTrend: 'bullish',
+        valuationLabel: `Macro Range: ${rangePct.toFixed(1)}% (Discount Sweep)`,
+        liquidityLabel: `15M Low Swept @ ${targetLow.toFixed(2)} (Absorption Rejection)`,
+        spikeCountLabel: '0 Spikes (Non-Spike SMC)',
+        confirmCount: 1,
+        isBlocked: false,
+        blockedReason: null
+      };
+    }
+  } else if (mode === 'BOOM' && swingHighs.length > 0) {
+    const targetHigh = swingHighs[swingHighs.length - 1];
+    const sweptHigh = (c1.high > targetHigh || c0.high > targetHigh) && c0.close < targetHigh;
+    const isBearishCandle = c0.close < c0.open;
+
+    if (sweptHigh && isBearishCandle) {
+      const sweepExtreme = Math.max(c0.high, c1.high);
+      const stopLoss = sweepExtreme + (atr * 0.3);
+      const entry = c0.close;
+      const slDist = stopLoss - entry;
+      if (slDist <= 0 || slDist > atr * 5.0) return null;
+
+      const tp = entry - (slDist * 1.3);
+
+      return {
+        strategy: 'Strategy SMC Sweep',
+        direction: 'SELL',
+        type: 'bearish',
+        entry,
+        sl: stopLoss,
+        tp,
+        slDistance: slDist,
+        htf4hTrend: lastH1Close <= lastH1Ema ? 'bearish' : 'bullish',
+        htf1hTrend: 'bearish',
+        dailyTrend: 'bearish',
+        valuationLabel: `Macro Range: ${rangePct.toFixed(1)}% (Premium Sweep)`,
+        liquidityLabel: `15M High Swept @ ${targetHigh.toFixed(2)} (Absorption Rejection)`,
+        spikeCountLabel: '0 Spikes (Non-Spike SMC)',
+        confirmCount: 1,
+        isBlocked: false,
+        blockedReason: null
+      };
+    }
+  }
+
+  return null;
 }
 
 // ── MAIN MONITOR CYCLE ──
@@ -2819,8 +2904,8 @@ async function monitorMarket() {
 
   const isBoth = dynamicState.activeStrategy === 'BOTH';
   const scanStratLabel = isBoth
-    ? 'Dual Engine (5B + 6 Pro)'
-    : (dynamicState.activeStrategy === 'STRATEGY_6_PRO' ? 'Strategy 6 Pro' : 'Strategy 5B Pro');
+    ? 'Dual Engine (5B Pro Live + SMC Sweep Paper)'
+    : (dynamicState.activeStrategy === 'STRATEGY_6_PRO' ? 'Strategy SMC Sweep' : 'Strategy 5B Pro');
 
   console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for ${scanStratLabel}...${RESET}`);
   console.log(`-------------------------------------------------------------------------------------------------`);
@@ -2893,29 +2978,29 @@ async function monitorMarket() {
           });
         }
         if (canRun6Pro) {
-          let displayName = 'Strategy 6 Pro';
-          if (is6proLockedState) displayName = 'Strategy 6 Pro (Target-Locked Paper)';
-          else if (isQuarantined) displayName = 'Strategy 6 Pro (Quarantined Paper)';
+          let displayName = 'Strategy SMC Sweep';
+          if (is6proLockedState) displayName = 'Strategy SMC Sweep (Target-Locked Paper)';
+          else if (isQuarantined) displayName = 'Strategy SMC Sweep (Quarantined Paper)';
 
           strategiesToRun.push({
             id: '6PRO',
             name: 'STRATEGY_6_PRO',
             displayName,
-            fn: detectStrategy6ProSetup,
+            fn: detectStrategySMCSweepSetup,
             isPaper: is6proPaper
           });
         }
       } else if (dynamicState.activeStrategy === 'STRATEGY_6_PRO') {
         if (canRun6Pro) {
-          let displayName = 'Strategy 6 Pro';
-          if (is6proLockedState) displayName = 'Strategy 6 Pro (Target-Locked Paper)';
-          else if (isQuarantined) displayName = 'Strategy 6 Pro (Quarantined Paper)';
+          let displayName = 'Strategy SMC Sweep';
+          if (is6proLockedState) displayName = 'Strategy SMC Sweep (Target-Locked Paper)';
+          else if (isQuarantined) displayName = 'Strategy SMC Sweep (Quarantined Paper)';
 
           strategiesToRun.push({
             id: '6PRO',
             name: 'STRATEGY_6_PRO',
             displayName,
-            fn: detectStrategy6ProSetup,
+            fn: detectStrategySMCSweepSetup,
             isPaper: is6proPaper
           });
         }
@@ -3297,9 +3382,9 @@ async function main() {
       `• <b>Daily Max Loss Floor:</b> <code>${maxLossLabel}</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `💡 <b>Send a command to launch your strategy:</b>`,
-      `• <code>/strategy 6pro</code> — Launch Strategy 6 Pro (Institutional SMC)`,
+      `• <code>/strategy sweep</code> — Launch Strategy SMC Sweep (Non-Spike Paper)`,
       `• <code>/strategy 5b</code> — Launch Strategy 5B Pro`,
-      `• <code>/strategy both</code> — Launch Both (6 Pro Live + 5B Paper Sandbox)`,
+      `• <code>/strategy both</code> — Launch Both (5B Pro Live + SMC Sweep Paper Sandbox)`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
     ].join('\n'));
   } else {
@@ -3307,9 +3392,9 @@ async function main() {
     const is6Pro = dynamicState.activeStrategy === 'STRATEGY_6_PRO';
     const stratDisplayName = isBoth
       ? (dynamicState.mode6pro === 'LIVE' && dynamicState.mode5b === 'PAPER'
-          ? 'Dual Engine (6 Pro Live + 5B Paper Sandbox)'
-          : 'Dual Engine (5B Live + 6 Pro Paper Sandbox)')
-      : (is6Pro ? 'Strategy 6 Pro (Institutional SMC)' : 'Strategy 5B Pro');
+          ? 'Dual Engine (5B Pro Live + SMC Sweep Paper Sandbox)'
+          : 'Dual Engine (5B Pro Live + SMC Sweep Paper Sandbox)')
+      : (is6Pro ? 'Strategy SMC Sweep (Non-Spike)' : 'Strategy 5B Pro');
 
     console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner — ${stratDisplayName}${RESET}`);
     console.log(`🚀 Universe: ${Object.keys(config.SYMBOLS).length} Elite Pairs | Target: ${startupTargetLabel} | Loss Floor: ${startupLossLabel} | Telegram Active...\n`);

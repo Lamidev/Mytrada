@@ -312,7 +312,7 @@ async function handleCommand(rawText, handlers) {
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🏛️ <b>STRATEGY & MODES:</b>`,
         `• <code>/strategy 6pro</code> ➜ Launch Strategy 6 Pro Live (Institutional SMC)`,
-        `• <code>/strategy 5b</code> ➜ Launch Strategy 5B Live`,
+        `• <code>/strategy 5b</code> ➜ Launch Strategy 5B Pro Live`,
         `• <code>/strategy both</code> ➜ Launch Dual Engine (6 Pro Live + 5B Paper)`,
         `• <code>/strategy none</code> ➜ Put bot into Standby (0 entries)`,
         `• <code>/mode paper</code> | <code>/mode live</code> ➜ Global execution mode`,
@@ -336,8 +336,8 @@ async function handleCommand(rawText, handlers) {
         `• <code>/resume CRASH1000</code> ➜ Clear cooldown/lockout on pair & resume scanning`,
         `• <code>/stopall</code> (or <code>/halt</code>, <code>/pause</code>) ➜ Emergency complete halt: stops all strategies & Gold`,
         `• <code>/resumeall</code> (or <code>/resume</code>) ➜ Resume all strategy engines and scanners`,
-        `• <code>/pause 5b</code> | <code>/pause 6pro</code> | <code>/pause gold</code> ➜ Pause specific engine`,
-        `• <code>/resume 5b</code> | <code>/resume 6pro</code> | <code>/resume gold</code> ➜ Resume specific engine`,
+        `• <code>/pause 5b</code> | <code>/pause sweep</code> | <code>/pause gold</code> ➜ Pause specific engine`,
+        `• <code>/resume 5b</code> | <code>/resume sweep</code> | <code>/resume gold</code> ➜ Resume specific engine`,
         `• <code>/closeall</code> ➜ Close all active trades immediately at market`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
       ].join('\n');
@@ -349,8 +349,8 @@ async function handleCommand(rawText, handlers) {
     case '/strat': {
       if (!arg1) {
         const cur = handlers.getActiveStrategy ? handlers.getActiveStrategy() : 'BOTH';
-        let label = '⚡ <b>DUAL ENGINE (5B Live + 6 Pro Paper Sandbox)</b>';
-        if (cur === 'STRATEGY_6_PRO') label = '👑 <b>Strategy 6 Pro Only (Institutional SMC Sniper)</b>';
+        let label = '⚡ <b>DUAL ENGINE (5B Pro Live + SMC Sweep Paper Sandbox)</b>';
+        if (cur === 'STRATEGY_6_PRO') label = '🔬 <b>Strategy SMC Sweep Only (15M Liquidity Sweep & 5M Rejection)</b>';
         else if (cur === 'STRATEGY_5B') label = '🚀 <b>Strategy 5B Pro (SMC Momentum Corridor)</b>';
 
         await sendTelegramMessage([
@@ -362,9 +362,9 @@ async function handleCommand(rawText, handlers) {
           `🚀 <b>Strategy 5B:</b> Value-Zone Spike Exhaustion Sniper (~10-15 trades/day)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💡 <b>Commands:</b>`,
-          `• <code>/strategy both</code> — Run BOTH (5B Live + 6 Pro Paper Sandbox)`,
+          `• <code>/strategy both</code> — Run BOTH (5B Pro Live + SMC Sweep Paper Sandbox)`,
           `• <code>/strategy 5b</code> — Run Strategy 5B Pro exclusively`,
-          `• <code>/strategy 6pro</code> — Run Strategy 6 Pro exclusively`
+          `• <code>/strategy sweep</code> — Run Strategy SMC Sweep exclusively (Paper Sandbox)`
         ].join('\n'));
         break;
       }
@@ -379,9 +379,9 @@ async function handleCommand(rawText, handlers) {
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<i>Both engines are actively scanning in parallel. Control each anytime with /pause 5b or /pause 6pro.</i>`
         ].join('\n'));
-      } else if (choice.includes('6') || choice.includes('pro') || choice.includes('smc')) {
+      } else if (choice.includes('sweep') || choice.includes('smc') || choice.includes('sandbox') || choice.includes('paper') || choice.includes('6pro')) {
         if (handlers.setActiveStrategy) handlers.setActiveStrategy('STRATEGY_6_PRO');
-        await sendTelegramMessage(`👑 <b>[STRATEGY SWITCHED ➔ STRATEGY 6 PRO]</b>\nBot is now scanning exclusively with <b>Institutional SMC Liquidity & Valuation Sniper</b>.`);
+        await sendTelegramMessage(`🔬 <b>[STRATEGY SWITCHED ➔ STRATEGY SMC SWEEP]</b>\nBot is now scanning exclusively with <b>Strategy SMC Sweep (15M Liquidity Sweep & 5M Rejection)</b>.`);
       } else if (choice.includes('5') || choice.includes('5b')) {
         if (handlers.setActiveStrategy) handlers.setActiveStrategy('STRATEGY_5B');
         await sendTelegramMessage(`🚀 <b>[STRATEGY SWITCHED ➔ STRATEGY 5B PRO]</b>\nBot is now scanning exclusively with <b>Strategy 5B Pro</b>.`);
@@ -410,7 +410,7 @@ async function handleCommand(rawText, handlers) {
           `• <code>/mode paper</code> — Global Boom/Crash Paper Sandbox ($0 risk)`,
           `• <code>/mode live</code> — Global Boom/Crash Live Real Trading`,
           `• <code>/mode 5b live</code> | <code>/mode 5b paper</code>`,
-          `• <code>/mode 6pro live</code> | <code>/mode 6pro paper</code>`,
+          `• <code>/mode sweep live</code> | <code>/mode sweep paper</code>`,
           `• <code>/mode gold paper</code> | <code>/mode gold live</code>`
         ].join('\n'));
         break;
@@ -430,16 +430,16 @@ async function handleCommand(rawText, handlers) {
           handlers.setStrategyMode('5b', isPaper ? 'PAPER' : 'LIVE');
           if (!isPaper) handlers.setStrategyMode('6pro', 'PAPER');
         }
-        const extraNote = !isPaper ? '\n👑 <i>Strategy 6 Pro automatically flipped to 🔬 PAPER SANDBOX</i>' : '';
+        const extraNote = !isPaper ? '\n🔬 <i>Strategy SMC Sweep automatically flipped to 🔬 PAPER SANDBOX</i>' : '';
         await sendTelegramMessage(`🚀 <b>Strategy 5B Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>${extraNote}`);
-      } else if (mChoice.includes('6') && mTarget) {
+      } else if ((mChoice.includes('sweep') || mChoice.includes('smc') || mChoice.includes('6')) && mTarget) {
         const isPaper = mTarget.includes('paper') || mTarget.includes('test');
         if (handlers.setStrategyMode) {
           handlers.setStrategyMode('6pro', isPaper ? 'PAPER' : 'LIVE');
           if (!isPaper) handlers.setStrategyMode('5b', 'PAPER');
         }
         const extraNote = !isPaper ? '\n🚀 <i>Strategy 5B automatically flipped to 🔬 PAPER SANDBOX</i>' : '';
-        await sendTelegramMessage(`👑 <b>Strategy 6 Pro Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>${extraNote}`);
+        await sendTelegramMessage(`🔬 <b>Strategy SMC Sweep Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>${extraNote}`);
       } else if (mChoice.includes('paper') || mChoice.includes('test') || mChoice.includes('sandbox')) {
         if (handlers.setExecutionMode) handlers.setExecutionMode('PAPER');
         await sendTelegramMessage(`🔬 <b>[GLOBAL MODE ➔ PAPER SANDBOX]</b>\nAll signals across all strategies will now run as <b>Forward Test Setups ($0 real equity at risk)</b>.`);
