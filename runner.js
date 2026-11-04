@@ -1122,7 +1122,7 @@ const telegramHandlers = {
       stratBadge = `👑 <b>Strategy 6 Pro</b> (${mode6Label})`;
     } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
       const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (dynamicState.executionMode === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      stratBadge = `🚀 <b>Strategy 5B Enhanced</b> (${mode5bLabel})`;
+      stratBadge = `🚀 <b>Strategy 5B Pro</b> (${mode5bLabel})`;
     }
 
     const liveTradesCount = activeTrades.filter(t => !t.isIncubation).length;
@@ -1860,7 +1860,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           outcome: 'WIN',
           rMultiple: 1.3,
           pnlUSD: compRisk.rewardUSD,
-          strategy: trade.strategy || 'Strategy 5B Enhanced'
+          strategy: trade.strategy || 'Strategy 5B Pro'
         });
         recordGodEyesOutcome({
           setupId: trade.setupId,
@@ -1948,7 +1948,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           outcome: 'LOSS',
           rMultiple: -1.0,
           pnlUSD: -compRisk.riskUSD,
-          strategy: trade.strategy || 'Strategy 5B Enhanced'
+          strategy: trade.strategy || 'Strategy 5B Pro'
         });
         recordGodEyesOutcome({
           setupId: trade.setupId,
@@ -2320,7 +2320,7 @@ function isMacroCascadeActive(htf1hCandles, mode) {
   return { isCascading: false, count: 0, reason: null };
 }
 
-// ── STRATEGY 5B SIGNAL DETECTION ENGINE ──
+// ── STRATEGY 5B PRO SIGNAL DETECTION ENGINE ──
 function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
   if (!ltfCandles || !htf1hCandles || ltfCandles.length < 25 || htf1hCandles.length < 55) return null;
 
@@ -2470,7 +2470,7 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const liquidityLabel = `SMC Anchor (PDH/PDL Range)`;
 
     return {
-      strategy: 'Strategy 5B Enhanced',
+      strategy: 'Strategy 5B Pro',
       direction: 'SELL',
       type: 'bearish',
       htf4hTrend,
@@ -2605,7 +2605,7 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     const liquidityLabel = `SMC Anchor (PDH/PDL Range)`;
 
     return {
-      strategy: 'Strategy 5B Enhanced',
+      strategy: 'Strategy 5B Pro',
       direction: 'BUY',
       type: 'bullish',
       htf4hTrend,
@@ -2820,7 +2820,7 @@ async function monitorMarket() {
   const isBoth = dynamicState.activeStrategy === 'BOTH';
   const scanStratLabel = isBoth
     ? 'Dual Engine (5B + 6 Pro)'
-    : (dynamicState.activeStrategy === 'STRATEGY_6_PRO' ? 'Strategy 6 Pro' : 'Strategy 5B Enhanced');
+    : (dynamicState.activeStrategy === 'STRATEGY_6_PRO' ? 'Strategy 6 Pro' : 'Strategy 5B Pro');
 
   console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for ${scanStratLabel}...${RESET}`);
   console.log(`-------------------------------------------------------------------------------------------------`);
@@ -2880,7 +2880,7 @@ async function monitorMarket() {
       const strategiesToRun = [];
       if (isBoth) {
         if (canRun5B) {
-          let displayName = 'Strategy 5B Enhanced';
+          let displayName = 'Strategy 5B Pro';
           if (is6proLockedState) displayName = 'Strategy 5B (Target-Locked Paper)';
           else if (isQuarantined) displayName = 'Strategy 5B (Quarantined Paper)';
 
@@ -2921,7 +2921,7 @@ async function monitorMarket() {
         }
       } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
         if (canRun5B) {
-          let displayName = 'Strategy 5B Enhanced';
+          let displayName = 'Strategy 5B Pro';
           if (is6proLockedState) displayName = 'Strategy 5B (Target-Locked Paper)';
           else if (isQuarantined) displayName = 'Strategy 5B (Quarantined Paper)';
 
@@ -3298,7 +3298,7 @@ async function main() {
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `💡 <b>Send a command to launch your strategy:</b>`,
       `• <code>/strategy 6pro</code> — Launch Strategy 6 Pro (Institutional SMC)`,
-      `• <code>/strategy 5b</code> — Launch Strategy 5B Enhanced`,
+      `• <code>/strategy 5b</code> — Launch Strategy 5B Pro`,
       `• <code>/strategy both</code> — Launch Both (6 Pro Live + 5B Paper Sandbox)`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
     ].join('\n'));
@@ -3309,13 +3309,13 @@ async function main() {
       ? (dynamicState.mode6pro === 'LIVE' && dynamicState.mode5b === 'PAPER'
           ? 'Dual Engine (6 Pro Live + 5B Paper Sandbox)'
           : 'Dual Engine (5B Live + 6 Pro Paper Sandbox)')
-      : (is6Pro ? 'Strategy 6 Pro (Institutional SMC)' : 'Strategy 5B Enhanced');
+      : (is6Pro ? 'Strategy 6 Pro (Institutional SMC)' : 'Strategy 5B Pro');
 
     console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner — ${stratDisplayName}${RESET}`);
     console.log(`🚀 Universe: ${Object.keys(config.SYMBOLS).length} Elite Pairs | Target: ${startupTargetLabel} | Loss Floor: ${startupLossLabel} | Telegram Active...\n`);
 
     await sendTelegramMessage([
-      `🚀 <b>[MYTRADA SYSTEM ONLINE — ${isBoth ? 'DUAL ENGINE' : (is6Pro ? 'STRATEGY 6 PRO' : 'STRATEGY 5B ENHANCED')}]</b>`,
+      `🚀 <b>[MYTRADA SYSTEM ONLINE — ${isBoth ? 'DUAL ENGINE' : (is6Pro ? 'STRATEGY 6 PRO' : 'STRATEGY 5B PRO')}]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `• <b>Strategy:</b> <code>${stratDisplayName}</code>`,
       `• <b>Universe:</b> <code>${Object.keys(config.SYMBOLS).length} Elite Pairs</code>`,

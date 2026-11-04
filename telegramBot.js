@@ -351,7 +351,7 @@ async function handleCommand(rawText, handlers) {
         const cur = handlers.getActiveStrategy ? handlers.getActiveStrategy() : 'BOTH';
         let label = '⚡ <b>DUAL ENGINE (5B Live + 6 Pro Paper Sandbox)</b>';
         if (cur === 'STRATEGY_6_PRO') label = '👑 <b>Strategy 6 Pro Only (Institutional SMC Sniper)</b>';
-        else if (cur === 'STRATEGY_5B') label = '🚀 <b>Strategy 5B Only (Value-Zone Momentum Sniper)</b>';
+        else if (cur === 'STRATEGY_5B') label = '🚀 <b>Strategy 5B Pro (SMC Momentum Corridor)</b>';
 
         await sendTelegramMessage([
           `🏛️ <b>[MYTRADA ACTIVE STRATEGY ENGINE]</b>`,
@@ -363,7 +363,7 @@ async function handleCommand(rawText, handlers) {
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💡 <b>Commands:</b>`,
           `• <code>/strategy both</code> — Run BOTH (5B Live + 6 Pro Paper Sandbox)`,
-          `• <code>/strategy 5b</code> — Run Strategy 5B Enhanced exclusively`,
+          `• <code>/strategy 5b</code> — Run Strategy 5B Pro exclusively`,
           `• <code>/strategy 6pro</code> — Run Strategy 6 Pro exclusively`
         ].join('\n'));
         break;
@@ -374,7 +374,7 @@ async function handleCommand(rawText, handlers) {
         await sendTelegramMessage([
           `⚡ <b>[DUAL STRATEGY ENGINE ACTIVATED]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `• 🚀 <b>Strategy 5B Enhanced:</b> <b>LIVE REAL TRADING</b> (Account Equity)`,
+          `• 🚀 <b>Strategy 5B Pro:</b> <b>LIVE REAL TRADING</b> (Account Equity)`,
           `• 👑 <b>Strategy 6 Pro:</b> <b>PAPER FORWARD TEST</b> ($0 Risk Sandbox)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<i>Both engines are actively scanning in parallel. Control each anytime with /pause 5b or /pause 6pro.</i>`
@@ -384,7 +384,7 @@ async function handleCommand(rawText, handlers) {
         await sendTelegramMessage(`👑 <b>[STRATEGY SWITCHED ➔ STRATEGY 6 PRO]</b>\nBot is now scanning exclusively with <b>Institutional SMC Liquidity & Valuation Sniper</b>.`);
       } else if (choice.includes('5') || choice.includes('5b')) {
         if (handlers.setActiveStrategy) handlers.setActiveStrategy('STRATEGY_5B');
-        await sendTelegramMessage(`🚀 <b>[STRATEGY SWITCHED ➔ STRATEGY 5B ENHANCED]</b>\nBot is now scanning exclusively with <b>Strategy 5B Enhanced</b>.`);
+        await sendTelegramMessage(`🚀 <b>[STRATEGY SWITCHED ➔ STRATEGY 5B PRO]</b>\nBot is now scanning exclusively with <b>Strategy 5B Pro</b>.`);
       } else if (choice.includes('none') || choice.includes('off') || choice.includes('standby')) {
         if (handlers.setActiveStrategy) handlers.setActiveStrategy('NONE');
         await sendTelegramMessage(`🟡 <b>[MYTRADA ENGINE IN STANDBY]</b>\nMarket scanning halted. Bot is awaiting your /strategy command.`);
@@ -697,7 +697,7 @@ async function handleCommand(rawText, handlers) {
           `💵 <b>Starting Balance:</b> <code>$${(res.startingBalance || targetBal).toFixed(2)} USD</code>`,
           `💰 <b>Current Balance:</b> <code>$${(res.startingBalance || targetBal).toFixed(2)} USD</code>`,
           `📊 <b>Today's Trades:</b> <code>0 Trades (All Today's Trades Cleared)</code>`,
-          `🚀 <b>Strategy 5B Enhanced:</b> 🟢 <b>LIVE REAL TRADING</b>`,
+          `🚀 <b>Strategy 5B Pro:</b> 🟢 <b>LIVE REAL TRADING</b>`,
           `👑 <b>Strategy 6 Pro:</b> 🔬 <b>PAPER SANDBOX ($0 Real Risk)</b>`,
           `🎯 <b>Daily Profit Target:</b> <code>+$${(res.target || 300).toFixed(2)} USD</code>`,
           `🛡️ <b>Daily Max Loss Floor:</b> <code>-$${(res.maxLoss || 250).toFixed(2)} USD</code>`,
