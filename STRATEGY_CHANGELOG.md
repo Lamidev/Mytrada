@@ -46,6 +46,18 @@
 
 ## Version History & Modification Logs
 
+### v5.13 — November 7, 2026 (Sunday EOW Weekly Report Mon-Sun Daily Breakdown & /weekly Telegram Command)
+* **Author/Operator:** Antigravity / Lamidev
+* **Affected Modules:** [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js), [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js), [`telegramBot.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/telegramBot.js)
+* **Description:**
+  1. **Full 7-Day Monday-to-Sunday Daily Performance Breakdown:**
+     - Enhanced `generateWeeklyReport(reanchor = false, referenceDate = null)` and `formatReportTelegramHTML()` to compute the exact calendar days of the week (Monday through Sunday).
+     - Renders for each day: formatted date label (e.g. `Mon (Nov 2)`), realized PnL in USD and R-multiples, win/loss count, win rate, and status badges (`🎯 TARGET HIT`, `🛑 LOSS FLOOR`, `🟢 PROFIT`, `🔴 LOSS`, `⚪ NO TRADES`).
+  2. **Safe Compounding Re-Anchor Execution:**
+     - Separated reporting from re-anchoring with a dedicated `reanchor` boolean flag. Weekly balance re-anchoring executes exclusively during official Sunday midnight rollover (00:00 - 00:04), preventing premature anchor overwrites during on-demand queries.
+  3. **On-Demand Weekly Report Commands:**
+     - Added `/weekly` and `/report weekly` to [`telegramBot.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/telegramBot.js) and `commandHandlers.getWeeklyReport()` in [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js).
+
 ### v5.12 — November 4, 2026 (Strategy 5B Pro Unification & Strategy SMC Sweep Deployment)
 * **Author/Operator:** Antigravity / Lamidev
 * **Changes Made:**
