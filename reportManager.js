@@ -126,6 +126,25 @@ function getDateString(isoString) {
   return d.toISOString().split('T')[0];
 }
 
+/**
+ * Formats YYYY-MM-DD into a human-readable day label e.g. "Mon (Nov 2)"
+ */
+function formatDayLabel(dateStr) {
+  if (!dateStr) return "";
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+  const d = new Date(Date.UTC(year, month, day, 12, 0, 0));
+  const dow = d.getUTCDay(); // 0 is Sun, 1 is Mon...
+  const dayName = dayNames[dow === 0 ? 6 : dow - 1];
+  const monthName = monthNames[month];
+  return `${dayName} (${monthName} ${day})`;
+}
+
 // ── SHADOW / COUNTERFACTUAL FILTER HISTORY ──
 const SHADOW_HISTORY_FILE = path.join(CACHE_DIR, 'shadow_history.json');
 
@@ -446,12 +465,40 @@ function saveWeeklyAnchorBalance(balance) {
 /**
  * Generate End of Week (EOW) Report with Weekly Compounding Re-Anchor
  */
-function generateWeeklyReport() {
+function generateWeeklyReport(reanchor = false, referenceDate = null) {
   const history = loadTradeHistory();
-  const now = new Date();
-  const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const offset = config.TIMEZONE_OFFSET_HOURS !== undefined ? config.TIMEZONE_OFFSET_HOURS : 1;
+  const refTime = referenceDate ? new Date(referenceDate).getTime() : Date.now();
+  const localNow = new Date(refTime + offset * 3600000);
 
-  const closedThisWeek = history.filter(t => t.closedTime && new Date(t.closedTime) >= oneWeekAgo);
+  // Compute Monday through Sunday dates of the reporting week
+  // localNow.getUTCDay(): 0 is Sunday, 1 is Monday, ..., 6 is Saturday
+  const dayOfWeek = localNow.getUTCDay();
+  const diffToMonday = dayOfWeek === 0 ? 6 : (dayOfWeek - 1);
+  const mondayMs = localNow.getTime() - diffToMonday * 86400000;
+
+  const weekDays = [];
+  const weekDateSet = new Set();
+  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  for (let i = 0; i < 7; i++) {
+    const curDate = new Date(mondayMs + i * 86400000);
+    const dateStr = curDate.toISOString().split('T')[0];
+    weekDateSet.add(dateStr);
+    weekDays.push({
+      dayName: dayNames[i],
+      dateStr,
+      label: formatDayLabel(dateStr)
+    });
+  }
+
+  // Filter closed trades for this reporting week
+  const oneWeekAgo = new Date(refTime - 7 * 24 * 60 * 60 * 1000);
+  const closedThisWeek = history.filter(t => {
+    if (!t.closedTime) return false;
+    const dStr = getDateString(t.closedTime);
+    return weekDateSet.has(dStr) || new Date(t.closedTime) >= oneWeekAgo;
+  });
 
   let wins = 0, losses = 0, breakevens = 0, netUSD = 0, netR = 0;
   const perSymbol = {};
@@ -459,12 +506,14 @@ function generateWeeklyReport() {
 
   closedThisWeek.forEach(t => {
     // Strategy normalization
-    let sName = 'Strategy 5B Enhanced';
+    let sName = 'Strategy 5B Pro';
     if (t.strategy) {
       if (t.strategy.includes('6 Pro') || t.strategy.includes('6PRO')) {
         sName = 'Strategy 6 Pro';
-      } else if (t.strategy.includes('5B') || t.strategy.includes('5b')) {
-        sName = 'Strategy 5B Enhanced';
+      } else if (t.strategy.includes('5B Pro') || t.strategy.includes('5B') || t.strategy.includes('5b')) {
+        sName = 'Strategy 5B Pro';
+      } else if (t.strategy.includes('SMC Sweep') || t.strategy.includes('Sweep')) {
+        sName = 'Strategy SMC Sweep';
       } else {
         sName = t.strategy;
       }
@@ -512,17 +561,23 @@ function generateWeeklyReport() {
 
   // Also extract Paper / Incubation trades for the week
   const incubationHistory = loadIncubationHistory();
-  const paperThisWeek = incubationHistory.filter(t => t.time && new Date(t.time) >= oneWeekAgo);
+  const paperThisWeek = incubationHistory.filter(t => {
+    if (!t.time) return false;
+    const dStr = getDateString(t.time);
+    return weekDateSet.has(dStr) || new Date(t.time) >= oneWeekAgo;
+  });
   const paperPerStrategy = {};
   let paperTotalWins = 0, paperTotalLosses = 0, paperTotalUSD = 0, paperTotalR = 0;
 
   paperThisWeek.forEach(t => {
-    let sName = 'Strategy 5B Enhanced';
+    let sName = 'Strategy SMC Sweep';
     if (t.strategy) {
-      if (t.strategy.includes('6 Pro') || t.strategy.includes('6PRO')) {
+      if (t.strategy.includes('SMC Sweep') || t.strategy.includes('Sweep')) {
+        sName = 'Strategy SMC Sweep';
+      } else if (t.strategy.includes('6 Pro') || t.strategy.includes('6PRO')) {
         sName = 'Strategy 6 Pro';
-      } else if (t.strategy.includes('5B') || t.strategy.includes('5b')) {
-        sName = 'Strategy 5B Enhanced';
+      } else if (t.strategy.includes('5B Pro') || t.strategy.includes('5B') || t.strategy.includes('5b')) {
+        sName = 'Strategy 5B Pro';
       } else {
         sName = t.strategy;
       }
@@ -568,8 +623,83 @@ function generateWeeklyReport() {
     }
   });
 
-  // Re-anchor weekly balance for upcoming week
-  saveWeeklyAnchorBalance(newAccountBalance);
+  // Re-anchor weekly balance for upcoming week ONLY if official rollover requested
+  if (reanchor) {
+    saveWeeklyAnchorBalance(newAccountBalance);
+  }
+
+  // ── DAILY PERFORMANCE BREAKDOWN (MONDAY THROUGH SUNDAY) ──
+  const compRisk = getWeeklyCompoundedRisk();
+  let targetMultiplier = 3;
+  let maxLossMultiplier = 3;
+  try {
+    const dynamicStatePath = path.join(CACHE_DIR, 'dynamic_state.json');
+    if (fs.existsSync(dynamicStatePath)) {
+      const ds = JSON.parse(fs.readFileSync(dynamicStatePath, 'utf8'));
+      if (ds.targetWinsMultiplier) targetMultiplier = ds.targetWinsMultiplier;
+      if (ds.maxLossMultiplier) maxLossMultiplier = ds.maxLossMultiplier;
+    }
+  } catch (e) {}
+
+  const dailyTargetUSD = compRisk.rewardUSD * targetMultiplier;
+  const dailyMaxLossUSD = compRisk.riskUSD * maxLossMultiplier;
+
+  const dailyBreakdown = weekDays.map(day => {
+    const dayTrades = closedThisWeek.filter(t => getDateString(t.closedTime) === day.dateStr);
+    let dayWins = 0, dayLosses = 0, dayBreakevens = 0, dayPnLUSD = 0, dayNetR = 0;
+
+    dayTrades.forEach(t => {
+      if (t.outcome === 'WIN') dayWins++;
+      else if (t.outcome === 'LOSS') dayLosses++;
+      else if (t.outcome === 'BREAKEVEN') dayBreakevens++;
+      dayPnLUSD += (t.pnlUSD || 0);
+      dayNetR += (t.pnlR || 0);
+    });
+
+    const dayTotal = dayTrades.length;
+    const dayWinRate = dayTotal > 0 ? ((dayWins / dayTotal) * 100).toFixed(0) : "0";
+
+    let status = 'NO_TRADES';
+    let statusBadge = '⚪ <b>NO TRADES</b>';
+
+    if (dayTotal > 0) {
+      const isTargetHit = (dailyTargetUSD > 0 && dayPnLUSD >= dailyTargetUSD * 0.90) || (dayNetR >= 3.5) || (dayWins >= targetMultiplier && dayLosses === 0);
+      const isLossFloorHit = (dailyMaxLossUSD > 0 && dayPnLUSD <= -dailyMaxLossUSD) || (dayNetR <= -3.0) || (dayLosses >= maxLossMultiplier && dayPnLUSD < 0);
+
+      if (isTargetHit) {
+        status = 'TARGET_HIT';
+        statusBadge = '🎯 <b>TARGET HIT</b>';
+      } else if (isLossFloorHit) {
+        status = 'LOSS_FLOOR';
+        statusBadge = '🛑 <b>LOSS FLOOR</b>';
+      } else if (dayPnLUSD > 0) {
+        status = 'PROFIT';
+        statusBadge = '🟢 <b>PROFIT</b>';
+      } else if (dayPnLUSD < 0) {
+        status = 'LOSS';
+        statusBadge = '🔴 <b>LOSS</b>';
+      } else {
+        status = 'BREAKEVEN';
+        statusBadge = '⚪ <b>BREAKEVEN</b>';
+      }
+    }
+
+    return {
+      dayName: day.dayName,
+      date: day.dateStr,
+      label: day.label,
+      total: dayTotal,
+      wins: dayWins,
+      losses: dayLosses,
+      breakevens: dayBreakevens,
+      winRate: dayWinRate,
+      pnlUSD: dayPnLUSD,
+      pnlR: dayNetR,
+      status,
+      statusBadge,
+      trades: dayTrades
+    };
+  });
 
   return {
     period: 'WEEKLY',
@@ -584,6 +714,7 @@ function generateWeeklyReport() {
     netR,
     perSymbol,
     perStrategy,
+    dailyBreakdown,
     paperStats: {
       total: paperThisWeek.length,
       wins: paperTotalWins,
@@ -662,17 +793,21 @@ function formatReportTelegramHTML(report) {
 
   const startBalLabel = report.period === 'WEEKLY' ? "Previous Week Start Balance:" : "Yesterday's Start Balance:";
 
-  let stratName = "Strategy 5B Enhanced (Value-Zone Momentum Sniper)";
+  let stratName = "Strategy 5B Pro (SMC Momentum Corridor)";
   try {
     const dynamicStatePath = path.join(CACHE_DIR, 'dynamic_state.json');
     if (fs.existsSync(dynamicStatePath)) {
       const ds = JSON.parse(fs.readFileSync(dynamicStatePath, 'utf8'));
-      if (ds.mode6pro === 'LIVE' && ds.mode5b === 'PAPER') {
+      if (ds.activeStrategy === 'BOTH' || (ds.mode5b === 'LIVE' && ds.modeSMCSweep === 'PAPER')) {
+        stratName = "Strategy 5B Pro Live | Strategy SMC Sweep Paper";
+      } else if (ds.activeStrategy === 'STRATEGY_5B_PRO' || ds.activeStrategy === '5B_PRO') {
+        stratName = "Strategy 5B Pro (SMC Momentum Corridor)";
+      } else if (ds.mode6pro === 'LIVE' && ds.mode5b === 'PAPER') {
         stratName = "Strategy 6 Pro Live (GodEyes SMC) | 5B Paper Sandbox";
       } else if (ds.mode6pro === 'LIVE' || ds.activeStrategy === 'STRATEGY_6_PRO') {
         stratName = "Strategy 6 Pro (GodEyes SMC Institutional Sniper)";
       } else if (ds.activeStrategy === 'BOTH') {
-        stratName = "Dual Engine (6 Pro Live / 5B Paper Sandbox)";
+        stratName = "Dual Engine (5B Pro Live / SMC Sweep Paper)";
       }
     }
   } catch (e) {}
@@ -694,6 +829,21 @@ function formatReportTelegramHTML(report) {
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
   ];
 
+  // ── DAILY PERFORMANCE BREAKDOWN (ALL WEEK: MON - SUN) ──
+  if (report.period === 'WEEKLY' && report.dailyBreakdown && report.dailyBreakdown.length > 0) {
+    lines.push(`📅 <b>DAILY PERFORMANCE BREAKDOWN (ALL WEEK):</b>`);
+    report.dailyBreakdown.forEach(day => {
+      const pSign = day.pnlUSD >= 0 ? '+' : '-';
+      const rSign = day.pnlR >= 0 ? '+' : '';
+      if (day.total > 0) {
+        lines.push(`• <b>${day.label}:</b> <code>${pSign}$${Math.abs(day.pnlUSD).toFixed(2)} USD (${rSign}${day.pnlR.toFixed(1)}R) • ${day.wins}W / ${day.losses}L (${day.winRate}% WR)</code> ${day.statusBadge}`);
+      } else {
+        lines.push(`• <b>${day.label}:</b> <code>$0.00 USD (0.0R) • 0 Trades</code> ${day.statusBadge}`);
+      }
+    });
+    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+  }
+
   // ── STRATEGY PERFORMANCE BREAKDOWN (WEEKLY ONLY) ──
   if (report.period === 'WEEKLY') {
     const liveStrats = report.perStrategy || {};
@@ -705,7 +855,10 @@ function formatReportTelegramHTML(report) {
       allStratKeys.forEach(sName => {
         const live = liveStrats[sName];
         const paper = paperStrats[sName];
-        const icon = sName.includes('6 Pro') ? '👑' : '🚀';
+        let icon = '🚀';
+        if (sName.includes('6 Pro')) icon = '👑';
+        else if (sName.includes('5B Pro') || sName.includes('5B')) icon = '🎯';
+        else if (sName.includes('Sweep')) icon = '🌊';
 
         if (live && live.total > 0) {
           const pSign = live.pnlUSD >= 0 ? '+' : '-';

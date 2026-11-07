@@ -194,6 +194,7 @@ function registerTelegramCommands() {
     { command: 'gold', description: "Gold Scalper status, forward-test & controls" },
     { command: 'trades', description: "Live active positions & distance to TP/SL" },
     { command: 'report', description: "Daily performance summary report" },
+    { command: 'weekly', description: "Weekly performance report (Mon-Sun daily breakdown)" },
     { command: 'target', description: "Set daily target: /target 250 (or /target off)" },
     { command: 'maxloss', description: "Set max loss floor: /maxloss 150 (or /maxloss off)" },
     { command: 'cooldown', description: "Set pair cooldown: /cooldown CRASH1000 25 [live|paper]" },
@@ -308,7 +309,8 @@ async function handleCommand(rawText, handlers) {
         `• <code>/health</code> ➜ Multi-pair health scorecard & quarantine status`,
         `• <code>/trades</code> ➜ Live open trades & distance to TP/SL`,
         `• <code>/gold</code> ➜ Gold Flash Scalper status & positions`,
-        `• <code>/report</code> ➜ Today's performance report`,
+        `• <code>/report</code> ➜ Today's performance report (or <code>/report weekly</code>)`,
+        `• <code>/weekly</code> ➜ Weekly performance report (Mon-Sun daily breakdown)`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🏛️ <b>STRATEGY & MODES:</b>`,
         `• <code>/strategy 6pro</code> ➜ Launch Strategy 6 Pro Live (Institutional SMC)`,
@@ -478,9 +480,26 @@ async function handleCommand(rawText, handlers) {
     }
 
     case '/report': {
-      if (handlers.getDailyReport) {
+      if (arg1 && (arg1.toLowerCase() === 'weekly' || arg1.toLowerCase() === 'week')) {
+        if (handlers.getWeeklyReport) {
+          const reportHtml = handlers.getWeeklyReport();
+          await sendTelegramMessage(reportHtml);
+        } else {
+          await sendTelegramMessage("⚠️ Weekly report handler not available.");
+        }
+      } else if (handlers.getDailyReport) {
         const reportHtml = handlers.getDailyReport(arg1);
         await sendTelegramMessage(reportHtml);
+      }
+      break;
+    }
+
+    case '/weekly': {
+      if (handlers.getWeeklyReport) {
+        const reportHtml = handlers.getWeeklyReport();
+        await sendTelegramMessage(reportHtml);
+      } else {
+        await sendTelegramMessage("⚠️ Weekly report handler not available.");
       }
       break;
     }

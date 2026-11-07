@@ -1451,6 +1451,11 @@ const telegramHandlers = {
     return formatReportTelegramHTML(report);
   },
 
+  getWeeklyReport: (refDate = null) => {
+    const report = generateWeeklyReport(false, refDate);
+    return formatReportTelegramHTML(report);
+  },
+
   moveToBreakeven: () => {
     const activeTrades = loadActiveTrades();
     let count = 0;
@@ -1689,13 +1694,17 @@ async function checkAndSendDailyMidnightReport() {
 async function checkAndSendWeeklyReport() {
   const now = new Date();
   const localNow = getLocalTime(now);
-  // Check if today is Sunday (day 0) at 12:00 AM+ local time
+  const localHour = localNow.getUTCHours();
+  const localMinute = localNow.getUTCMinutes();
+
+  // Check if today is Sunday (day 0) within midnight window (12:00 AM - 12:04 AM)
   if (localNow.getUTCDay() === 0) {
+    if (localHour !== 0 || localMinute > 4) return;
     const weekYear = `${localNow.getUTCFullYear()}-W${Math.ceil((localNow.getUTCDate() + 6) / 7)}`;
     const lastWeek = getLastReportedWeek();
     if (lastWeek !== weekYear) {
       console.log(`\n📊 [WEEKLY REPORT] Compiling Weekly Performance Report...`);
-      const report = generateWeeklyReport();
+      const report = generateWeeklyReport(true); // Re-anchor balance at official Sunday rollover
       const reportHtml = formatReportTelegramHTML(report);
 
       await sendTelegramMessage(reportHtml);
