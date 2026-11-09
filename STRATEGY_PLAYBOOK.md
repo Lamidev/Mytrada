@@ -271,7 +271,7 @@ module.exports = {
    * Captures powerful trending continuation runs between 65% and 80% that made 5B generate **+$16,698.57 USD** (+74.8R) with a **60.1% Win Rate**.
 2. **The 2-Win Profit Lock per Symbol:**
    * Eliminates single-pair overtrading into daily extremes.
-   * When any single pair banks **2 consecutive wins (+2.6R)** in a day, that asset is put on an automatic **3-Hour (180 min) Profit Lock**. All other 11 pairs remain scanning.
+   * When any single pair banks **2 consecutive wins (+2.6R)** in a day, that asset is put on an automatic **90-Minute (1.5-Hour) Profit Lock**. All other 11 pairs remain scanning.
 3. **1H Runaway Squeeze Trap Armor:**
    * Evaluates the failed stop loss price. If the market continues breaking adversely beyond the SL, all re-entries on that pair are blocked until a 1H reset occurs.
 4. **Super-Monster Spike Volatility Guard:**

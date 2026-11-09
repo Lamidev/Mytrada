@@ -725,7 +725,7 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
       rec.paperConsecutiveLosses = 0;
       rec.paperConsecutiveWins = (rec.paperConsecutiveWins || 0) + 1;
       const maxWinsPerSymbol = config.CIRCUIT_BREAKER.MAX_CONSECUTIVE_WINS_PER_SYMBOL || 2;
-      const winLockMins = config.CIRCUIT_BREAKER.SYMBOL_WIN_LOCK_MINS || 180;
+      const winLockMins = config.CIRCUIT_BREAKER.SYMBOL_WIN_LOCK_MINS || 90;
       if (rec.paperConsecutiveWins >= maxWinsPerSymbol) {
         rec.paperPauseUntil = Math.max(rec.paperPauseUntil || 0, now + (winLockMins * 60 * 1000));
         rec.isPaperWinLocked = true;
@@ -766,7 +766,7 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
       dynamicState.portfolioConsecutiveLosses = 0;
 
       const maxWinsPerSymbol = config.CIRCUIT_BREAKER.MAX_CONSECUTIVE_WINS_PER_SYMBOL || 2;
-      const winLockMins = config.CIRCUIT_BREAKER.SYMBOL_WIN_LOCK_MINS || 180;
+      const winLockMins = config.CIRCUIT_BREAKER.SYMBOL_WIN_LOCK_MINS || 90;
 
       if (rec.consecutiveWins >= maxWinsPerSymbol) {
         rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (winLockMins * 60 * 1000));

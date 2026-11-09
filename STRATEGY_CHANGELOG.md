@@ -46,6 +46,14 @@
 
 ## Version History & Modification Logs
 
+### v5.14 — November 9, 2026 (Optimize 2-Win Profit Lock to 90 Minutes)
+* **Author/Operator:** Antigravity / Lamidev
+* **Affected Modules:** [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js), [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js), [`STRATEGY_PLAYBOOK.md`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/STRATEGY_PLAYBOOK.md)
+* **Changes Made:**
+  - Reduced `SYMBOL_WIN_LOCK_MINS` from **180 minutes (3.0h)** to **90 minutes (1.5h)**.
+  - Aligns with the 18-bar M5 cycle (1 full 1H candle close + 30-minute confirmation buffer) on Crash & Boom synthetic indices.
+  - Prevents benching high-expectancy pairs (`CRASH900`, `BOOM1000`, `BOOM600`) for half a trading day, allowing the bot to capitalize on subsequent session structural re-accumulations while preserving late-trend exhaustion defense.
+
 ### v5.13 — November 7, 2026 (Sunday EOW Weekly Report Mon-Sun Daily Breakdown & /weekly Telegram Command)
 * **Author/Operator:** Antigravity / Lamidev
 * **Affected Modules:** [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js), [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js), [`telegramBot.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/telegramBot.js)
