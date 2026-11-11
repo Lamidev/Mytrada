@@ -31,7 +31,8 @@ const {
   recordShadowOutcome,
   loadIncubationHistory,
   recordIncubationOutcome,
-  checkIncubationGraduation
+  checkIncubationGraduation,
+  generateDayTradeExport
 } = require('./reportManager');
 const {
   evaluateMacroExhaustion,
@@ -1456,6 +1457,10 @@ const telegramHandlers = {
     return formatReportTelegramHTML(report);
   },
 
+  getTradeExport: (targetDate) => {
+    return generateDayTradeExport(targetDate);
+  },
+
   moveToBreakeven: () => {
     const activeTrades = loadActiveTrades();
     let count = 0;
@@ -1865,6 +1870,8 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           symbol: trade.symbol,
           type: trade.type,
           entryPrice: trade.entryPrice,
+          stopLoss: trade.stopLoss,
+          takeProfit: trade.takeProfit,
           exitPrice: trade.takeProfit,
           outcome: 'WIN',
           rMultiple: 1.3,
@@ -1953,6 +1960,8 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           symbol: trade.symbol,
           type: trade.type,
           entryPrice: trade.entryPrice,
+          stopLoss: trade.stopLoss,
+          takeProfit: trade.takeProfit,
           exitPrice: trade.stopLoss,
           outcome: 'LOSS',
           rMultiple: -1.0,

@@ -1041,6 +1041,130 @@ function getWeeklyCompoundedRisk(customPercent = null) {
   };
 }
 
+const TELEGRAM_LOGS_DIR = path.join(CACHE_DIR, 'telegram_logs');
+
+function stripHtmlTags(html) {
+  return String(html || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"');
+}
+
+/**
+ * Compiles a complete plain-text trade & Telegram signal export for a given YYYY-MM-DD date.
+ * Uses the verbatim Telegram feed log if available, and always includes a structured
+ * Live + Paper ledger reconstructed from trade_history.json & incubation_history.json.
+ */
+function generateDayTradeExport(targetDateStr) {
+  const offset = config.TIMEZONE_OFFSET_HOURS !== undefined ? config.TIMEZONE_OFFSET_HOURS : 1;
+  if (!targetDateStr) {
+    targetDateStr = new Date(Date.now() + offset * 3600000).toISOString().split('T')[0];
+  }
+
+  const rawLogFile = path.join(TELEGRAM_LOGS_DIR, `${targetDateStr}.txt`);
+  let rawFeed = '';
+  if (fs.existsSync(rawLogFile)) {
+    try {
+      rawFeed = fs.readFileSync(rawLogFile, 'utf8').trim();
+    } catch (e) {}
+  }
+
+  const history = loadTradeHistory();
+  const liveTrades = history.filter(t =>
+    getDateString(t.signalTime) === targetDateStr ||
+    getDateString(t.triggeredTime) === targetDateStr ||
+    getDateString(t.closedTime) === targetDateStr
+  );
+
+  const incHistory = loadIncubationHistory();
+  const paperTrades = incHistory.filter(t => getDateString(t.time) === targetDateStr);
+
+  const dailyReport = generateDailyReport(targetDateStr);
+  const formattedSummary = stripHtmlTags(formatReportTelegramHTML(dailyReport));
+
+  const sections = [];
+  sections.push(`============================================================`);
+  sections.push(`MYTRADA FULL TRADE & SIGNAL AUDIT EXPORT (${targetDateStr})`);
+  sections.push(`============================================================\n`);
+
+  if (rawFeed) {
+    sections.push(`--- [1] EXACT VERBATIM TELEGRAM FEED (${targetDateStr}) ---\n`);
+    sections.push(rawFeed);
+    sections.push(`\n============================================================\n`);
+  } else {
+    sections.push(`--- [1] DAILY PERFORMANCE DIGEST (${targetDateStr}) ---\n`);
+    sections.push(formattedSummary);
+    sections.push(`\n============================================================\n`);
+  }
+
+  sections.push(`--- [2] STRUCTURED TRADE LEDGER (LIVE & PAPER) ---\n`);
+
+  if (liveTrades.length === 0) {
+    sections.push(`No Live Real-Money trades recorded on ${targetDateStr}.\n`);
+  } else {
+    liveTrades.forEach((t, idx) => {
+      const isBuy = t.type === 'bullish' || t.type === 'BUY';
+      const dirLabel = isBuy ? '🟢 BUY (Market)' : '🔴 SELL (Market)';
+      const strat = t.strategy || 'Strategy 5B Pro';
+      const entryStr = typeof t.entryPrice === 'number' ? t.entryPrice.toFixed(2) : t.entryPrice;
+      const slStr = typeof t.stopLoss === 'number' ? t.stopLoss.toFixed(2) : t.stopLoss;
+      const tpStr = typeof t.takeProfit === 'number' ? t.takeProfit.toFixed(2) : t.takeProfit;
+      const exitStr = typeof t.exitPrice === 'number' ? t.exitPrice.toFixed(2) : (t.exitPrice || 'OPEN');
+      const pnlVal = typeof t.pnlUSD === 'number' ? t.pnlUSD : 0;
+      const pnlRVal = typeof t.pnlR === 'number' ? t.pnlR : 0;
+      const sign = pnlVal >= 0 ? '+' : '-';
+      const rSign = pnlRVal >= 0 ? '+' : '';
+      const outIcon = t.outcome === 'WIN' ? '🏆 TP HIT' : (t.outcome === 'LOSS' ? '🔴 SL HIT' : (t.outcome || 'OPEN'));
+
+      sections.push(`[LIVE #${idx + 1}] ${strat} — ${t.symbol}`);
+      sections.push(`Asset: ${t.symbol} | Action: ${dirLabel}`);
+      sections.push(`🎯 Entry: ${entryStr} | 🛡️ SL: ${slStr} | 🏆 TP: ${tpStr}`);
+      sections.push(`Status: ${outIcon} | Exit: ${exitStr} | PnL: ${sign}$${Math.abs(pnlVal).toFixed(2)} USD (${rSign}${pnlRVal.toFixed(1)}R)`);
+      sections.push(`Signal Time: ${t.signalTime || 'N/A'} | Closed Time: ${t.closedTime || 'OPEN'}`);
+      sections.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    });
+  }
+
+  if (paperTrades.length === 0) {
+    sections.push(`No Paper Sandbox trades recorded on ${targetDateStr}.\n`);
+  } else {
+    paperTrades.forEach((p, idx) => {
+      const isBuy = p.type === 'bullish' || p.type === 'BUY';
+      const dirLabel = isBuy ? '🟢 BUY' : '🔴 SELL';
+      const strat = p.strategy || 'Strategy 5B Pro';
+      const entryStr = typeof p.entryPrice === 'number' ? p.entryPrice.toFixed(2) : p.entryPrice;
+      const slStr = typeof p.stopLoss === 'number' ? p.stopLoss.toFixed(2) : 'N/A';
+      const tpStr = typeof p.takeProfit === 'number' ? p.takeProfit.toFixed(2) : 'N/A';
+      const exitStr = typeof p.exitPrice === 'number' ? p.exitPrice.toFixed(2) : p.exitPrice;
+      const pnlVal = typeof p.pnlUSD === 'number' ? p.pnlUSD : 0;
+      const rVal = typeof p.rMultiple === 'number' ? p.rMultiple : (p.pnlR || 0);
+      const sign = pnlVal >= 0 ? '+' : '-';
+      const rSign = rVal >= 0 ? '+' : '';
+      const outIcon = p.outcome === 'WIN' ? '🟢 TP HIT' : '🔴 SL HIT';
+
+      sections.push(`[PAPER #${idx + 1}] ${strat} — ${p.symbol}`);
+      sections.push(`Asset: ${p.symbol} | Direction: ${dirLabel}`);
+      sections.push(`🎯 Entry: ${entryStr} | 🛡️ SL: ${slStr} | 🏆 TP: ${tpStr} | Exit: ${exitStr}`);
+      sections.push(`Outcome: ${outIcon} (${rSign}${rVal.toFixed(1)}R • ${sign}$${Math.abs(pnlVal).toFixed(2)} USD Paper) | Time: ${p.time || 'N/A'}`);
+      sections.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    });
+  }
+
+  return {
+    dateStr: targetDateStr,
+    hasRawFeed: Boolean(rawFeed),
+    liveCount: liveTrades.length,
+    paperCount: paperTrades.length,
+    netUSD: dailyReport.netUSD || 0,
+    netR: dailyReport.netR || 0,
+    wins: dailyReport.wins || 0,
+    losses: dailyReport.losses || 0,
+    content: sections.join('\n')
+  };
+}
+
 module.exports = {
   recordSignal,
   recordTrigger,
@@ -1058,5 +1182,7 @@ module.exports = {
   recordShadowOutcome,
   loadIncubationHistory,
   recordIncubationOutcome,
-  checkIncubationGraduation
+  checkIncubationGraduation,
+  getDateString,
+  generateDayTradeExport
 };

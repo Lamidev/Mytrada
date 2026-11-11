@@ -51,11 +51,45 @@ function getGoldTrades() {
 let isPolling = false;
 let lastUpdateId = 0;
 const recentOutboundAlerts = new Map();
+const TELEGRAM_LOGS_DIR = path.join(__dirname, 'cache', 'telegram_logs');
+
+function stripTelegramHTML(html) {
+  return String(html || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"');
+}
+
+function getLocalDateAndTime(date = new Date()) {
+  const offset = config.TIMEZONE_OFFSET_HOURS !== undefined ? config.TIMEZONE_OFFSET_HOURS : 1;
+  const local = new Date(date.getTime() + offset * 3600000);
+  const iso = local.toISOString();
+  return {
+    dateStr: iso.split('T')[0],
+    timeStr: iso.split('T')[1].slice(0, 8)
+  };
+}
+
+function appendToTelegramLog(text) {
+  try {
+    if (!fs.existsSync(TELEGRAM_LOGS_DIR)) {
+      fs.mkdirSync(TELEGRAM_LOGS_DIR, { recursive: true });
+    }
+    const { dateStr, timeStr } = getLocalDateAndTime();
+    const clean = stripTelegramHTML(text).trim();
+    if (!clean) return;
+    const logFile = path.join(TELEGRAM_LOGS_DIR, `${dateStr}.txt`);
+    const entry = `[${timeStr}]\n${clean}\n\n`;
+    fs.appendFileSync(logFile, entry, 'utf8');
+  } catch (e) {}
+}
 
 /**
  * Dispatches an outbound HTML message to the configured Telegram Chat
  */
-function sendTelegramMessage(text) {
+function sendTelegramMessage(text, msgOptions = {}) {
   return new Promise((resolve) => {
     const botToken = config.TELEGRAM && config.TELEGRAM.BOT_TOKEN;
     const chatId   = config.TELEGRAM && config.TELEGRAM.CHAT_ID;
@@ -105,6 +139,7 @@ function sendTelegramMessage(text) {
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         if (res.statusCode === 200) {
+          if (!msgOptions.skipLog) appendToTelegramLog(text);
           resolve(true);
         } else if (res.statusCode === 400) {
           // 🛡️ Fail-Safe: If HTML entity parsing fails, retry as sanitized text so signal is never lost
@@ -122,6 +157,7 @@ function sendTelegramMessage(text) {
               'Content-Length': Buffer.byteLength(fallbackPayload)
             }
           }, (fbRes) => {
+            if (fbRes.statusCode === 200 && !msgOptions.skipLog) appendToTelegramLog(text);
             resolve(fbRes.statusCode === 200);
           });
           fbReq.on('error', () => resolve(false));
@@ -139,6 +175,95 @@ function sendTelegramMessage(text) {
     req.write(payload);
     req.end();
   });
+}
+
+/**
+ * Dispatches a text/audit file attachment directly to the configured Telegram Chat
+ */
+function sendTelegramDocument(fileBufferOrPath, filename, caption = '') {
+  return new Promise((resolve) => {
+    const botToken = config.TELEGRAM && config.TELEGRAM.BOT_TOKEN;
+    const chatId = config.TELEGRAM && config.TELEGRAM.CHAT_ID;
+    if (!botToken || !chatId) return resolve(false);
+
+    try {
+      const fileBuf = Buffer.isBuffer(fileBufferOrPath)
+        ? fileBufferOrPath
+        : fs.readFileSync(fileBufferOrPath);
+      const boundary = '----MytradaBoundary' + Date.now().toString(16);
+      const parts = [];
+
+      parts.push(Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${chatId}\r\n`
+      ));
+
+      if (caption) {
+        parts.push(Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n` +
+          `--${boundary}\r\nContent-Disposition: form-data; name="parse_mode"\r\n\r\nHTML\r\n`
+        ));
+      }
+
+      parts.push(Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${filename}"\r\nContent-Type: text/plain\r\n\r\n`
+      ));
+      parts.push(fileBuf);
+      parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+
+      const body = Buffer.concat(parts);
+      const options = {
+        hostname: 'api.telegram.org',
+        port: 443,
+        path: `/bot${botToken}/sendDocument`,
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': body.length
+        },
+        timeout: 20000
+      };
+
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            console.warn(`[telegramBot] sendDocument failed (${res.statusCode}):`, data);
+          }
+          resolve(res.statusCode === 200);
+        });
+      });
+
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => { req.destroy(); resolve(false); });
+      req.write(body);
+      req.end();
+    } catch (e) {
+      console.warn('[telegramBot] sendTelegramDocument error:', e.message);
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * Splits and sends long plain-text digests across multiple Telegram messages cleanly
+ */
+async function sendLongTelegramText(text) {
+  const MAX_CHUNK = 3800;
+  const lines = String(text || '').split('\n');
+  let buffer = '';
+  for (const line of lines) {
+    if ((buffer.length + line.length + 1) > MAX_CHUNK && buffer.length > 0) {
+      await sendTelegramMessage(buffer, { skipLog: true });
+      buffer = line;
+      await new Promise(r => setTimeout(r, 400));
+    } else {
+      buffer = buffer ? `${buffer}\n${line}` : line;
+    }
+  }
+  if (buffer) {
+    await sendTelegramMessage(buffer, { skipLog: true });
+  }
 }
 
 /**
@@ -195,6 +320,8 @@ function registerTelegramCommands() {
     { command: 'trades', description: "Live active positions & distance to TP/SL" },
     { command: 'report', description: "Daily performance summary report" },
     { command: 'weekly', description: "Weekly performance report (Mon-Sun daily breakdown)" },
+    { command: 'export', description: "Export day's trades & signals as .txt: /export [YYYY-MM-DD|yesterday]" },
+    { command: 'logs', description: "Pull day's trade logs (.txt or '/logs chat')" },
     { command: 'target', description: "Set daily target: /target 250 (or /target off)" },
     { command: 'maxloss', description: "Set max loss floor: /maxloss 150 (or /maxloss off)" },
     { command: 'cooldown', description: "Set pair cooldown: /cooldown CRASH1000 25 [live|paper]" },
@@ -311,6 +438,8 @@ async function handleCommand(rawText, handlers) {
         `• <code>/gold</code> ➜ Gold Flash Scalper status & positions`,
         `• <code>/report</code> ➜ Today's performance report (or <code>/report weekly</code>)`,
         `• <code>/weekly</code> ➜ Weekly performance report (Mon-Sun daily breakdown)`,
+        `• <code>/export [date]</code> ➜ Export full day's signals & trades (.txt file)`,
+        `• <code>/logs [date] chat</code> ➜ Print full day's trade logs directly in chat`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🏛️ <b>STRATEGY & MODES:</b>`,
         `• <code>/strategy 6pro</code> ➜ Launch Strategy 6 Pro Live (Institutional SMC)`,
@@ -500,6 +629,54 @@ async function handleCommand(rawText, handlers) {
         await sendTelegramMessage(reportHtml);
       } else {
         await sendTelegramMessage("⚠️ Weekly report handler not available.");
+      }
+      break;
+    }
+
+    case '/export':
+    case '/logs': {
+      if (!handlers.getTradeExport) {
+        await sendTelegramMessage("⚠️ Trade export handler not available.", { skipLog: true });
+        break;
+      }
+
+      const rawArgs = [arg1, arg2].filter(Boolean).map(a => a.toLowerCase());
+      const sendToChat = rawArgs.includes('chat') || rawArgs.includes('text') || rawArgs.includes('print');
+      const dateArg = rawArgs.find(a => a !== 'chat' && a !== 'text' && a !== 'print');
+
+      const { dateStr: todayStr } = getLocalDateAndTime();
+      let targetDate = todayStr;
+      if (dateArg === 'yesterday' || dateArg === 'yest') {
+        const offset = config.TIMEZONE_OFFSET_HOURS !== undefined ? config.TIMEZONE_OFFSET_HOURS : 1;
+        const yest = new Date(Date.now() + offset * 3600000 - 86400000);
+        targetDate = yest.toISOString().split('T')[0];
+      } else if (dateArg && /^\d{4}-\d{2}-\d{2}$/.test(dateArg)) {
+        targetDate = dateArg;
+      }
+
+      const exp = handlers.getTradeExport(targetDate);
+      if (sendToChat) {
+        await sendLongTelegramText(exp.content);
+      } else {
+        const sign = exp.netUSD >= 0 ? '+' : '-';
+        const rSign = exp.netR >= 0 ? '+' : '';
+        const caption = [
+          `📋 <b>[MYTRADA TRADE EXPORT — ${exp.dateStr}]</b>`,
+          `• <b>Live Trades:</b> <code>${exp.liveCount} (${exp.wins}W / ${exp.losses}L) • ${sign}$${Math.abs(exp.netUSD).toFixed(2)} (${rSign}${exp.netR.toFixed(1)}R)</code>`,
+          `• <b>Paper Sandbox Trades:</b> <code>${exp.paperCount}</code>`,
+          `• <b>Source:</b> <code>${exp.hasRawFeed ? 'Exact Telegram Feed + Ledger' : 'Reconstructed Trade Ledger'}</code>`,
+          `💡 <i>Upload or paste this .txt file for instant AI trade review! Use</i> <code>/logs ${exp.dateStr} chat</code> <i>to print inline.</i>`
+        ].join('\n');
+
+        const sent = await sendTelegramDocument(
+          Buffer.from(exp.content, 'utf8'),
+          `mytrada_trades_${exp.dateStr}.txt`,
+          caption
+        );
+        if (!sent) {
+          await sendTelegramMessage("⚠️ File upload failed — printing trade digest inline:", { skipLog: true });
+          await sendLongTelegramText(exp.content);
+        }
       }
       break;
     }
@@ -1046,5 +1223,6 @@ async function handleCommand(rawText, handlers) {
 
 module.exports = {
   sendTelegramMessage,
+  sendTelegramDocument,
   startTelegramListener
 };

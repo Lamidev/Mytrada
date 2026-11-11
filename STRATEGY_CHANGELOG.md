@@ -46,6 +46,18 @@
 
 ## Version History & Modification Logs
 
+### v5.15 — November 11, 2026 (One-Click Daily Telegram Feed & Trade Audit Exporter: `/export` & `/logs`)
+* **Author/Operator:** Antigravity / Lamidev
+* **Affected Modules:** [`telegramBot.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/telegramBot.js), [`reportManager.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/reportManager.js), [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js)
+* **Changes Made:**
+  1. **Real-Time Verbatim Telegram Feed Logger (`cache/telegram_logs/YYYY-MM-DD.txt`):**
+     - Automatically records every outbound signal, TP/SL outcome, forward test, quarantine alert, and report dispatched by `sendTelegramMessage()` in clean plain-text format (matching Telegram display verbatim, HTML stripped).
+  2. **One-Tap `.txt` Audit File Export (`/export [YYYY-MM-DD|yesterday]`):**
+     - Added `sendTelegramDocument()` (native Node `https` `multipart/form-data`) so the bot attaches and sends the entire day's exact feed + structured Live & Paper trade ledger as a single downloadable `.txt` file (`mytrada_trades_YYYY-MM-DD.txt`).
+  3. **Historical Ledger Reconstruction & Inline Chat Mode (`/logs [date] chat`):**
+     - Added `generateDayTradeExport()` in `reportManager.js` to reconstruct Live and Paper Sandbox entries/exits/SL/TP/PnL from `trade_history.json` & `incubation_history.json` even for past days prior to logging activation.
+     - Recorded `stopLoss` and `takeProfit` in `recordIncubationOutcome()` for complete Paper Sandbox trade records.
+
 ### v5.14 — November 9, 2026 (Optimize 2-Win Profit Lock to 90 Minutes)
 * **Author/Operator:** Antigravity / Lamidev
 * **Affected Modules:** [`config.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/config.js), [`runner.js`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/runner.js), [`STRATEGY_PLAYBOOK.md`](file:///c:/Users/user/Desktop/My-Projects/Active-projects/Mytrada/STRATEGY_PLAYBOOK.md)
