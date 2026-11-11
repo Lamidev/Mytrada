@@ -56,10 +56,31 @@ const CIRCUIT_BREAKER_FILE = path.join(CACHE_DIR, 'circuit_breaker_state.json');
 const PAIR_HEALTH_FILE = path.join(CACHE_DIR, 'pair_health_state.json');
 const DYNAMIC_STATE_FILE = path.join(CACHE_DIR, 'dynamic_state.json');
 const LAST_REPORT_DATE_FILE = path.join(CACHE_DIR, 'last_daily_report_date.json');
+const STRUCTURE_WATCH_FILE = path.join(CACHE_DIR, 'structure_watch_state.json');
 
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
+
+function loadStructureWatchState() {
+  if (fs.existsSync(STRUCTURE_WATCH_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(STRUCTURE_WATCH_FILE, 'utf8'));
+      return data && typeof data === 'object' ? data : {};
+    } catch (e) {
+      return {};
+    }
+  }
+  return {};
+}
+
+function saveStructureWatchState(state) {
+  try {
+    fs.writeFileSync(STRUCTURE_WATCH_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (e) {}
+}
+
+let structureWatchState = loadStructureWatchState();
 
 function loadShadowTrades() {
   if (fs.existsSync(SHADOW_TRADES_FILE)) {
@@ -2342,51 +2363,267 @@ function isMacroCascadeActive(htf1hCandles, mode) {
   return { isCascading: false, count: 0, reason: null };
 }
 
-// ── STRATEGY 5B PRO SIGNAL DETECTION ENGINE ──
-function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
-  if (!ltfCandles || !htf1hCandles || ltfCandles.length < 25 || htf1hCandles.length < 55) return null;
+// ── SHARED MARKET STRUCTURE EVALUATOR (Single Source of Truth) ──
+const STRUCTURE_SHIFT_COOLDOWN_MS = 60 * 60 * 1000;
 
-  // 1. 1H 50 EMA Intermediate Trend
+/**
+ * Evaluates 1D / 4H / 1H 50 EMA trend alignment, 1H chop clearance (>= 0.08%),
+ * and 48H dealing range positioning without mutating on-disk memory.
+ */
+function evaluateMarketStructure(htf1hCandles, htf4hCandles, dailyCandles, mode, refPrice = null) {
+  const requiredTrend = mode === 'BOOM' ? 'bearish' : 'bullish';
+  if (!htf1hCandles || htf1hCandles.length < 55) {
+    return {
+      ready: false,
+      requiredTrend,
+      htf1hTrend: 'N/A',
+      htf4hTrend: 'N/A',
+      dailyTrend: 'N/A',
+      h1ClearancePct: 0,
+      chopOk: false,
+      range48hPct: null,
+      in5BRange: false,
+      is5BAligned: false,
+      blockers: ['Insufficient 1H data']
+    };
+  }
+
+  // 1. 1H 50 EMA Intermediate Trend & Chop Clearance
   const htf1hCloses = htf1hCandles.map(c => c.close);
-  const htf1hEMA    = calculateEMA(htf1hCloses, 50);
+  const htf1hEMA = calculateEMA(htf1hCloses, 50);
   const last1hClose = htf1hCloses[htf1hCloses.length - 1];
-  const last1hEma   = htf1hEMA[htf1hEMA.length - 1];
-  const htf1hTrend  = last1hClose > last1hEma ? 'bullish' : 'bearish';
-
-  // 1H Chop Clearance Filter (>0.08%)
-  const h1ClearancePct = (Math.abs(last1hClose - last1hEma) / last1hEma) * 100;
-  if (config.USE_HTF_CHOP_FILTER && h1ClearancePct < 0.08) return null;
+  const last1hEma = htf1hEMA[htf1hEMA.length - 1];
+  const htf1hTrend = last1hClose > last1hEma ? 'bullish' : 'bearish';
+  const h1ClearancePct = last1hEma > 0 ? (Math.abs(last1hClose - last1hEma) / last1hEma) * 100 : 0;
+  const chopOk = !config.USE_HTF_CHOP_FILTER || h1ClearancePct >= 0.08;
 
   // 2. 4H 50 EMA Macro Trend
   let htf4hTrend = 'N/A';
   if (htf4hCandles && htf4hCandles.length >= 55) {
     const htf4hCloses = htf4hCandles.map(c => c.close);
-    const htf4hEMA    = calculateEMA(htf4hCloses, 50);
+    const htf4hEMA = calculateEMA(htf4hCloses, 50);
     const last4hClose = htf4hCloses[htf4hCloses.length - 1];
-    const last4hEma   = htf4hEMA[htf4hEMA.length - 1];
-    htf4hTrend        = last4hClose > last4hEma ? 'bullish' : 'bearish';
+    const last4hEma = htf4hEMA[htf4hEMA.length - 1];
+    htf4hTrend = last4hClose > last4hEma ? 'bullish' : 'bearish';
   }
 
   // 3. Daily 50 EMA Macro Trend
   let dailyTrend = 'N/A';
   if (dailyCandles && dailyCandles.length >= 30) {
     const dailyCloses = dailyCandles.map(c => c.close);
-    const dailyEMA    = calculateEMA(dailyCloses, Math.min(50, dailyCloses.length - 1));
+    const dailyEMA = calculateEMA(dailyCloses, Math.min(50, dailyCloses.length - 1));
     if (dailyEMA.length > 0) {
       const lastDailyClose = dailyCloses[dailyCloses.length - 1];
-      const lastDailyEma   = dailyEMA[dailyEMA.length - 1];
-      dailyTrend           = lastDailyClose > lastDailyEma ? 'bullish' : 'bearish';
+      const lastDailyEma = dailyEMA[dailyEMA.length - 1];
+      dailyTrend = lastDailyClose > lastDailyEma ? 'bullish' : 'bearish';
     }
   }
 
+  // 4. 48H Dealing Range % (non-mutating view matching godeyesMemory window)
+  const priceForRange = refPrice !== null ? refPrice : last1hClose;
+  let range48hPct = null;
+  let in5BRange = true;
+  if (htf1hCandles.length >= 24) {
+    const lookback = Math.min(48, htf1hCandles.length);
+    const slice = htf1hCandles.slice(htf1hCandles.length - lookback);
+    const pdh = Math.max(...slice.map(c => c.high));
+    const pdl = Math.min(...slice.map(c => c.low));
+    const span = pdh - pdl;
+    if (span > 0) {
+      range48hPct = ((priceForRange - pdl) / span) * 100;
+      const minSell5B = (config.STRATEGY_5B && config.STRATEGY_5B.MIN_SELL_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MIN_SELL_RANGE_PCT : 20.0;
+      const maxBuy5B = (config.STRATEGY_5B && config.STRATEGY_5B.MAX_BUY_RANGE_PCT) !== undefined ? config.STRATEGY_5B.MAX_BUY_RANGE_PCT : 80.0;
+      const minBuyPct = (config.GODEYES && config.GODEYES.MIN_BUY_RANGE_PCT) || 15.0;
+      const maxSellPct = (config.GODEYES && config.GODEYES.MAX_SELL_RANGE_PCT) || 85.0;
+      in5BRange = mode === 'BOOM'
+        ? (range48hPct >= minSell5B && range48hPct <= maxSellPct)
+        : (range48hPct <= maxBuy5B && range48hPct >= minBuyPct);
+    }
+  }
+
+  const blockers = [];
+  if (dailyTrend !== 'N/A' && config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== requiredTrend) {
+    blockers.push(`1D ${dailyTrend}`);
+  }
+  if (htf4hTrend !== 'N/A' && htf4hTrend !== requiredTrend) {
+    blockers.push(`4H ${htf4hTrend}`);
+  }
+  if (htf1hTrend !== requiredTrend) {
+    blockers.push(`1H ${htf1hTrend}`);
+  } else if (!chopOk) {
+    blockers.push(`1H chop ${h1ClearancePct.toFixed(2)}% (min 0.08%)`);
+  }
+
+  const is5BAligned = blockers.length === 0;
+
+  return {
+    ready: true,
+    requiredTrend,
+    htf1hTrend,
+    htf4hTrend,
+    dailyTrend,
+    h1ClearancePct,
+    chopOk,
+    range48hPct,
+    in5BRange,
+    is5BAligned,
+    blockers
+  };
+}
+
+function getPoolBadge(symbol) {
+  const symConfig = config.SYMBOLS[symbol] || {};
+  if (symConfig.monitorOnly) return '🔬 INCUBATOR';
+  const rec = getPairHealth(symbol);
+  if (rec && rec.isQuarantined) return '🔴 QUARANTINED';
+  return '💰 LIVE';
+}
+
+function describeStructureShift(prev, ms) {
+  if (!prev) return `All 3 TFs (${ms.requiredTrend.toUpperCase()}) aligned`;
+  const changes = [];
+  if (prev.dailyTrend && prev.dailyTrend !== ms.requiredTrend && ms.dailyTrend === ms.requiredTrend) {
+    changes.push(`Daily 50 EMA flipped ${ms.dailyTrend.toUpperCase()}`);
+  }
+  if (prev.htf4hTrend && prev.htf4hTrend !== ms.requiredTrend && ms.htf4hTrend === ms.requiredTrend) {
+    changes.push(`4H 50 EMA flipped ${ms.htf4hTrend.toUpperCase()}`);
+  }
+  if (prev.htf1hTrend && prev.htf1hTrend !== ms.requiredTrend && ms.htf1hTrend === ms.requiredTrend) {
+    changes.push(`1H 50 EMA flipped ${ms.htf1hTrend.toUpperCase()}`);
+  } else if (prev.htf1hTrend === ms.requiredTrend && prev.chopOk === false && ms.chopOk === true) {
+    changes.push(`1H cleared 0.08% chop zone (${ms.h1ClearancePct.toFixed(2)}%)`);
+  }
+  return changes.length > 0 ? changes.join(' + ') : `Full ${ms.requiredTrend.toUpperCase()} alignment restored`;
+}
+
+/**
+ * Tracks per-symbol full 1D+4H+1H structure alignment transitions and dispatches
+ * a Telegram alert when a previously misaligned/choppy pair shifts into monitoring criteria.
+ * Seeds silently on first run to prevent boot notification spam.
+ */
+async function checkStructureShiftForSymbol(symbol, mode, dailyCandles, htf4hCandles, htf1hCandles) {
+  const ms = evaluateMarketStructure(htf1hCandles, htf4hCandles, dailyCandles, mode);
+  if (!ms.ready) return;
+
+  const prev = structureWatchState[symbol];
+  const now = Date.now();
+
+  if (!prev) {
+    structureWatchState[symbol] = {
+      is5BAligned: ms.is5BAligned,
+      dailyTrend: ms.dailyTrend,
+      htf4hTrend: ms.htf4hTrend,
+      htf1hTrend: ms.htf1hTrend,
+      chopOk: ms.chopOk,
+      lastAlertedAt: 0
+    };
+    saveStructureWatchState(structureWatchState);
+    return;
+  }
+
+  const shiftedIntoAlignment = !prev.is5BAligned && ms.is5BAligned;
+  const cooldownElapsed = (now - (prev.lastAlertedAt || 0)) >= STRUCTURE_SHIFT_COOLDOWN_MS;
+
+  structureWatchState[symbol] = {
+    is5BAligned: ms.is5BAligned,
+    dailyTrend: ms.dailyTrend,
+    htf4hTrend: ms.htf4hTrend,
+    htf1hTrend: ms.htf1hTrend,
+    chopOk: ms.chopOk,
+    lastAlertedAt: (shiftedIntoAlignment && cooldownElapsed) ? now : (prev.lastAlertedAt || 0)
+  };
+  saveStructureWatchState(structureWatchState);
+
+  if (shiftedIntoAlignment && cooldownElapsed) {
+    const symConfig = config.SYMBOLS[symbol] || {};
+    const actionLabel = mode === 'BOOM' ? '🔴 SELL ONLY (Bearish Trend)' : '🟢 BUY ONLY (Bullish Trend)';
+    const poolBadge = getPoolBadge(symbol);
+    const shiftTrigger = describeStructureShift(prev, ms);
+    const rangeStatus = ms.range48hPct !== null
+      ? `${ms.range48hPct.toFixed(1)}% (${ms.in5BRange ? 'Inside [20%-80%] Zone' : 'Outside [20%-80%] — awaiting pullback'})`
+      : 'N/A';
+
+    await sendTelegramMessage([
+      `📡 🟢 <b>[PAIR NOW MONITORED — STRUCTURE ALIGNED]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `<b>Asset:</b> <code>${symbol}</code> (${symConfig.name || symbol})`,
+      `<b>Action Mode:</b> ${actionLabel}`,
+      `<b>Pool Status:</b> <code>${poolBadge}</code>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `<b>Metrics Met:</b>`,
+      `• <b>Daily 50 EMA:</b> <code>${String(ms.dailyTrend).toUpperCase()}</code>`,
+      `• <b>4H 50 EMA:</b> <code>${String(ms.htf4hTrend).toUpperCase()}</code>`,
+      `• <b>1H 50 EMA:</b> <code>${String(ms.htf1hTrend).toUpperCase()} (${ms.h1ClearancePct.toFixed(2)}% clr ≥ 0.08%)</code>`,
+      `• <b>48H Dealing Range:</b> <code>${rangeStatus}</code>`,
+      `• <b>Shift Trigger:</b> <code>${shiftTrigger}</code>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `🔍 <i>Actively scanning 5M chart for spike exhaustion setups.</i>`
+    ].join('\n'));
+  }
+}
+
+/**
+ * Evaluates all configured symbols for the 12:00 AM daily activation watchlist.
+ */
+async function buildDailyStructureWatchlist() {
+  const symbols = Object.keys(config.SYMBOLS);
+  const alignedLines = [];
+  const waitingLines = [];
+
+  for (const symbol of symbols) {
+    const symConfig = config.SYMBOLS[symbol];
+    const mode = symConfig.mode;
+    try {
+      const dailyCandles = config.REQUIRE_DAILY_CONFLUENCE
+        ? await getCachedHtfCandles(symbol, config.MACRO_DAILY || '1d', 60, 60 * 60 * 1000)
+        : null;
+      const htf4hCandles = await getCachedHtfCandles(symbol, config.MACRO_HTF || '4h', 100, 15 * 60 * 1000);
+      const htf1hCandles = await getCachedHtfCandles(symbol, config.INTERMEDIATE_HTF || '1h', 100, 5 * 60 * 1000);
+      const ms = evaluateMarketStructure(htf1hCandles, htf4hCandles, dailyCandles, mode);
+
+      if (ms.is5BAligned) {
+        const dirTag = mode === 'BOOM' ? 'SELL' : 'BUY';
+        const poolBadge = getPoolBadge(symbol);
+        const rangeTag = ms.range48hPct !== null
+          ? `${ms.range48hPct.toFixed(0)}%${ms.in5BRange ? '✓' : '⏳'}`
+          : 'N/A';
+        alignedLines.push(`  • <b>${symbol}</b> [<code>${dirTag} • 1H ${ms.h1ClearancePct.toFixed(2)}% • R:${rangeTag} • ${poolBadge}</code>]`);
+      } else {
+        waitingLines.push(`${symbol} (${ms.blockers.join('/')})`);
+      }
+      await new Promise(r => setTimeout(r, 80));
+    } catch (e) {
+      waitingLines.push(`${symbol} (data pending)`);
+    }
+  }
+
+  const out = [];
+  out.push(`📡 <b>Market Structure Watchlist (${alignedLines.length}/${symbols.length} Aligned):</b>`);
+  if (alignedLines.length > 0) {
+    out.push(...alignedLines);
+  } else {
+    out.push(`  • <i>No pairs fully 1D+4H+1H aligned at rollover — hunting structure shifts.</i>`);
+  }
+  if (waitingLines.length > 0) {
+    out.push(`⏸️ <b>Standby (${waitingLines.length}):</b> <code>${waitingLines.join(', ')}</code>`);
+  }
+  return out.join('\n');
+}
+
+// ── STRATEGY 5B PRO SIGNAL DETECTION ENGINE ──
+function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
+  if (!ltfCandles || !htf1hCandles || ltfCandles.length < 25 || htf1hCandles.length < 55) return null;
+
+  const ms = evaluateMarketStructure(htf1hCandles, htf4hCandles, dailyCandles, mode);
+  if (!ms.ready || !ms.chopOk) return null;
+
+  const { htf1hTrend, htf4hTrend, dailyTrend, h1ClearancePct } = ms;
   const confirmCount = (symbol && config.SYMBOLS[symbol] && config.SYMBOLS[symbol].confirm_candles) || config.CONFIRMATION_CANDLES || 2;
   const minSpikes = minSpikesRequired || config.MIN_SPIKES || 2;
 
   // ── CASE 1: SELL (BOOM) ──
   if (mode === 'BOOM') {
-    if (htf1hTrend !== 'bearish') return null;
-    if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bearish') return null;
-    if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bearish') return null;
+    if (!ms.is5BAligned) return null;
 
     // 1. Multi-Candle Confirmation: Check closed RED candles (close < open)
     let confirmCandles = [];
@@ -2519,9 +2756,7 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
 
   // ── CASE 2: BUY (CRASH) ──
   if (mode === 'CRASH') {
-    if (htf1hTrend !== 'bullish') return null;
-    if (htf4hTrend !== 'N/A' && htf4hTrend !== 'bullish') return null;
-    if (config.REQUIRE_DAILY_CONFLUENCE && dailyTrend !== 'N/A' && dailyTrend !== 'bullish') return null;
+    if (!ms.is5BAligned) return null;
 
     // 1. Multi-Candle Confirmation: Check closed GREEN candles (close > open)
     let confirmCandles = [];
@@ -2725,6 +2960,7 @@ function detectStrategySMCSweepSetup(ltfCandles, htf1hCandles, htf4hCandles, dai
 
   const c0 = ltfCandles[ltfCandles.length - 1]; // latest closed 5M bar
   const c1 = ltfCandles[ltfCandles.length - 2]; // preceding 5M bar
+  const candleEpoch = c0.epoch || c0.time;
 
   // 3. Liquidity Sweep Detection & 5M Absorption Rejection
   if (mode === 'CRASH' && swingLows.length > 0) {
@@ -2749,6 +2985,7 @@ function detectStrategySMCSweepSetup(ltfCandles, htf1hCandles, htf4hCandles, dai
         sl: stopLoss,
         tp,
         slDistance: slDist,
+        candleEpoch,
         htf4hTrend: lastH1Close >= lastH1Ema ? 'bullish' : 'bearish',
         htf1hTrend: 'bullish',
         dailyTrend: 'bullish',
@@ -2782,6 +3019,7 @@ function detectStrategySMCSweepSetup(ltfCandles, htf1hCandles, htf4hCandles, dai
         sl: stopLoss,
         tp,
         slDistance: slDist,
+        candleEpoch,
         htf4hTrend: lastH1Close <= lastH1Ema ? 'bearish' : 'bullish',
         htf1hTrend: 'bearish',
         dailyTrend: 'bearish',
@@ -2839,6 +3077,8 @@ async function monitorMarket() {
       ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)} USD (Auto: ${maxLossMultiplier} Losses • -${maxLossMultiplier.toFixed(1)}R Floor)`
       : 'Disabled';
 
+    const newDayWatchlist = await buildDailyStructureWatchlist();
+
     await sendTelegramMessage([
       `🌅 <b>[NEW TRADING DAY ACTIVATED]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -2847,7 +3087,8 @@ async function monitorMarket() {
       `🛡️ <b>Trade Risk Model:</b> <code>${activeRiskPct.toFixed(1)}% ($${compRisk.riskUSD.toFixed(2)} USD / trade anchored to week start)</code>`,
       `🎯 <b>Daily Profit Target:</b> <code>${newDayTargetLabel}</code>`,
       `🛡️ <b>Daily Max Loss Floor:</b> <code>${newDayMaxLossLabel}</code>`,
-      `🚀 <b>Status:</b> <b>ONLINE & SCANNING ${Object.keys(config.SYMBOLS).length} PAIRS</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      newDayWatchlist,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `💡 <i>Target & Max Loss auto-calculated from weekly start balance. Send /target or /maxloss to override anytime.</i>`
     ].join('\n'));
@@ -2958,11 +3199,19 @@ async function monitorMarket() {
       const canRun6Pro = is6proEnabled && !cb6pro.inCooldown;
       const canRun5B = is5bEnabled && !cb5b.inCooldown;
 
-      // If neither engine is permitted to scan this symbol, skip candle fetching
+      // If neither engine is permitted to scan this symbol, still track HTF structure shifts & active exits
       if (!canRun6Pro && !canRun5B) {
         const skipReason = (is6proEnabled && cb6pro.inCooldown) ? cb6pro.reason : (cb5b.reason || 'Cooldown active');
         console.log(`  [${mode}] ${symbol.padEnd(12)} | 🛡️ COOLDOWN: ${skipReason}`);
-        const ltf = await getCandles(symbol, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
+        const [d1Cool, h4Cool, h1Cool, ltf] = await Promise.all([
+          config.REQUIRE_DAILY_CONFLUENCE ? getCachedHtfCandles(symbol, config.MACRO_DAILY || '1d', 60, 60 * 60 * 1000).catch(() => null) : Promise.resolve(null),
+          getCachedHtfCandles(symbol, config.MACRO_HTF || '4h', 100, 15 * 60 * 1000).catch(() => null),
+          getCachedHtfCandles(symbol, config.INTERMEDIATE_HTF || '1h', 100, 5 * 60 * 1000).catch(() => null),
+          getCandles(symbol, config.DEFAULT_LTF || '5m', 20, true).catch(() => null)
+        ]);
+        if (h1Cool) {
+          await checkStructureShiftForSymbol(symbol, mode, d1Cool, h4Cool, h1Cool).catch(() => {});
+        }
         if (ltf && ltf.length > 0) {
           await checkActiveTradesForSymbol(symbol, ltf);
           await checkShadowTradesForSymbol(symbol, ltf);
@@ -2980,6 +3229,8 @@ async function monitorMarket() {
       await new Promise(r => setTimeout(r, 150));
       const ltfCandles   = await getCandles(symbol, config.DEFAULT_LTF || '5m', 150, true);
       if (!htf1hCandles || !ltfCandles) continue;
+
+      await checkStructureShiftForSymbol(symbol, mode, dailyCandles, htf4hCandles, htf1hCandles).catch(() => {});
 
       const latestPrice = ltfCandles[ltfCandles.length - 1].close;
 
@@ -3065,7 +3316,7 @@ async function monitorMarket() {
               return (t.strategy || '').includes('5B') || (t.setupId || '').includes('_5B_');
             }
             if (strat.id === '6PRO') {
-              return (t.strategy || '').includes('6 Pro') || (t.setupId || '').includes('_6PRO_');
+              return (t.strategy || '').includes('SMC Sweep') || (t.strategy || '').includes('6 Pro') || (t.setupId || '').includes('_6PRO_');
             }
             return false;
           });

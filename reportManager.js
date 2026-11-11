@@ -1052,10 +1052,23 @@ function stripHtmlTags(html) {
     .replace(/&quot;/g, '"');
 }
 
+function loadActiveTradesSnapshot() {
+  const activeFile = path.join(CACHE_DIR, 'active_trades.json');
+  if (fs.existsSync(activeFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(activeFile, 'utf8'));
+      return Array.isArray(data) ? data : [];
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+}
+
 /**
  * Compiles a complete plain-text trade & Telegram signal export for a given YYYY-MM-DD date.
  * Uses the verbatim Telegram feed log if available, and always includes a structured
- * Live + Paper ledger reconstructed from trade_history.json & incubation_history.json.
+ * Live + Paper ledger reconstructed from trade_history.json, incubation_history.json, and open active_trades.json.
  */
 function generateDayTradeExport(targetDateStr) {
   const offset = config.TIMEZONE_OFFSET_HOURS !== undefined ? config.TIMEZONE_OFFSET_HOURS : 1;
@@ -1078,8 +1091,29 @@ function generateDayTradeExport(targetDateStr) {
     getDateString(t.closedTime) === targetDateStr
   );
 
+  const activeSnapshot = loadActiveTradesSnapshot();
+  const seenLiveSetupIds = new Set(liveTrades.map(t => t.setupId).filter(Boolean));
+  const openLiveFallback = activeSnapshot.filter(t =>
+    !t.isIncubation &&
+    !seenLiveSetupIds.has(t.setupId) &&
+    getDateString(t.triggeredTime) === targetDateStr
+  );
+  const allLiveForExport = [
+    ...liveTrades,
+    ...openLiveFallback.map(t => ({
+      ...t,
+      status: 'OPEN',
+      outcome: 'OPEN',
+      signalTime: t.triggeredTime ? new Date(t.triggeredTime).toISOString() : null
+    }))
+  ];
+
   const incHistory = loadIncubationHistory();
   const paperTrades = incHistory.filter(t => getDateString(t.time) === targetDateStr);
+  const openPaperTrades = activeSnapshot.filter(t =>
+    t.isIncubation &&
+    getDateString(t.triggeredTime) === targetDateStr
+  );
 
   const dailyReport = generateDailyReport(targetDateStr);
   const formattedSummary = stripHtmlTags(formatReportTelegramHTML(dailyReport));
@@ -1101,10 +1135,10 @@ function generateDayTradeExport(targetDateStr) {
 
   sections.push(`--- [2] STRUCTURED TRADE LEDGER (LIVE & PAPER) ---\n`);
 
-  if (liveTrades.length === 0) {
+  if (allLiveForExport.length === 0) {
     sections.push(`No Live Real-Money trades recorded on ${targetDateStr}.\n`);
   } else {
-    liveTrades.forEach((t, idx) => {
+    allLiveForExport.forEach((t, idx) => {
       const isBuy = t.type === 'bullish' || t.type === 'BUY';
       const dirLabel = isBuy ? '🟢 BUY (Market)' : '🔴 SELL (Market)';
       const strat = t.strategy || 'Strategy 5B Pro';
@@ -1116,7 +1150,7 @@ function generateDayTradeExport(targetDateStr) {
       const pnlRVal = typeof t.pnlR === 'number' ? t.pnlR : 0;
       const sign = pnlVal >= 0 ? '+' : '-';
       const rSign = pnlRVal >= 0 ? '+' : '';
-      const outIcon = t.outcome === 'WIN' ? '🏆 TP HIT' : (t.outcome === 'LOSS' ? '🔴 SL HIT' : (t.outcome || 'OPEN'));
+      const outIcon = t.outcome === 'WIN' ? '🏆 TP HIT' : (t.outcome === 'LOSS' ? '🔴 SL HIT' : '⏳ OPEN (Running)');
 
       sections.push(`[LIVE #${idx + 1}] ${strat} — ${t.symbol}`);
       sections.push(`Asset: ${t.symbol} | Action: ${dirLabel}`);
@@ -1127,7 +1161,7 @@ function generateDayTradeExport(targetDateStr) {
     });
   }
 
-  if (paperTrades.length === 0) {
+  if (paperTrades.length === 0 && openPaperTrades.length === 0) {
     sections.push(`No Paper Sandbox trades recorded on ${targetDateStr}.\n`);
   } else {
     paperTrades.forEach((p, idx) => {
@@ -1150,13 +1184,29 @@ function generateDayTradeExport(targetDateStr) {
       sections.push(`Outcome: ${outIcon} (${rSign}${rVal.toFixed(1)}R • ${sign}$${Math.abs(pnlVal).toFixed(2)} USD Paper) | Time: ${p.time || 'N/A'}`);
       sections.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     });
+
+    openPaperTrades.forEach((p, idx) => {
+      const isBuy = p.type === 'bullish' || p.type === 'BUY';
+      const dirLabel = isBuy ? '🟢 BUY' : '🔴 SELL';
+      const strat = p.strategy || 'Strategy 5B Pro';
+      const entryStr = typeof p.entryPrice === 'number' ? p.entryPrice.toFixed(2) : p.entryPrice;
+      const slStr = typeof p.stopLoss === 'number' ? p.stopLoss.toFixed(2) : 'N/A';
+      const tpStr = typeof p.takeProfit === 'number' ? p.takeProfit.toFixed(2) : 'N/A';
+      const openTime = p.triggeredTime ? new Date(p.triggeredTime).toISOString() : 'N/A';
+
+      sections.push(`[OPEN PAPER #${paperTrades.length + idx + 1}] ${strat} — ${p.symbol}`);
+      sections.push(`Asset: ${p.symbol} | Direction: ${dirLabel}`);
+      sections.push(`🎯 Entry: ${entryStr} | 🛡️ SL: ${slStr} | 🏆 TP: ${tpStr}`);
+      sections.push(`Status: ⏳ OPEN (Paper Running) | Opened Time: ${openTime}`);
+      sections.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    });
   }
 
   return {
     dateStr: targetDateStr,
     hasRawFeed: Boolean(rawFeed),
-    liveCount: liveTrades.length,
-    paperCount: paperTrades.length,
+    liveCount: allLiveForExport.length,
+    paperCount: paperTrades.length + openPaperTrades.length,
     netUSD: dailyReport.netUSD || 0,
     netR: dailyReport.netR || 0,
     wins: dailyReport.wins || 0,
