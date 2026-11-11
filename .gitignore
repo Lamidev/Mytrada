@@ -5,5 +5,7 @@ data/*
 !data/trades_master_backtest_archive.json
 !data/trades_master_backtest_archive.csv
 !data/godeyes_memory.json
+!data/live_sync/
+!data/live_sync/**
 __pycache__/
 scratch/

@@ -1461,6 +1461,10 @@ const telegramHandlers = {
     return generateDayTradeExport(targetDate);
   },
 
+  syncLogsToGit: async (targetDate = null) => {
+    return await runMidnightGitSync(targetDate || getLocalDateStr());
+  },
+
   moveToBreakeven: () => {
     const activeTrades = loadActiveTrades();
     let count = 0;

@@ -322,6 +322,7 @@ function registerTelegramCommands() {
     { command: 'weekly', description: "Weekly performance report (Mon-Sun daily breakdown)" },
     { command: 'export', description: "Export day's trades & signals as .txt: /export [YYYY-MM-DD|yesterday]" },
     { command: 'logs', description: "Pull day's trade logs (.txt or '/logs chat')" },
+    { command: 'sync', description: "Push today's trades & Telegram logs to GitHub for AI review" },
     { command: 'target', description: "Set daily target: /target 250 (or /target off)" },
     { command: 'maxloss', description: "Set max loss floor: /maxloss 150 (or /maxloss off)" },
     { command: 'cooldown', description: "Set pair cooldown: /cooldown CRASH1000 25 [live|paper]" },
@@ -440,6 +441,7 @@ async function handleCommand(rawText, handlers) {
         `• <code>/weekly</code> ➜ Weekly performance report (Mon-Sun daily breakdown)`,
         `• <code>/export [date]</code> ➜ Export full day's signals & trades (.txt file)`,
         `• <code>/logs [date] chat</code> ➜ Print full day's trade logs directly in chat`,
+        `• <code>/sync</code> ➜ Push today's live logs & trade ledger to GitHub for AI review`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🏛️ <b>STRATEGY & MODES:</b>`,
         `• <code>/strategy 6pro</code> ➜ Launch Strategy 6 Pro Live (Institutional SMC)`,
@@ -677,6 +679,28 @@ async function handleCommand(rawText, handlers) {
           await sendTelegramMessage("⚠️ File upload failed — printing trade digest inline:", { skipLog: true });
           await sendLongTelegramText(exp.content);
         }
+      }
+      break;
+    }
+
+    case '/sync': {
+      if (!handlers.syncLogsToGit) {
+        await sendTelegramMessage("⚠️ Git sync handler not available.", { skipLog: true });
+        break;
+      }
+      const { dateStr: todayStr } = getLocalDateAndTime();
+      const targetDate = (arg1 && /^\d{4}-\d{2}-\d{2}$/.test(arg1)) ? arg1 : todayStr;
+      await sendTelegramMessage(`⏳ <i>Syncing ${targetDate} trades & Telegram feed to GitHub...</i>`, { skipLog: true });
+      const res = await handlers.syncLogsToGit(targetDate);
+      if (res && res.success) {
+        await sendTelegramMessage(
+          `✅ <b>[GITHUB SYNC COMPLETE — ${targetDate}]</b>\n` +
+          `All live/paper trades & verbatim Telegram signals are now on GitHub.\n\n` +
+          `💡 Tell Antigravity: <code>pull and review today's trades</code>`,
+          { skipLog: true }
+        );
+      } else {
+        await sendTelegramMessage(`⚠️ Sync skipped or failed: <code>${res ? res.error : 'Unknown'}</code>`, { skipLog: true });
       }
       break;
     }

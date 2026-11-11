@@ -218,18 +218,57 @@ function recordGodEyesOutcome(trade) {
  * Automated Midnight GitHub Sync Cron
  * Commits the day's master trade archive and GodEyes memory to GitHub
  */
+/**
+ * Mirrors live trade ledgers & daily Telegram feed logs from gitignored cache/
+ * into tracked data/live_sync/ so Git sync & zero-copy AI reviews work cleanly.
+ */
+function syncLiveAuditSnapshot(targetDateStr = null) {
+  try {
+    const cacheDir = path.join(__dirname, 'cache');
+    const syncDir = path.join(DATA_DIR, 'live_sync');
+    const syncLogsDir = path.join(syncDir, 'telegram_logs');
+    fs.mkdirSync(syncLogsDir, { recursive: true });
+
+    const filesToMirror = ['trade_history.json', 'incubation_history.json', 'pair_health_state.json', 'weekly_anchor_balance.json'];
+    for (const fname of filesToMirror) {
+      const src = path.join(cacheDir, fname);
+      if (fs.existsSync(src)) {
+        fs.copyFileSync(src, path.join(syncDir, fname));
+      }
+    }
+
+    const srcLogsDir = path.join(cacheDir, 'telegram_logs');
+    if (fs.existsSync(srcLogsDir)) {
+      const logFiles = fs.readdirSync(srcLogsDir).filter(f => f.endsWith('.txt')).sort();
+      // Keep last 14 daily log files synced cleanly (or specific targetDateStr)
+      const toCopy = targetDateStr && logFiles.includes(`${targetDateStr}.txt`)
+        ? Array.from(new Set([...logFiles.slice(-14), `${targetDateStr}.txt`]))
+        : logFiles.slice(-14);
+      for (const lf of toCopy) {
+        fs.copyFileSync(path.join(srcLogsDir, lf), path.join(syncLogsDir, lf));
+      }
+    }
+    return true;
+  } catch (e) {
+    console.warn(`[GITHUB ARCHIVE SYNC] Snapshot mirror error: ${e.message}`);
+    return false;
+  }
+}
+
 function runMidnightGitSync(todayDateStr) {
   return new Promise((resolve) => {
-    const commitMsg = `chore(data): auto-archive trade logs & godeyes memory [${todayDateStr || new Date().toISOString().split('T')[0]}]`;
-    const cmd = `git add data/ cache/ && git commit -m "${commitMsg}" && git push origin main`;
+    syncLiveAuditSnapshot(todayDateStr);
+    const label = todayDateStr || new Date().toISOString().split('T')[0];
+    const commitMsg = `chore(data): auto-archive trade logs & godeyes memory [${label}]`;
+    const cmd = `git add data/ && (git diff --cached --quiet || (git commit -m "${commitMsg}" && (git push origin main || (git pull --rebase origin main && git push origin main))))`;
 
-    console.log(`\n📦 [GITHUB ARCHIVE SYNC] Executing automated nightly sync to GitHub repository...`);
+    console.log(`\n📦 [GITHUB ARCHIVE SYNC] Executing automated sync to GitHub repository...`);
     exec(cmd, { cwd: __dirname }, (error, stdout, stderr) => {
       if (error) {
-        console.warn(`⚠️ [GITHUB ARCHIVE SYNC] Push skipped or encounter: ${error.message.split('\n')[0]}`);
+        console.warn(`⚠️ [GITHUB ARCHIVE SYNC] Push skipped or encountered error: ${error.message.split('\n')[0]}`);
         resolve({ success: false, error: error.message });
       } else {
-        console.log(`✅ [GITHUB ARCHIVE SYNC] Successfully committed and pushed daily archive to GitHub!`);
+        console.log(`✅ [GITHUB ARCHIVE SYNC] Successfully synced daily archive & live logs to GitHub!`);
         resolve({ success: true, output: stdout });
       }
     });
@@ -242,5 +281,6 @@ module.exports = {
   getOrUpdateSessionAnchors,
   evaluateMacroExhaustion,
   recordGodEyesOutcome,
+  syncLiveAuditSnapshot,
   runMidnightGitSync
 };
