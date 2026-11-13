@@ -660,15 +660,44 @@ async function handleCommand(rawText, handlers) {
       if (sendToChat) {
         await sendLongTelegramText(exp.content);
       } else {
-        const sign = exp.netUSD >= 0 ? '+' : '-';
-        const rSign = exp.netR >= 0 ? '+' : '';
-        const caption = [
+        const liveSign = (exp.liveStats && exp.liveStats.netUSD >= 0) ? '+' : '-';
+        const liveRSign = (exp.liveStats && exp.liveStats.netR >= 0) ? '+' : '';
+        const smcSign = (exp.smcStats && exp.smcStats.netUSD >= 0) ? '+' : '-';
+        const smcRSign = (exp.smcStats && exp.smcStats.netR >= 0) ? '+' : '';
+
+        const captionLines = [
           `📋 <b>[MYTRADA TRADE EXPORT — ${exp.dateStr}]</b>`,
-          `• <b>Live Trades:</b> <code>${exp.liveCount} (${exp.wins}W / ${exp.losses}L) • ${sign}$${Math.abs(exp.netUSD).toFixed(2)} (${rSign}${exp.netR.toFixed(1)}R)</code>`,
-          `• <b>Paper Sandbox Trades:</b> <code>${exp.paperCount}</code>`,
-          `• <b>Source:</b> <code>${exp.hasRawFeed ? 'Exact Telegram Feed + Ledger' : 'Reconstructed Trade Ledger'}</code>`,
-          `💡 <i>Upload or paste this .txt file for instant AI trade review! Use</i> <code>/logs ${exp.dateStr} chat</code> <i>to print inline.</i>`
-        ].join('\n');
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `👑 <b>Strategy 5B Pro (Live):</b>`,
+          `• <code>${exp.liveStats ? exp.liveStats.trades : exp.liveCount} Trades (${exp.liveStats ? exp.liveStats.wins : exp.wins}W / ${exp.liveStats ? exp.liveStats.losses : exp.losses}L • ${exp.liveStats ? exp.liveStats.winRate : '0.0'}% WR) • ${liveSign}$${Math.abs(exp.liveStats ? exp.liveStats.netUSD : exp.netUSD).toFixed(2)} (${liveRSign}${(exp.liveStats ? exp.liveStats.netR : exp.netR).toFixed(1)}R)</code>`,
+          ``,
+          `🔬 <b>Strategy SMC Sweep (Paper Test):</b>`,
+          `• <code>${exp.smcStats ? exp.smcStats.trades : 0} Trades (${exp.smcStats ? exp.smcStats.wins : 0}W / ${exp.smcStats ? exp.smcStats.losses : 0}L • ${exp.smcStats ? exp.smcStats.winRate : '0.0'}% WR) • ${smcSign}$${Math.abs(exp.smcStats ? exp.smcStats.netUSD : 0).toFixed(2)} (${smcRSign}${(exp.smcStats ? exp.smcStats.netR : 0).toFixed(1)}R)</code>`
+        ];
+
+        if (exp.otherPaperStats && (exp.otherPaperStats.trades > 0 || exp.otherPaperStats.open > 0)) {
+          const otherSign = exp.otherPaperStats.netUSD >= 0 ? '+' : '-';
+          const otherRSign = exp.otherPaperStats.netR >= 0 ? '+' : '';
+          captionLines.push(
+            ``,
+            `🛡️ <b>Quarantine / Incubator (Paper):</b>`,
+            `• <code>${exp.otherPaperStats.trades} Trades (${exp.otherPaperStats.wins}W / ${exp.otherPaperStats.losses}L) • ${otherSign}$${Math.abs(exp.otherPaperStats.netUSD).toFixed(2)} (${otherRSign}${exp.otherPaperStats.netR.toFixed(1)}R)</code>`
+          );
+        }
+
+        if (exp.leaderText) {
+          captionLines.push(
+            `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+            `⚖️ <b>Lead:</b> <code>${exp.leaderText}</code>`
+          );
+        }
+
+        captionLines.push(
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `💡 <i>Upload or paste this .txt file for instant AI review!</i>`
+        );
+
+        const caption = captionLines.join('\n');
 
         const sent = await sendTelegramDocument(
           Buffer.from(exp.content, 'utf8'),
