@@ -2970,11 +2970,13 @@ function detectStrategySMCSweepSetup(ltfCandles, htf1hCandles, htf4hCandles, dai
 
     if (sweptLow && isBullishCandle) {
       const sweepExtreme = Math.min(c0.low, c1.low);
-      const stopLoss = sweepExtreme - (atr * 0.3);
       const entry = c0.close;
-      const slDist = entry - stopLoss;
+      // 🛡️ Adaptive SMC Buffer: 0.6x ATR buffer with a 0.8x ATR floor for messy market noise protection
+      let slDist = (entry - sweepExtreme) + (atr * 0.6);
+      if (slDist < (atr * 0.8)) slDist = atr * 0.8;
       if (slDist <= 0 || slDist > atr * 5.0) return null;
 
+      const stopLoss = entry - slDist;
       const tp = entry + (slDist * 1.3);
 
       return {
@@ -3004,11 +3006,13 @@ function detectStrategySMCSweepSetup(ltfCandles, htf1hCandles, htf4hCandles, dai
 
     if (sweptHigh && isBearishCandle) {
       const sweepExtreme = Math.max(c0.high, c1.high);
-      const stopLoss = sweepExtreme + (atr * 0.3);
       const entry = c0.close;
-      const slDist = stopLoss - entry;
+      // 🛡️ Adaptive SMC Buffer: 0.6x ATR buffer with a 0.8x ATR floor for messy market noise protection
+      let slDist = (sweepExtreme - entry) + (atr * 0.6);
+      if (slDist < (atr * 0.8)) slDist = atr * 0.8;
       if (slDist <= 0 || slDist > atr * 5.0) return null;
 
+      const stopLoss = entry + slDist;
       const tp = entry - (slDist * 1.3);
 
       return {
