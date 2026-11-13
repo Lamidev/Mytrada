@@ -746,6 +746,8 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
     if (outcome === 'WIN') {
       rec.paperConsecutiveLosses = 0;
       rec.paperConsecutiveWins = (rec.paperConsecutiveWins || 0) + 1;
+      const stratName = (tradeDetails && tradeDetails.strategy) ? tradeDetails.strategy : 'Strategy Sandbox';
+      rec.lastPaperStrat = stratName.includes('SMC Sweep') ? 'SMC Sweep' : (stratName.includes('5B') ? '5B Pro' : stratName);
       const maxWinsPerSymbol = config.CIRCUIT_BREAKER.MAX_CONSECUTIVE_WINS_PER_SYMBOL || 2;
       const winLockMins = config.CIRCUIT_BREAKER.SYMBOL_WIN_LOCK_MINS || 90;
       if (rec.paperConsecutiveWins >= maxWinsPerSymbol) {
@@ -759,6 +761,8 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
       rec.isPaperWinLocked = false;
       rec.paperConsecutiveLosses = (rec.paperConsecutiveLosses || 0) + 1;
       rec.paperDailyLosses = (rec.paperDailyLosses || 0) + 1;
+      const stratName = (tradeDetails && tradeDetails.strategy) ? tradeDetails.strategy : 'Strategy Sandbox';
+      rec.lastPaperStrat = stratName.includes('SMC Sweep') ? 'SMC Sweep' : (stratName.includes('5B') ? '5B Pro' : stratName);
 
       if (rec.paperDailyLosses >= maxDaily || rec.paperConsecutiveLosses >= 2) {
         const endOfDay = new Date();
@@ -781,7 +785,10 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
       }
     }
   } else {
-    // ── 👑 LIVE REAL TRADING CIRCUIT BREAKER (Strategy 6 Pro) ──
+    // ── 👑 LIVE REAL TRADING CIRCUIT BREAKER (Strategy 6 Pro / 5B Pro) ──
+    const stratName = (tradeDetails && tradeDetails.strategy) ? tradeDetails.strategy : 'Strategy 5B Pro';
+    rec.lastLiveStrat = stratName.includes('SMC Sweep') ? 'SMC Sweep' : (stratName.includes('5B') ? '5B Pro' : stratName);
+
     if (outcome === 'WIN') {
       rec.consecutiveLosses = 0;
       rec.consecutiveWins = (rec.consecutiveWins || 0) + 1;
@@ -1085,27 +1092,30 @@ const telegramHandlers = {
         const isLiveLocked = (rec.dailyLosses || 0) >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2) || (rec.consecutiveLosses || 0) >= 2;
         const isPaperLocked = (rec.paperDailyLosses || 0) >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2) || (rec.paperConsecutiveLosses || 0) >= 2;
 
+        const paperStratTag = ` (${rec.lastPaperStrat || 'SMC Sweep'})`;
+        const liveStratTag = ` (${rec.lastLiveStrat || '5B Pro'})`;
+
         if (isLiveLocked) {
           const reason = (rec.consecutiveLosses || 0) >= 2 ? `${rec.consecutiveLosses} consecutive` : `${rec.dailyLosses} daily`;
-          cooldowns.push(`• <code>${sym}</code>: 🛑 <b>LIVE LOCKED FOR TODAY</b> (${reason} losses hit — halts until 12 AM UTC)`);
+          cooldowns.push(`• <code>${sym}</code>: 🛑 <b>LIVE LOCKED FOR TODAY${liveStratTag}</b> (${reason} losses hit — halts until 12 AM UTC)`);
         } else if (rec.pauseUntil && now < rec.pauseUntil) {
           const rem = Math.ceil((rec.pauseUntil - now) / 60000);
           if (rec.isWinLocked) {
-            cooldowns.push(`• <code>${sym}</code>: 🏆 <b>2-WIN PROFIT LOCK</b> (${rem}m left — banked ${rec.consecutiveWins || 2} wins)`);
+            cooldowns.push(`• <code>${sym}</code>: 🏆 <b>2-WIN PROFIT LOCK${liveStratTag}</b> (${rem}m left — banked ${rec.consecutiveWins || 2} wins)`);
           } else {
-            cooldowns.push(`• <code>${sym}</code>: ⏳ Live ${rem}m cooldown (${rec.dailyLosses || 0} loss today)`);
+            cooldowns.push(`• <code>${sym}</code>: ⏳ Live${liveStratTag} ${rem}m cooldown (${rec.dailyLosses || 0} loss today)`);
           }
         }
 
         if (isPaperLocked) {
           const reason = (rec.paperConsecutiveLosses || 0) >= 2 ? `${rec.paperConsecutiveLosses} consecutive` : `${rec.paperDailyLosses} daily`;
-          cooldowns.push(`• <code>${sym}</code>: 🔬 <b>PAPER LOCKED FOR TODAY</b> (${reason} paper losses hit)`);
+          cooldowns.push(`• <code>${sym}</code>: 🔬 <b>PAPER LOCKED FOR TODAY${paperStratTag}</b> (${reason} paper losses hit)`);
         } else if (rec.paperPauseUntil && now < rec.paperPauseUntil) {
           const rem = Math.ceil((rec.paperPauseUntil - now) / 60000);
           if (rec.isPaperWinLocked) {
-            cooldowns.push(`• <code>${sym}</code>: 🔬 🏆 <b>PAPER 2-WIN PROFIT LOCK</b> (${rem}m left)`);
+            cooldowns.push(`• <code>${sym}</code>: 🔬 🏆 <b>PAPER 2-WIN PROFIT LOCK${paperStratTag}</b> (${rem}m left)`);
           } else {
-            cooldowns.push(`• <code>${sym}</code>: 🔬 Paper ${rem}m cooldown (${rec.paperDailyLosses || 0} loss today)`);
+            cooldowns.push(`• <code>${sym}</code>: 🔬 Paper${paperStratTag} ${rem}m cooldown (${rec.paperDailyLosses || 0} loss today)`);
           }
         }
 
@@ -1166,10 +1176,20 @@ const telegramHandlers = {
       `🛡️ <b>Risk Per Trade:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0).toFixed(1)}%)</code>`,
       `🏛️ <b>Strategy Configuration:</b> ${stratBadge}`,
       `🧠 <b>GodEyes Memory Brain:</b> 🟢 <b>ACTIVE (True SMC Premium/Discount Armor + Multi-Day Anchors)</b>`,
-      `📂 <b>Active Positions:</b> <code>${posLabel}</code>`,
-      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-      `🤖 <b>Engine State:</b> ${stateBadge}`
+      `📂 <b>Active Positions:</b> <code>${posLabel}</code>`
     ];
+
+    if (activeTrades.length > 0) {
+      for (const t of activeTrades) {
+        const stratName = t.strategy ? (t.strategy.includes('SMC Sweep') ? 'SMC Sweep' : (t.strategy.includes('5B') ? '5B Pro' : t.strategy)) : (t.isIncubation ? 'SMC Sweep' : '5B Pro');
+        const modeBadge = t.isIncubation ? '🔬 Paper' : '⚡ Live';
+        const dirLabel = t.type === 'bullish' ? '🟢 BUY' : '🔴 SELL';
+        lines.push(`   └ <code>${t.symbol}</code>: ${modeBadge} (<b>${stratName}</b>) ${dirLabel} @ <code>${t.entryPrice.toFixed(2)}</code>`);
+      }
+    }
+
+    lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
+    lines.push(`🤖 <b>Engine State:</b> ${stateBadge}`);
 
     if (cooldowns.length > 0) {
       lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
@@ -1213,9 +1233,12 @@ const telegramHandlers = {
       const symName = config.SYMBOLS[t.symbol] ? config.SYMBOLS[t.symbol].name : t.symbol;
       const slDist = Math.abs(t.entryPrice - t.stopLoss).toFixed(2);
       const tpDist = Math.abs(t.entryPrice - t.takeProfit).toFixed(2);
+      const stratName = t.strategy ? (t.strategy.includes('SMC Sweep') ? 'Strategy SMC Sweep' : (t.strategy.includes('5B') ? 'Strategy 5B Pro' : t.strategy)) : (t.isIncubation ? 'Strategy SMC Sweep' : 'Strategy 5B Pro');
+      const modeTag = t.isIncubation ? '🔬 [PAPER SANDBOX]' : '⚡ [LIVE REAL MONEY]';
 
       let statusTag = t.isBreakeven ? ' 🛡️ [BREAKEVEN]' : '';
-      lines.push(`<b>${t.symbol}</b> (${symName})${statusTag}`);
+      lines.push(`<b>${t.symbol}</b> (${symName})${statusTag} — ${modeTag}`);
+      lines.push(`• <b>Strategy:</b> <code>${stratName}</code>`);
       lines.push(`• <b>Action:</b> ${dirLabel} @ <code>${t.entryPrice.toFixed(2)}</code>`);
       lines.push(`• 🎯 <b>TP:</b> <code>${t.takeProfit.toFixed(2)}</code> (+${tpDist} pts • +$${(t.rewardUSD || 0).toFixed(2)})`);
       lines.push(`• 🛡️ <b>SL:</b> <code>${t.stopLoss.toFixed(2)}</code> (-${slDist} pts • -$${(t.riskUSD || 0).toFixed(2)})`);
