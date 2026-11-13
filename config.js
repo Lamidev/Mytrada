@@ -41,8 +41,8 @@ module.exports = {
   RISK_PERCENT: 3.0,                    // Risk exactly 3.0% of equity per trade
   RISK_AMOUNT_USD: 3.0,                 // Fallback baseline trade risk ($3.00)
   MIN_RISK_AMOUNT_USD: 3.0,             // Safety floor: risk never drops below $3.00
-  DYNAMIC_RISK_COMPOUNDING: true,       // 👑 Auto-adjust risk and lot sizes dynamically based on account equity
-  COMPOUNDING_FREQUENCY: "DAILY",       // 👑 Daily (Midnight) Re-anchoring for dynamic compounding
+  DYNAMIC_RISK_COMPOUNDING: true,       // 👑 Auto-adjust risk and lot sizes weekly based on account equity
+  COMPOUNDING_FREQUENCY: "WEEKLY",      // 👑 Weekly End-of-Week (Sunday Midnight) Re-anchoring
   MAX_CONCURRENT_LIVE_TRADES: 3,        // 👑 Max 3 Concurrent Live Positions (caps floating risk at ~7.5%-9%)
   
   // Timezone Settings (WAT / West Africa Time / GMT+1)

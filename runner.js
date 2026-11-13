@@ -229,16 +229,12 @@ function loadDynamicState() {
       if (data.date !== today) {
         data.date = today;
         data.dailyTargetLocked = false;
-        if (config.COMPOUNDING_FREQUENCY && config.COMPOUNDING_FREQUENCY.toUpperCase() === 'DAILY') {
-          saveWeeklyAnchorBalance(getCurrentAccountBalance());
-        }
-        const updatedTargets = calculateAutoDailyTargets(activePct, data.targetWinsMultiplier, data.maxLossMultiplier);
         data.dailyTargetUSD = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.AUTO_TARGET_ENABLED !== false)
-          ? updatedTargets.dailyTargetUSD
+          ? currentTargets.dailyTargetUSD
           : defaultTarget;
         data.dailyLossLocked = false;
         data.dailyMaxLossUSD = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.AUTO_TARGET_ENABLED !== false)
-          ? updatedTargets.dailyMaxLossUSD
+          ? currentTargets.dailyMaxLossUSD
           : defaultMaxLoss;
         data.portfolioConsecutiveLosses = 0;
         data.portfolioPauseUntil = 0;
@@ -3094,9 +3090,6 @@ async function monitorMarket() {
     }
 
     // 👑 2. Load dynamic state for the new day
-    if (config.COMPOUNDING_FREQUENCY && config.COMPOUNDING_FREQUENCY.toUpperCase() === 'DAILY') {
-      saveWeeklyAnchorBalance(getCurrentAccountBalance());
-    }
     dynamicState = loadDynamicState();
     const activeRiskPct = dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0;
     const compRisk = getWeeklyCompoundedRisk(activeRiskPct);
@@ -3111,21 +3104,20 @@ async function monitorMarket() {
       ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)} USD (Auto: ${maxLossMultiplier} Losses • -${maxLossMultiplier.toFixed(1)}R Floor)`
       : 'Disabled';
 
-    const isDaily = config.COMPOUNDING_FREQUENCY && config.COMPOUNDING_FREQUENCY.toUpperCase() === 'DAILY';
     const newDayWatchlist = await buildDailyStructureWatchlist();
 
     await sendTelegramMessage([
       `🌅 <b>[NEW TRADING DAY ACTIVATED]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `💵 <b>Starting Balance:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
-      `🏦 <b>${isDaily ? 'Daily Compounded Anchor' : 'Week Anchor Balance'}:</b> <code>$${compRisk.balance.toFixed(2)} USD</code>`,
-      `🛡️ <b>Trade Risk Model:</b> <code>${activeRiskPct.toFixed(1)}% ($${compRisk.riskUSD.toFixed(2)} USD / trade ${isDaily ? 'anchored to day start' : 'anchored to week start'})</code>`,
+      `🏦 <b>Week Anchor Balance:</b> <code>$${compRisk.balance.toFixed(2)} USD</code>`,
+      `🛡️ <b>Trade Risk Model:</b> <code>${activeRiskPct.toFixed(1)}% ($${compRisk.riskUSD.toFixed(2)} USD / trade anchored to week start)</code>`,
       `🎯 <b>Daily Profit Target:</b> <code>${newDayTargetLabel}</code>`,
       `🛡️ <b>Daily Max Loss Floor:</b> <code>${newDayMaxLossLabel}</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       newDayWatchlist,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-      `💡 <i>Target & Max Loss auto-calculated from ${isDaily ? 'daily' : 'weekly'} start balance. Send /target or /maxloss to override anytime.</i>`
+      `💡 <i>Target & Max Loss auto-calculated from weekly start balance. Send /target or /maxloss to override anytime.</i>`
     ].join('\n'));
   }
 
@@ -3671,10 +3663,18 @@ async function main() {
   }
 
   const compRisk = getWeeklyCompoundedRisk();
-  const startupTargetLabel = dynamicState.dailyTargetUSD > 0 ? `$${dynamicState.dailyTargetUSD.toFixed(2)}` : 'None';
-  const startupLossLabel = dynamicState.dailyMaxLossUSD > 0 ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)}` : 'None';
-  const targetLabel = dynamicState.dailyTargetUSD > 0 ? `$${dynamicState.dailyTargetUSD.toFixed(2)} USD` : 'Disabled';
-  const maxLossLabel = dynamicState.dailyMaxLossUSD > 0 ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)} USD` : 'Disabled';
+  const targetWins = dynamicState.targetWinsMultiplier || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.TARGET_WINS_MULTIPLIER) || 2;
+  const maxLosses = dynamicState.maxLossMultiplier || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.MAX_LOSS_LOSSES_MULTIPLIER) || 2;
+  const activeRiskPct = dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0;
+
+  const startupTargetLabel = dynamicState.dailyTargetUSD > 0 ? `$${dynamicState.dailyTargetUSD.toFixed(2)} (${targetWins}W)` : 'None';
+  const startupLossLabel = dynamicState.dailyMaxLossUSD > 0 ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)} (${maxLosses}L)` : 'None';
+  const targetLabel = dynamicState.dailyTargetUSD > 0 
+    ? `+$${dynamicState.dailyTargetUSD.toFixed(2)} USD (Auto: ${targetWins} Wins • +${(targetWins * 1.3).toFixed(1)}R Target)` 
+    : 'Disabled';
+  const maxLossLabel = dynamicState.dailyMaxLossUSD > 0 
+    ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)} USD (Auto: ${maxLosses} Losses • -${maxLosses.toFixed(1)}R Floor)` 
+    : 'Disabled';
 
   if (dynamicState.activeStrategy === 'NONE') {
     console.log(`\n👑 ${BOLD}${CYAN}Mytrada Signal Runner — ONLINE IN STANDBY MODE${RESET}`);
@@ -3685,9 +3685,10 @@ async function main() {
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `• <b>Status:</b> 🟡 <b>STANDBY (Awaiting Strategy Launch)</b>`,
       `• <b>Universe:</b> <code>${Object.keys(config.SYMBOLS).length} Elite Pairs</code>`,
-      `• <b>Account Equity:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
+      `• <b>Week Anchor Balance:</b> <code>$${compRisk.balance.toFixed(2)} USD</code> (Live Equity: <code>$${compRisk.liveBalance.toFixed(2)} USD</code>)`,
       `• <b>Daily Profit Target:</b> <code>${targetLabel}</code>`,
       `• <b>Daily Max Loss Floor:</b> <code>${maxLossLabel}</code>`,
+      `• <b>Risk Model:</b> <code>Fixed 1:1.3 R:R (${activeRiskPct.toFixed(1)}% Risk • $${compRisk.riskUSD.toFixed(2)} USD/trade)</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `💡 <b>Send a command to launch your strategy:</b>`,
       `• <code>/strategy sweep</code> — Launch Strategy SMC Sweep (Non-Spike Paper)`,
@@ -3712,9 +3713,10 @@ async function main() {
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `• <b>Strategy:</b> <code>${stratDisplayName}</code>`,
       `• <b>Universe:</b> <code>${Object.keys(config.SYMBOLS).length} Elite Pairs</code>`,
+      `• <b>Week Anchor Balance:</b> <code>$${compRisk.balance.toFixed(2)} USD</code> (Live Equity: <code>$${compRisk.liveBalance.toFixed(2)} USD</code>)`,
       `• <b>Daily Profit Target:</b> <code>${targetLabel}</code>`,
       `• <b>Daily Max Loss Floor:</b> <code>${maxLossLabel}</code>`,
-      `• <b>Risk Model:</b> <code>Fixed 1:1.3 R:R (3.0% Risk)</code>`,
+      `• <b>Risk Model:</b> <code>Fixed 1:1.3 R:R (${activeRiskPct.toFixed(1)}% Risk • $${compRisk.riskUSD.toFixed(2)} USD/trade)</code>`,
       `• <b>Telegram Control:</b> <b>ACTIVE</b> (Send <code>/help</code> for commands)`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
     ].join('\n'));

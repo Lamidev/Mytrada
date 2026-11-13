@@ -440,16 +440,6 @@ function getWeeklyAnchorBalance() {
     try {
       const data = JSON.parse(fs.readFileSync(WEEKLY_ANCHOR_FILE, 'utf8'));
       if (data && typeof data.anchorBalance === 'number' && data.anchorBalance > 0) {
-        // If Daily Compounding is active, automatically re-anchor when entering a new calendar day
-        if (config.COMPOUNDING_FREQUENCY && config.COMPOUNDING_FREQUENCY.toUpperCase() === 'DAILY') {
-          const todayStr = getDateString(Date.now());
-          const anchorDateStr = data.updatedAt ? getDateString(new Date(data.updatedAt).getTime()) : null;
-          if (anchorDateStr && anchorDateStr !== todayStr) {
-            const currentBalance = getCurrentAccountBalance();
-            saveWeeklyAnchorBalance(currentBalance);
-            return currentBalance;
-          }
-        }
         return data.anchorBalance;
       }
     } catch (e) {
