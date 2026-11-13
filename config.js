@@ -41,8 +41,8 @@ module.exports = {
   RISK_PERCENT: 3.0,                    // Risk exactly 3.0% of equity per trade
   RISK_AMOUNT_USD: 3.0,                 // Fallback baseline trade risk ($3.00)
   MIN_RISK_AMOUNT_USD: 3.0,             // Safety floor: risk never drops below $3.00
-  DYNAMIC_RISK_COMPOUNDING: true,       // 👑 Auto-adjust risk and lot sizes weekly based on account equity
-  COMPOUNDING_FREQUENCY: "WEEKLY",      // 👑 Weekly End-of-Week (Sunday Midnight) Re-anchoring
+  DYNAMIC_RISK_COMPOUNDING: true,       // 👑 Auto-adjust risk and lot sizes dynamically based on account equity
+  COMPOUNDING_FREQUENCY: "DAILY",       // 👑 Daily (Midnight) Re-anchoring for dynamic compounding
   MAX_CONCURRENT_LIVE_TRADES: 3,        // 👑 Max 3 Concurrent Live Positions (caps floating risk at ~7.5%-9%)
   
   // Timezone Settings (WAT / West Africa Time / GMT+1)
@@ -70,9 +70,9 @@ module.exports = {
     MAX_DAILY_LOSSES_PER_SYMBOL: 2,      // 👑 2 Daily Losses = Halted on symbol for remainder of day
     PORTFOLIO_CONSECUTIVE_LOSS_LIMIT: 3, // 👑 3 Consecutive Losses across ANY pairs = 120m (2-Hour) Portfolio-wide Cooldown
     PORTFOLIO_LOSS_PAUSE_MINS: 120,      // 👑 120-minute (2-Hour) portfolio pause duration (2 full 1H cycles)
-    AUTO_TARGET_ENABLED: true,           // 👑 Auto-set Daily Target and Daily Max Loss from Weekly Risk
-    TARGET_WINS_MULTIPLIER: 3,           // 👑 3 Wins = 3.9R Daily Profit Target (Locks profit & stops afternoon giveback)
-    MAX_LOSS_LOSSES_MULTIPLIER: 3,       // 👑 3 Losses = 3.0R Daily Max Loss Floor (Caps drawdown)
+    AUTO_TARGET_ENABLED: true,           // 👑 Auto-set Daily Target and Daily Max Loss from Compounded Risk
+    TARGET_WINS_MULTIPLIER: 2,           // 👑 2 Wins = 2.6R Daily Profit Target (Locks profit & stops afternoon giveback)
+    MAX_LOSS_LOSSES_MULTIPLIER: 2,       // 👑 2 Losses = 2.0R Daily Max Loss Floor (Caps drawdown)
     DEFAULT_DAILY_PROFIT_TARGET_USD: 0,  // 👑 Default daily profit target disabled (0) — set dynamically via Telegram /target <amt>
     DEFAULT_DAILY_MAX_LOSS_USD: 0        // 👑 Default daily max loss shield disabled (0) — set dynamically via Telegram /maxloss <amt>
   },

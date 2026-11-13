@@ -452,10 +452,10 @@ async function handleCommand(rawText, handlers) {
         `• <code>/mode gold paper</code> | <code>/mode gold live</code> ➜ Gold mode`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🛡️ <b>RISK, QUARANTINE & GRADUATION:</b>`,
-        `• <code>/risk 3.0</code> ➜ Set risk % anchored to start-of-week equity`,
-        `• <code>/autotarget 3 3</code> ➜ Auto target & loss floor (e.g. 3 wins / 3 losses)`,
-        `• <code>/target 250</code> ➜ Override daily profit target (or <code>/target 3w</code>)`,
-        `• <code>/maxloss 150</code> ➜ Override daily max loss floor (or <code>/maxloss 3l</code>)`,
+        `• <code>/risk 3.0</code> ➜ Set risk % anchored to account equity`,
+        `• <code>/autotarget 2 2</code> ➜ Auto target & loss floor (e.g. 2 wins / 2 losses)`,
+        `• <code>/target 2w</code> ➜ Override daily profit target (e.g. <code>/target 2w</code> or <code>/target 250</code>)`,
+        `• <code>/maxloss 2l</code> ➜ Override daily max loss floor (e.g. <code>/maxloss 2l</code> or <code>/maxloss 150</code>)`,
         `• <code>/promote CRASH150N</code> ➜ Graduate incubation pair to Live Trading`,
         `• <code>/demote CRASH150N</code> ➜ Demote pair back to Incubation Sandbox`,
         `• <code>/quarantine BOOM300N</code> ➜ Move pair to Paper Mode ($0 risk)`,
@@ -787,7 +787,7 @@ async function handleCommand(rawText, handlers) {
     case '/target': {
       if (!arg1) {
         const currentTarget = handlers.getDailyTarget ? handlers.getDailyTarget() : 0;
-        await sendTelegramMessage(`🎯 Current Daily Profit Target: <b>${currentTarget > 0 ? `$${currentTarget.toFixed(2)} USD` : 'Disabled (Full Session)'}</b>\n\nUsage: <code>/target 250</code>, <code>/target 3w</code>, or <code>/target off</code>`);
+        await sendTelegramMessage(`🎯 Current Daily Profit Target: <b>${currentTarget > 0 ? `$${currentTarget.toFixed(2)} USD` : 'Disabled (Full Session)'}</b>\n\nUsage: <code>/target 2w</code>, <code>/target 250</code>, or <code>/target off</code>`);
         break;
       }
 
@@ -828,7 +828,7 @@ async function handleCommand(rawText, handlers) {
     case '/losslimit': {
       if (!arg1) {
         const currentLoss = handlers.getDailyMaxLoss ? handlers.getDailyMaxLoss() : 0;
-        await sendTelegramMessage(`🛡️ Current Daily Max Loss Floor: <b>${currentLoss > 0 ? `-$${currentLoss.toFixed(2)} USD` : 'Disabled (No Floor)'}</b>\n\nUsage: <code>/maxloss 200</code>, <code>/maxloss 3l</code>, or <code>/maxloss off</code>`);
+        await sendTelegramMessage(`🛡️ Current Daily Max Loss Floor: <b>${currentLoss > 0 ? `-$${currentLoss.toFixed(2)} USD` : 'Disabled (No Floor)'}</b>\n\nUsage: <code>/maxloss 2l</code>, <code>/maxloss 200</code>, or <code>/maxloss off</code>`);
         break;
       }
 

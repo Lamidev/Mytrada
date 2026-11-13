@@ -174,10 +174,10 @@ function calculateAutoDailyTargets(customPct = null, customWins = null, customLo
     const compRisk = getWeeklyCompoundedRisk(activePct);
     const targetMultiplier = (typeof customWins === 'number' && customWins > 0)
       ? customWins
-      : ((dynamicState && dynamicState.targetWinsMultiplier) || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.TARGET_WINS_MULTIPLIER) || 3);
+      : ((dynamicState && dynamicState.targetWinsMultiplier) || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.TARGET_WINS_MULTIPLIER) || 2);
     const maxLossMultiplier = (typeof customLosses === 'number' && customLosses > 0)
       ? customLosses
-      : ((dynamicState && dynamicState.maxLossMultiplier) || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.MAX_LOSS_LOSSES_MULTIPLIER) || 3);
+      : ((dynamicState && dynamicState.maxLossMultiplier) || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.MAX_LOSS_LOSSES_MULTIPLIER) || 2);
     const autoTarget = parseFloat((compRisk.rewardUSD * targetMultiplier).toFixed(2));
     const autoMaxLoss = parseFloat((compRisk.riskUSD * maxLossMultiplier).toFixed(2));
     return {
@@ -198,8 +198,8 @@ function calculateAutoDailyTargets(customPct = null, customWins = null, customLo
       rewardUSD: 0,
       dailyTargetUSD: 0,
       dailyMaxLossUSD: 0,
-      targetMultiplier: 3,
-      maxLossMultiplier: 3
+      targetMultiplier: 2,
+      maxLossMultiplier: 2
     };
   }
 }
@@ -218,23 +218,27 @@ function loadDynamicState() {
   if (fs.existsSync(DYNAMIC_STATE_FILE)) {
     try {
       const data = JSON.parse(fs.readFileSync(DYNAMIC_STATE_FILE, 'utf8'));
-      if (data.targetWinsMultiplier === undefined) {
-        data.targetWinsMultiplier = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.TARGET_WINS_MULTIPLIER) || 3;
+      if (data.targetWinsMultiplier === undefined || data.targetWinsMultiplier === 3) {
+        data.targetWinsMultiplier = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.TARGET_WINS_MULTIPLIER) || 2;
       }
-      if (data.maxLossMultiplier === undefined) {
-        data.maxLossMultiplier = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.MAX_LOSS_LOSSES_MULTIPLIER) || 3;
+      if (data.maxLossMultiplier === undefined || data.maxLossMultiplier === 3) {
+        data.maxLossMultiplier = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.MAX_LOSS_LOSSES_MULTIPLIER) || 2;
       }
       const activePct = data.customRiskPercent || config.RISK_PERCENT || 3.0;
       const currentTargets = calculateAutoDailyTargets(activePct, data.targetWinsMultiplier, data.maxLossMultiplier);
       if (data.date !== today) {
         data.date = today;
         data.dailyTargetLocked = false;
+        if (config.COMPOUNDING_FREQUENCY && config.COMPOUNDING_FREQUENCY.toUpperCase() === 'DAILY') {
+          saveWeeklyAnchorBalance(getCurrentAccountBalance());
+        }
+        const updatedTargets = calculateAutoDailyTargets(activePct, data.targetWinsMultiplier, data.maxLossMultiplier);
         data.dailyTargetUSD = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.AUTO_TARGET_ENABLED !== false)
-          ? currentTargets.dailyTargetUSD
+          ? updatedTargets.dailyTargetUSD
           : defaultTarget;
         data.dailyLossLocked = false;
         data.dailyMaxLossUSD = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.AUTO_TARGET_ENABLED !== false)
-          ? currentTargets.dailyMaxLossUSD
+          ? updatedTargets.dailyMaxLossUSD
           : defaultMaxLoss;
         data.portfolioConsecutiveLosses = 0;
         data.portfolioPauseUntil = 0;
@@ -243,12 +247,12 @@ function loadDynamicState() {
         data.is6proPaused = false;
         saveDynamicState(data);
       }
-      if (data.dailyTargetUSD === 250 || data.dailyTargetUSD === undefined || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.AUTO_TARGET_ENABLED && data.dailyTargetUSD === 0)) {
+      if (data.dailyTargetUSD === 250 || data.dailyTargetUSD === 598.35 || data.dailyTargetUSD === undefined || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.AUTO_TARGET_ENABLED && data.dailyTargetUSD === 0)) {
         data.dailyTargetUSD = currentTargets.dailyTargetUSD || defaultTarget;
         data.dailyTargetLocked = false;
         saveDynamicState(data);
       }
-      if (data.dailyMaxLossUSD === undefined || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.AUTO_TARGET_ENABLED && data.dailyMaxLossUSD === 0)) {
+      if (data.dailyMaxLossUSD === 460.26 || data.dailyMaxLossUSD === undefined || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.AUTO_TARGET_ENABLED && data.dailyMaxLossUSD === 0)) {
         data.dailyMaxLossUSD = currentTargets.dailyMaxLossUSD || defaultMaxLoss;
         data.dailyLossLocked = false;
         saveDynamicState(data);
@@ -285,8 +289,8 @@ function loadDynamicState() {
     dailyLossLocked: false,
     isManuallyPaused: false,
     customRiskPercent: config.RISK_PERCENT || 3.0,
-    targetWinsMultiplier: (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.TARGET_WINS_MULTIPLIER) || 3,
-    maxLossMultiplier: (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.MAX_LOSS_LOSSES_MULTIPLIER) || 3,
+    targetWinsMultiplier: (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.TARGET_WINS_MULTIPLIER) || 2,
+    maxLossMultiplier: (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.MAX_LOSS_LOSSES_MULTIPLIER) || 2,
     portfolioConsecutiveLosses: 0,
     portfolioPauseUntil: 0,
     activeStrategy: 'BOTH',
@@ -3090,11 +3094,14 @@ async function monitorMarket() {
     }
 
     // 👑 2. Load dynamic state for the new day
+    if (config.COMPOUNDING_FREQUENCY && config.COMPOUNDING_FREQUENCY.toUpperCase() === 'DAILY') {
+      saveWeeklyAnchorBalance(getCurrentAccountBalance());
+    }
     dynamicState = loadDynamicState();
     const activeRiskPct = dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0;
     const compRisk = getWeeklyCompoundedRisk(activeRiskPct);
-    const targetMultiplier = dynamicState.targetWinsMultiplier || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.TARGET_WINS_MULTIPLIER) || 3;
-    const maxLossMultiplier = dynamicState.maxLossMultiplier || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.MAX_LOSS_LOSSES_MULTIPLIER) || 3;
+    const targetMultiplier = dynamicState.targetWinsMultiplier || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.TARGET_WINS_MULTIPLIER) || 2;
+    const maxLossMultiplier = dynamicState.maxLossMultiplier || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.MAX_LOSS_LOSSES_MULTIPLIER) || 2;
 
     // 👑 3. Send NEW TRADING DAY banner SECOND
     const newDayTargetLabel = (dynamicState.dailyTargetUSD && dynamicState.dailyTargetUSD > 0)
@@ -3104,20 +3111,21 @@ async function monitorMarket() {
       ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)} USD (Auto: ${maxLossMultiplier} Losses • -${maxLossMultiplier.toFixed(1)}R Floor)`
       : 'Disabled';
 
+    const isDaily = config.COMPOUNDING_FREQUENCY && config.COMPOUNDING_FREQUENCY.toUpperCase() === 'DAILY';
     const newDayWatchlist = await buildDailyStructureWatchlist();
 
     await sendTelegramMessage([
       `🌅 <b>[NEW TRADING DAY ACTIVATED]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `💵 <b>Starting Balance:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
-      `🏦 <b>Week Anchor Balance:</b> <code>$${compRisk.balance.toFixed(2)} USD</code>`,
-      `🛡️ <b>Trade Risk Model:</b> <code>${activeRiskPct.toFixed(1)}% ($${compRisk.riskUSD.toFixed(2)} USD / trade anchored to week start)</code>`,
+      `🏦 <b>${isDaily ? 'Daily Compounded Anchor' : 'Week Anchor Balance'}:</b> <code>$${compRisk.balance.toFixed(2)} USD</code>`,
+      `🛡️ <b>Trade Risk Model:</b> <code>${activeRiskPct.toFixed(1)}% ($${compRisk.riskUSD.toFixed(2)} USD / trade ${isDaily ? 'anchored to day start' : 'anchored to week start'})</code>`,
       `🎯 <b>Daily Profit Target:</b> <code>${newDayTargetLabel}</code>`,
       `🛡️ <b>Daily Max Loss Floor:</b> <code>${newDayMaxLossLabel}</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       newDayWatchlist,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-      `💡 <i>Target & Max Loss auto-calculated from weekly start balance. Send /target or /maxloss to override anytime.</i>`
+      `💡 <i>Target & Max Loss auto-calculated from ${isDaily ? 'daily' : 'weekly'} start balance. Send /target or /maxloss to override anytime.</i>`
     ].join('\n'));
   }
 

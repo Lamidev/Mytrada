@@ -440,6 +440,16 @@ function getWeeklyAnchorBalance() {
     try {
       const data = JSON.parse(fs.readFileSync(WEEKLY_ANCHOR_FILE, 'utf8'));
       if (data && typeof data.anchorBalance === 'number' && data.anchorBalance > 0) {
+        // If Daily Compounding is active, automatically re-anchor when entering a new calendar day
+        if (config.COMPOUNDING_FREQUENCY && config.COMPOUNDING_FREQUENCY.toUpperCase() === 'DAILY') {
+          const todayStr = getDateString(Date.now());
+          const anchorDateStr = data.updatedAt ? getDateString(new Date(data.updatedAt).getTime()) : null;
+          if (anchorDateStr && anchorDateStr !== todayStr) {
+            const currentBalance = getCurrentAccountBalance();
+            saveWeeklyAnchorBalance(currentBalance);
+            return currentBalance;
+          }
+        }
         return data.anchorBalance;
       }
     } catch (e) {
@@ -630,8 +640,8 @@ function generateWeeklyReport(reanchor = false, referenceDate = null) {
 
   // ── DAILY PERFORMANCE BREAKDOWN (MONDAY THROUGH SUNDAY) ──
   const compRisk = getWeeklyCompoundedRisk();
-  let targetMultiplier = 3;
-  let maxLossMultiplier = 3;
+  let targetMultiplier = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.TARGET_WINS_MULTIPLIER) || 2;
+  let maxLossMultiplier = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.MAX_LOSS_LOSSES_MULTIPLIER) || 2;
   try {
     const dynamicStatePath = path.join(CACHE_DIR, 'dynamic_state.json');
     if (fs.existsSync(dynamicStatePath)) {
