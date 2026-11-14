@@ -685,33 +685,41 @@ async function handleCommand(rawText, handlers) {
       if (sendToChat) {
         await sendLongTelegramText(exp.content);
       } else {
-        const s6Sign = (exp.s6Stats && exp.s6Stats.netUSD >= 0) ? '+' : '-';
-        const s6RSign = (exp.s6Stats && exp.s6Stats.netR >= 0) ? '+' : '';
-        const s5bSign = (exp.s5bStats && exp.s5bStats.netUSD >= 0) ? '+' : (exp.liveStats && exp.liveStats.netUSD >= 0 ? '+' : '-');
-        const s5bRSign = (exp.s5bStats && exp.s5bStats.netR >= 0) ? '+' : (exp.liveStats && exp.liveStats.netR >= 0 ? '+' : '');
-        const smcSign = (exp.smcStats && exp.smcStats.netUSD >= 0) ? '+' : '-';
-        const smcRSign = (exp.smcStats && exp.smcStats.netR >= 0) ? '+' : '';
+        const s6NetUSD = exp.s6Stats ? exp.s6Stats.netUSD : 0;
+        const s6NetR = exp.s6Stats ? exp.s6Stats.netR : 0;
+        const s6Sign = s6NetUSD >= 0 ? '+' : '-';
+        const s6RSign = s6NetR > 0 ? '+' : '';
+
+        const s5bNetUSD = exp.s5bStats ? exp.s5bStats.netUSD : (exp.liveStats ? exp.liveStats.netUSD : (exp.netUSD || 0));
+        const s5bNetR = exp.s5bStats ? exp.s5bStats.netR : (exp.liveStats ? exp.liveStats.netR : (exp.netR || 0));
+        const s5bSign = s5bNetUSD >= 0 ? '+' : '-';
+        const s5bRSign = s5bNetR > 0 ? '+' : '';
+
+        const smcNetUSD = exp.smcStats ? exp.smcStats.netUSD : 0;
+        const smcNetR = exp.smcStats ? exp.smcStats.netR : 0;
+        const smcSign = smcNetUSD >= 0 ? '+' : '-';
+        const smcRSign = smcNetR > 0 ? '+' : '';
 
         const s6Trades = exp.s6Stats ? exp.s6Stats.trades : 0;
         const s6Wins = exp.s6Stats ? exp.s6Stats.wins : 0;
         const s6Losses = exp.s6Stats ? exp.s6Stats.losses : 0;
         const s6WR = exp.s6Stats ? exp.s6Stats.winRate : '0.0';
-        const s6USD = Math.abs(exp.s6Stats ? exp.s6Stats.netUSD : 0).toFixed(2);
-        const s6R = (exp.s6Stats ? exp.s6Stats.netR : 0).toFixed(1);
+        const s6USD = Math.abs(s6NetUSD).toFixed(2);
+        const s6R = s6NetR.toFixed(1);
 
-        const s5bTrades = exp.s5bStats ? exp.s5bStats.trades : (exp.liveStats ? exp.liveStats.trades : exp.liveCount);
-        const s5bWins = exp.s5bStats ? exp.s5bStats.wins : (exp.liveStats ? exp.liveStats.wins : exp.wins);
-        const s5bLosses = exp.s5bStats ? exp.s5bStats.losses : (exp.liveStats ? exp.liveStats.losses : exp.losses);
+        const s5bTrades = exp.s5bStats ? exp.s5bStats.trades : (exp.liveStats ? exp.liveStats.trades : (exp.liveCount || 0));
+        const s5bWins = exp.s5bStats ? exp.s5bStats.wins : (exp.liveStats ? exp.liveStats.wins : (exp.wins || 0));
+        const s5bLosses = exp.s5bStats ? exp.s5bStats.losses : (exp.liveStats ? exp.liveStats.losses : (exp.losses || 0));
         const s5bWR = exp.s5bStats ? exp.s5bStats.winRate : (exp.liveStats ? exp.liveStats.winRate : '0.0');
-        const s5bUSD = Math.abs(exp.s5bStats ? exp.s5bStats.netUSD : (exp.liveStats ? exp.liveStats.netUSD : exp.netUSD)).toFixed(2);
-        const s5bR = (exp.s5bStats ? exp.s5bStats.netR : (exp.liveStats ? exp.liveStats.netR : exp.netR)).toFixed(1);
+        const s5bUSD = Math.abs(s5bNetUSD).toFixed(2);
+        const s5bR = s5bNetR.toFixed(1);
 
         const smcTrades = exp.smcStats ? exp.smcStats.trades : 0;
         const smcWins = exp.smcStats ? exp.smcStats.wins : 0;
         const smcLosses = exp.smcStats ? exp.smcStats.losses : 0;
         const smcWR = exp.smcStats ? exp.smcStats.winRate : '0.0';
-        const smcUSD = Math.abs(exp.smcStats ? exp.smcStats.netUSD : 0).toFixed(2);
-        const smcR = (exp.smcStats ? exp.smcStats.netR : 0).toFixed(1);
+        const smcUSD = Math.abs(smcNetUSD).toFixed(2);
+        const smcR = smcNetR.toFixed(1);
 
         const captionLines = [
           `📋 <b>[MYTRADA TRADE EXPORT — ${exp.dateStr}]</b>`,
