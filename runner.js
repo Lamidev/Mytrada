@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { getCandles } = require('./dataFetcher');
+const { detectStrategy6Setup } = require('./strategy6');
 const { auditTradeWithVision } = require('./aiVisionAuditor');
 const { sendTelegramMessage, startTelegramListener } = require('./telegramBot');
 const { 
@@ -1145,10 +1146,17 @@ const telegramHandlers = {
       : 'Disabled (No Floor)';
 
     let stratBadge = '🟡 <b>STANDBY (Awaiting /strategy command)</b>';
-    if (dynamicState.activeStrategy === 'BOTH') {
-      const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (dynamicState.mode5b === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      const modeSweepLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.mode6pro === 'LIVE' ? '🟢 LIVE' : '🔬 PAPER');
-      stratBadge = `⚡ <b>DUAL ENGINE</b> (5B Pro: ${mode5bLabel} | SMC Sweep: ${modeSweepLabel})`;
+    const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || dynamicState.activeStrategy === 'BOTH' || dynamicState.activeStrategy === 'ALL';
+    const isGlobalPaper = dynamicState.executionMode === 'PAPER';
+
+    if (isTriEngine || isGlobalPaper) {
+      const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode5b === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+      const modeS6Label = dynamicState.isS6Paused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode6 === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+      const modeSweepLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode6pro === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+      stratBadge = `⚡ <b>TRI-ENGINE TEST SANDBOX</b> (5B Pro: ${mode5bLabel} | Strategy 6: ${modeS6Label} | SMC Sweep: ${modeSweepLabel})`;
+    } else if (dynamicState.activeStrategy === 'STRATEGY_6') {
+      const modeS6Label = dynamicState.isS6Paused ? '⏸️ PAUSED' : (dynamicState.mode6 === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+      stratBadge = `🛡️ <b>Strategy 6 (Structural Sniper)</b> (${modeS6Label})`;
     } else if (dynamicState.activeStrategy === 'STRATEGY_6_PRO') {
       const modeSweepLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.mode6pro === 'LIVE' ? '🟢 LIVE' : '🔬 PAPER');
       stratBadge = `🔬 <b>Strategy SMC Sweep</b> (${modeSweepLabel})`;
@@ -1181,7 +1189,7 @@ const telegramHandlers = {
 
     if (activeTrades.length > 0) {
       for (const t of activeTrades) {
-        const stratName = t.strategy ? (t.strategy.includes('SMC Sweep') ? 'SMC Sweep' : (t.strategy.includes('5B') ? '5B Pro' : t.strategy)) : (t.isIncubation ? 'SMC Sweep' : '5B Pro');
+        const stratName = t.strategy ? (t.strategy.includes('Strategy 6') ? 'Strategy 6' : (t.strategy.includes('SMC Sweep') ? 'SMC Sweep' : (t.strategy.includes('5B') ? '5B Pro' : t.strategy))) : (t.isIncubation ? 'Paper Sandbox' : '5B Pro');
         const modeBadge = t.isIncubation ? '🔬 Paper' : '⚡ Live';
         const dirLabel = t.type === 'bullish' ? '🟢 BUY' : '🔴 SELL';
         lines.push(`   └ <code>${t.symbol}</code>: ${modeBadge} (<b>${stratName}</b>) ${dirLabel} @ <code>${t.entryPrice.toFixed(2)}</code>`);
@@ -1233,7 +1241,7 @@ const telegramHandlers = {
       const symName = config.SYMBOLS[t.symbol] ? config.SYMBOLS[t.symbol].name : t.symbol;
       const slDist = Math.abs(t.entryPrice - t.stopLoss).toFixed(2);
       const tpDist = Math.abs(t.entryPrice - t.takeProfit).toFixed(2);
-      const stratName = t.strategy ? (t.strategy.includes('SMC Sweep') ? 'Strategy SMC Sweep' : (t.strategy.includes('5B') ? 'Strategy 5B Pro' : t.strategy)) : (t.isIncubation ? 'Strategy SMC Sweep' : 'Strategy 5B Pro');
+      const stratName = t.strategy ? (t.strategy.includes('Strategy 6') ? 'Strategy 6' : (t.strategy.includes('SMC Sweep') ? 'Strategy SMC Sweep' : (t.strategy.includes('5B') ? 'Strategy 5B Pro' : t.strategy))) : (t.isIncubation ? 'Strategy SMC Sweep' : 'Strategy 5B Pro');
       const modeTag = t.isIncubation ? '🔬 [PAPER SANDBOX]' : '⚡ [LIVE REAL MONEY]';
 
       let statusTag = t.isBreakeven ? ' 🛡️ [BREAKEVEN]' : '';
@@ -3193,9 +3201,11 @@ async function monitorMarket() {
   }
 
   const isBoth = dynamicState.activeStrategy === 'BOTH';
-  const scanStratLabel = isBoth
-    ? 'Dual Engine (5B Pro Live + SMC Sweep Paper)'
-    : (dynamicState.activeStrategy === 'STRATEGY_6_PRO' ? 'Strategy SMC Sweep' : 'Strategy 5B Pro');
+  const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || isBoth || dynamicState.activeStrategy === 'ALL';
+  const isGlobalPaper = dynamicState.executionMode === 'PAPER';
+  const scanStratLabel = isTriEngine
+    ? 'Tri-Engine Test Sandbox (5B Pro + Strategy 6 + SMC Sweep — ALL PAPER)'
+    : (dynamicState.activeStrategy === 'STRATEGY_6' ? 'Strategy 6' : (dynamicState.activeStrategy === 'STRATEGY_6_PRO' ? 'Strategy SMC Sweep' : 'Strategy 5B Pro'));
 
   console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for ${scanStratLabel}...${RESET}`);
   console.log(`-------------------------------------------------------------------------------------------------`);
@@ -3211,24 +3221,28 @@ async function monitorMarket() {
       const symHealth = getPairHealth(symbol);
       const isQuarantined = symHealth.isQuarantined === true;
 
-      // ── INDEPENDENT STRATEGY COOLDOWN VERIFICATION (Option A) ──
+      // ── INDEPENDENT STRATEGY COOLDOWN VERIFICATION (Tri-Engine Architecture) ──
       const isMonitorOnly = Boolean(symConfig.monitorOnly);
       const is6proLockedState = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
-      const is6proPaper = is6proLockedState || isQuarantined || isMonitorOnly || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
-      const is5bPaper = is6proLockedState || isQuarantined || isMonitorOnly || (dynamicState.mode5b || 'LIVE') === 'PAPER';
+      const is6proPaper = isGlobalPaper || is6proLockedState || isQuarantined || isMonitorOnly || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
+      const is5bPaper = isGlobalPaper || is6proLockedState || isQuarantined || isMonitorOnly || (dynamicState.mode5b || 'PAPER') === 'PAPER';
+      const isS6Paper = isGlobalPaper || is6proLockedState || isQuarantined || isMonitorOnly || (dynamicState.mode6 || 'PAPER') === 'PAPER';
 
-      const is6proEnabled = !dynamicState.is6proPaused && (isBoth || dynamicState.activeStrategy === 'STRATEGY_6_PRO');
-      const is5bEnabled = !dynamicState.is5bPaused && (isBoth || dynamicState.activeStrategy === 'STRATEGY_5B');
+      const is6proEnabled = !dynamicState.is6proPaused && (isTriEngine || dynamicState.activeStrategy === 'STRATEGY_6_PRO');
+      const is5bEnabled = !dynamicState.is5bPaused && (isTriEngine || dynamicState.activeStrategy === 'STRATEGY_5B');
+      const isS6Enabled = !dynamicState.isS6Paused && (isTriEngine || dynamicState.activeStrategy === 'STRATEGY_6');
 
       const cb6pro = isSymbolInCooldown(symbol, is6proPaper);
       const cb5b = isSymbolInCooldown(symbol, is5bPaper);
+      const cbS6 = isSymbolInCooldown(symbol, isS6Paper);
 
       const canRun6Pro = is6proEnabled && !cb6pro.inCooldown;
       const canRun5B = is5bEnabled && !cb5b.inCooldown;
+      const canRunS6 = isS6Enabled && !cbS6.inCooldown;
 
       // If neither engine is permitted to scan this symbol, still track HTF structure shifts & active exits
-      if (!canRun6Pro && !canRun5B) {
-        const skipReason = (is6proEnabled && cb6pro.inCooldown) ? cb6pro.reason : (cb5b.reason || 'Cooldown active');
+      if (!canRun6Pro && !canRun5B && !canRunS6) {
+        const skipReason = (isS6Enabled && cbS6.inCooldown) ? cbS6.reason : ((is6proEnabled && cb6pro.inCooldown) ? cb6pro.reason : (cb5b.reason || 'Cooldown active'));
         console.log(`  [${mode}] ${symbol.padEnd(12)} | 🛡️ COOLDOWN: ${skipReason}`);
         const [d1Cool, h4Cool, h1Cool, ltf] = await Promise.all([
           config.REQUIRE_DAILY_CONFLUENCE ? getCachedHtfCandles(symbol, config.MACRO_DAILY || '1d', 60, 60 * 60 * 1000).catch(() => null) : Promise.resolve(null),
@@ -3263,61 +3277,44 @@ async function monitorMarket() {
 
       // Build active strategies for this scan
       const strategiesToRun = [];
-      if (isBoth) {
-        if (canRun5B) {
-          let displayName = 'Strategy 5B Pro';
-          if (is6proLockedState) displayName = 'Strategy 5B Pro (Target-Locked Paper)';
-          else if (isQuarantined) displayName = 'Strategy 5B (Quarantined Paper)';
 
-          strategiesToRun.push({
-            id: '5B',
-            name: 'STRATEGY_5B',
-            displayName,
-            fn: detectStrategy5BSetup,
-            isPaper: is5bPaper
-          });
-        }
-        if (canRun6Pro) {
-          let displayName = 'Strategy SMC Sweep';
-          if (is6proLockedState) displayName = 'Strategy SMC Sweep (Target-Locked Paper)';
-          else if (isQuarantined) displayName = 'Strategy SMC Sweep (Quarantined Paper)';
+      if (canRun5B) {
+        let displayName = 'Strategy 5B Pro';
+        if (is5bPaper) displayName = 'Strategy 5B Pro (Paper)';
 
-          strategiesToRun.push({
-            id: '6PRO',
-            name: 'STRATEGY_6_PRO',
-            displayName,
-            fn: detectStrategySMCSweepSetup,
-            isPaper: is6proPaper
-          });
-        }
-      } else if (dynamicState.activeStrategy === 'STRATEGY_6_PRO') {
-        if (canRun6Pro) {
-          let displayName = 'Strategy SMC Sweep';
-          if (is6proLockedState) displayName = 'Strategy SMC Sweep (Target-Locked Paper)';
-          else if (isQuarantined) displayName = 'Strategy SMC Sweep (Quarantined Paper)';
+        strategiesToRun.push({
+          id: '5B',
+          name: 'STRATEGY_5B',
+          displayName,
+          fn: detectStrategy5BSetup,
+          isPaper: is5bPaper
+        });
+      }
 
-          strategiesToRun.push({
-            id: '6PRO',
-            name: 'STRATEGY_6_PRO',
-            displayName,
-            fn: detectStrategySMCSweepSetup,
-            isPaper: is6proPaper
-          });
-        }
-      } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
-        if (canRun5B) {
-          let displayName = 'Strategy 5B Pro';
-          if (is6proLockedState) displayName = 'Strategy 5B Pro (Target-Locked Paper)';
-          else if (isQuarantined) displayName = 'Strategy 5B (Quarantined Paper)';
+      if (canRunS6) {
+        let displayName = 'Strategy 6';
+        if (isS6Paper) displayName = 'Strategy 6 (Paper)';
 
-          strategiesToRun.push({
-            id: '5B',
-            name: 'STRATEGY_5B',
-            displayName,
-            fn: detectStrategy5BSetup,
-            isPaper: is5bPaper
-          });
-        }
+        strategiesToRun.push({
+          id: 'S6',
+          name: 'STRATEGY_6',
+          displayName,
+          fn: detectStrategy6Setup,
+          isPaper: isS6Paper
+        });
+      }
+
+      if (canRun6Pro) {
+        let displayName = 'Strategy SMC Sweep';
+        if (is6proPaper) displayName = 'Strategy SMC Sweep (Paper)';
+
+        strategiesToRun.push({
+          id: '6PRO',
+          name: 'STRATEGY_6_PRO',
+          displayName,
+          fn: detectStrategySMCSweepSetup,
+          isPaper: is6proPaper
+        });
       }
 
       // 👑 Whichever strategy is LIVE runs FIRST and dispatches ahead of paper/test
@@ -3344,6 +3341,9 @@ async function monitorMarket() {
             }
             if (strat.id === '6PRO') {
               return (t.strategy || '').includes('SMC Sweep') || (t.strategy || '').includes('6 Pro') || (t.setupId || '').includes('_6PRO_');
+            }
+            if (strat.id === 'S6') {
+              return (t.strategy || '').includes('Strategy 6') || (t.setupId || '').includes('_S6_');
             }
             return false;
           });
@@ -3698,27 +3698,39 @@ async function main() {
     ].join('\n'));
   } else {
     const isBoth = dynamicState.activeStrategy === 'BOTH';
+    const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || isBoth || dynamicState.activeStrategy === 'ALL';
+    const isGlobalPaper = dynamicState.executionMode === 'PAPER';
+    const is6 = dynamicState.activeStrategy === 'STRATEGY_6';
     const is6Pro = dynamicState.activeStrategy === 'STRATEGY_6_PRO';
-    const stratDisplayName = isBoth
-      ? (dynamicState.mode6pro === 'LIVE' && dynamicState.mode5b === 'PAPER'
-          ? 'Dual Engine (5B Pro Live + SMC Sweep Paper Sandbox)'
-          : 'Dual Engine (5B Pro Live + SMC Sweep Paper Sandbox)')
-      : (is6Pro ? 'Strategy SMC Sweep (Non-Spike)' : 'Strategy 5B Pro');
+
+    let stratDisplayName = 'Strategy 5B Pro';
+    let bannerTitle = 'STRATEGY 5B PRO';
+    if (isTriEngine || isGlobalPaper) {
+      stratDisplayName = 'Tri-Engine Test Sandbox (5B Pro + Strategy 6 + SMC Sweep — ALL PAPER)';
+      bannerTitle = 'TRI-ENGINE TEST SANDBOX';
+    } else if (is6) {
+      stratDisplayName = 'Strategy 6 (Structural Momentum Sniper)';
+      bannerTitle = 'STRATEGY 6';
+    } else if (is6Pro) {
+      stratDisplayName = 'Strategy SMC Sweep (Non-Spike)';
+      bannerTitle = 'STRATEGY SMC SWEEP';
+    }
 
     console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner — ${stratDisplayName}${RESET}`);
-    console.log(`🚀 Universe: ${Object.keys(config.SYMBOLS).length} Elite Pairs | Target: ${startupTargetLabel} | Loss Floor: ${startupLossLabel} | Telegram Active...\n`);
+    console.log(`🚀 Universe: ${Object.keys(config.SYMBOLS).length} Elite Pairs | Mode: ${isGlobalPaper ? 'PAPER ($0 Risk)' : 'LIVE'} | Telegram Active...\n`);
 
     await sendTelegramMessage([
-      `🚀 <b>[MYTRADA SYSTEM ONLINE — ${isBoth ? 'DUAL ENGINE' : (is6Pro ? 'STRATEGY 6 PRO' : 'STRATEGY 5B PRO')}]</b>`,
+      `🚀 <b>[MYTRADA SYSTEM ONLINE — ${bannerTitle}]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-      `• <b>Strategy:</b> <code>${stratDisplayName}</code>`,
+      `• <b>Strategy Engine:</b> <code>${stratDisplayName}</code>`,
+      `• <b>Execution Mode:</b> <code>Paper Sandbox ($0 Real Risk • 2-Day A/B Test)</code>`,
+      `• <b>Live Capital Protected:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
       `• <b>Universe:</b> <code>${Object.keys(config.SYMBOLS).length} Elite Pairs</code>`,
-      `• <b>Week Anchor Balance:</b> <code>$${compRisk.balance.toFixed(2)} USD</code> (Live Equity: <code>$${compRisk.liveBalance.toFixed(2)} USD</code>)`,
-      `• <b>Daily Profit Target:</b> <code>${targetLabel}</code>`,
-      `• <b>Daily Max Loss Floor:</b> <code>${maxLossLabel}</code>`,
-      `• <b>Risk Model:</b> <code>Fixed 1:1.3 R:R (${activeRiskPct.toFixed(1)}% Risk • $${compRisk.riskUSD.toFixed(2)} USD/trade)</code>`,
-      `• <b>Telegram Control:</b> <b>ACTIVE</b> (Send <code>/help</code> for commands)`,
-      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
+      `• <b>Week Anchor Balance:</b> <code>$${compRisk.balance.toFixed(2)} USD</code>`,
+      `• <b>Theoretical Trade Risk:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (${activeRiskPct.toFixed(1)}% Risk • 1:1.3 R:R)</code>`,
+      `• <b>Telegram Control:</b> <b>ACTIVE</b> (Send <code>/status</code>, <code>/strategy</code>, <code>/help</code>)`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `🧪 <i>5B Pro, Strategy 6, and SMC Sweep are all scanning concurrently in 100% Paper Sandbox mode. No real capital at risk!</i>`
     ].join('\n'));
   }
 

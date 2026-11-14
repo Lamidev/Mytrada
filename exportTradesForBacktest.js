@@ -89,7 +89,7 @@ function syncMasterArchive() {
         pnlUSD: t.pnlUSD || 0,
         pnlR: t.pnlR || (t.outcome === 'WIN' ? 1.3 : (t.outcome === 'LOSS' ? -1.0 : 0)),
         confluenceScore: t.confluenceScore || 10,
-        strategy: "Strategy 5B Enhanced"
+        strategy: t.strategy || "Strategy 5B Enhanced"
       });
     }
   }

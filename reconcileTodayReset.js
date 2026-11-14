@@ -18,7 +18,7 @@ const CIRCUIT_BREAKER_FILE = path.join(CACHE_DIR, 'circuit_breaker_state.json');
 const GODEYES_MEMORY_FILE = path.join(DATA_DIR, 'godeyes_memory.json');
 const ACTIVE_TRADES_FILE = path.join(CACHE_DIR, 'active_trades.json');
 
-const TARGET_START_BALANCE = 5114.16; // Start of day baseline on Oct 23
+const TARGET_START_BALANCE = 15528.46; // Start of day baseline for Saturday Nov 14, 2026
 
 function getDateString(isoString) {
   if (!isoString) return "";
@@ -120,22 +120,24 @@ function resetTodayState(targetBalance = TARGET_START_BALANCE, customDateStr = n
   }
 
   dynamicState.date = TODAY_STR;
-  dynamicState.dailyTargetUSD = dynamicState.dailyTargetUSD || 477.0;
+  dynamicState.dailyTargetUSD = dynamicState.dailyTargetUSD || 968.96;
   dynamicState.dailyTargetLocked = false;
-  dynamicState.dailyMaxLossUSD = dynamicState.dailyMaxLossUSD || 337.0;
+  dynamicState.dailyMaxLossUSD = dynamicState.dailyMaxLossUSD || 745.36;
   dynamicState.dailyLossLocked = false;
   dynamicState.isManuallyPaused = false;
   dynamicState.portfolioConsecutiveLosses = 0;
   dynamicState.portfolioPauseUntil = 0;
-  dynamicState.activeStrategy = 'BOTH';
-  dynamicState.executionMode = 'LIVE';
-  dynamicState.mode5b = 'LIVE';
+  dynamicState.activeStrategy = 'TRI_ENGINE';
+  dynamicState.executionMode = 'PAPER';
+  dynamicState.mode5b = 'PAPER';
+  dynamicState.mode6 = 'PAPER';
   dynamicState.mode6pro = 'PAPER';
   dynamicState.is5bPaused = false;
   dynamicState.is6proPaused = false;
+  dynamicState.isS6Paused = false;
 
   fs.writeFileSync(DYNAMIC_STATE_FILE, JSON.stringify(dynamicState, null, 2), 'utf8');
-  console.log(`✅ dynamic_state.json updated: portfolio unpaused, mode5b = LIVE, mode6pro = PAPER, target = $${dynamicState.dailyTargetUSD}, maxloss = -$${dynamicState.dailyMaxLossUSD}.`);
+  console.log(`✅ dynamic_state.json updated: TRI_ENGINE mode activated (ALL PAPER: 5B Pro + Strategy 6 + SMC Sweep), zero live risk, balance aligned to $${targetBalance.toFixed(2)}.`);
 
   // 4. Circuit Breaker State: reset today's losses and cooldowns
   let cbState = {};
@@ -202,6 +204,19 @@ function resetTodayState(targetBalance = TARGET_START_BALANCE, customDateStr = n
     }
   }
 
+  // 5b. Incubation / Paper History: clean out any paper trades from today
+  const INCUBATION_HISTORY_FILE = path.join(CACHE_DIR, 'incubation_history.json');
+  if (fs.existsSync(INCUBATION_HISTORY_FILE)) {
+    try {
+      const incHistory = JSON.parse(fs.readFileSync(INCUBATION_HISTORY_FILE, 'utf8'));
+      const filteredInc = incHistory.filter(t => !getDateString(t.time).startsWith(TODAY_STR));
+      fs.writeFileSync(INCUBATION_HISTORY_FILE, JSON.stringify(filteredInc, null, 2), 'utf8');
+      console.log(`✅ incubation_history.json cleaned: 0 paper trades today.`);
+    } catch (e) {
+      console.warn("Could not clean incubation history:", e.message);
+    }
+  }
+
   // 6. Pair Health State: unquarantine any pair demoted today
   const PAIR_HEALTH_FILE = path.join(CACHE_DIR, 'pair_health_state.json');
   if (fs.existsSync(PAIR_HEALTH_FILE)) {
@@ -233,7 +248,8 @@ function resetTodayState(targetBalance = TARGET_START_BALANCE, customDateStr = n
 }
 
 if (require.main === module) {
-  resetTodayState();
+  const customBal = process.argv[2] ? parseFloat(process.argv[2]) : TARGET_START_BALANCE;
+  resetTodayState(customBal);
 }
 
 module.exports = { resetTodayState };
