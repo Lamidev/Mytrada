@@ -71,8 +71,8 @@ module.exports = {
     PORTFOLIO_CONSECUTIVE_LOSS_LIMIT: 3, // 👑 3 Consecutive Losses across ANY pairs = 120m (2-Hour) Portfolio-wide Cooldown
     PORTFOLIO_LOSS_PAUSE_MINS: 120,      // 👑 120-minute (2-Hour) portfolio pause duration (2 full 1H cycles)
     AUTO_TARGET_ENABLED: true,           // 👑 Auto-set Daily Target and Daily Max Loss from Compounded Risk
-    TARGET_WINS_MULTIPLIER: 2,           // 👑 2 Wins = 2.6R Daily Profit Target (Locks profit & stops afternoon giveback)
-    MAX_LOSS_LOSSES_MULTIPLIER: 2,       // 👑 2 Losses = 2.0R Daily Max Loss Floor (Caps drawdown)
+    TARGET_WINS_MULTIPLIER: 3,           // 👑 3 Wins = 3.9R Daily Profit Target (Full session compounder)
+    MAX_LOSS_LOSSES_MULTIPLIER: 3,       // 👑 3 Losses = 3.0R Daily Max Loss Floor (Defensive capital shield)
     DEFAULT_DAILY_PROFIT_TARGET_USD: 0,  // 👑 Default daily profit target disabled (0) — set dynamically via Telegram /target <amt>
     DEFAULT_DAILY_MAX_LOSS_USD: 0        // 👑 Default daily max loss shield disabled (0) — set dynamically via Telegram /maxloss <amt>
   },

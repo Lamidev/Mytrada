@@ -120,10 +120,12 @@ function resetTodayState(targetBalance = TARGET_START_BALANCE, customDateStr = n
   }
 
   dynamicState.date = TODAY_STR;
-  dynamicState.dailyTargetUSD = dynamicState.dailyTargetUSD || 968.96;
+  dynamicState.dailyTargetUSD = 1453.46;
   dynamicState.dailyTargetLocked = false;
-  dynamicState.dailyMaxLossUSD = dynamicState.dailyMaxLossUSD || 745.36;
+  dynamicState.dailyMaxLossUSD = 1118.04;
   dynamicState.dailyLossLocked = false;
+  dynamicState.targetWinsMultiplier = 3;
+  dynamicState.maxLossMultiplier = 3;
   dynamicState.isManuallyPaused = false;
   dynamicState.portfolioConsecutiveLosses = 0;
   dynamicState.portfolioPauseUntil = 0;
