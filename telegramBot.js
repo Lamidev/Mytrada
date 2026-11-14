@@ -186,62 +186,79 @@ function sendTelegramDocument(fileBufferOrPath, filename, caption = '') {
     const chatId = config.TELEGRAM && config.TELEGRAM.CHAT_ID;
     if (!botToken || !chatId) return resolve(false);
 
-    try {
-      const fileBuf = Buffer.isBuffer(fileBufferOrPath)
-        ? fileBufferOrPath
-        : fs.readFileSync(fileBufferOrPath);
-      const boundary = '----MytradaBoundary' + Date.now().toString(16);
-      const parts = [];
+    const sendDocWithCaption = (capText, parseMode = 'HTML') => {
+      return new Promise((subResolve) => {
+        try {
+          const fileBuf = Buffer.isBuffer(fileBufferOrPath)
+            ? fileBufferOrPath
+            : fs.readFileSync(fileBufferOrPath);
+          const boundary = '----MytradaBoundary' + Date.now().toString(16);
+          const parts = [];
 
-      parts.push(Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${chatId}\r\n`
-      ));
+          parts.push(Buffer.from(
+            `--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${chatId}\r\n`
+          ));
 
-      if (caption) {
-        parts.push(Buffer.from(
-          `--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n` +
-          `--${boundary}\r\nContent-Disposition: form-data; name="parse_mode"\r\n\r\nHTML\r\n`
-        ));
-      }
-
-      parts.push(Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${filename}"\r\nContent-Type: text/plain\r\n\r\n`
-      ));
-      parts.push(fileBuf);
-      parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
-
-      const body = Buffer.concat(parts);
-      const options = {
-        hostname: 'api.telegram.org',
-        port: 443,
-        path: `/bot${botToken}/sendDocument`,
-        method: 'POST',
-        headers: {
-          'Content-Type': `multipart/form-data; boundary=${boundary}`,
-          'Content-Length': body.length
-        },
-        timeout: 20000
-      };
-
-      const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          if (res.statusCode !== 200) {
-            console.warn(`[telegramBot] sendDocument failed (${res.statusCode}):`, data);
+          if (capText) {
+            const trimmedCap = capText.length > 1000 ? capText.slice(0, 995) + '...' : capText;
+            let capPart = `--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${trimmedCap}\r\n`;
+            if (parseMode) {
+              capPart += `--${boundary}\r\nContent-Disposition: form-data; name="parse_mode"\r\n\r\n${parseMode}\r\n`;
+            }
+            parts.push(Buffer.from(capPart));
           }
-          resolve(res.statusCode === 200);
-        });
-      });
 
-      req.on('error', () => resolve(false));
-      req.on('timeout', () => { req.destroy(); resolve(false); });
-      req.write(body);
-      req.end();
-    } catch (e) {
-      console.warn('[telegramBot] sendTelegramDocument error:', e.message);
-      resolve(false);
-    }
+          parts.push(Buffer.from(
+            `--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${filename}"\r\nContent-Type: text/plain\r\n\r\n`
+          ));
+          parts.push(fileBuf);
+          parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+
+          const body = Buffer.concat(parts);
+          const options = {
+            hostname: 'api.telegram.org',
+            port: 443,
+            path: `/bot${botToken}/sendDocument`,
+            method: 'POST',
+            headers: {
+              'Content-Type': `multipart/form-data; boundary=${boundary}`,
+              'Content-Length': body.length
+            },
+            timeout: 25000
+          };
+
+          const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+              if (res.statusCode === 200) {
+                subResolve(true);
+              } else if (res.statusCode === 400 && parseMode === 'HTML') {
+                console.warn(`[telegramBot] sendDocument HTML failed (${res.statusCode}): ${data}. Retrying with plain caption...`);
+                const plainCap = String(capText || '').replace(/<[^>]+>/g, '');
+                sendDocWithCaption(plainCap, null).then(subResolve);
+              } else {
+                console.warn(`[telegramBot] sendDocument failed (${res.statusCode}):`, data);
+                subResolve(false);
+              }
+            });
+          });
+
+          req.on('error', (err) => {
+            console.warn('[telegramBot] sendDocument req error:', err.message);
+            subResolve(false);
+          });
+          req.on('timeout', () => { req.destroy(); subResolve(false); });
+          req.write(body);
+          req.end();
+        } catch (e) {
+          console.warn('[telegramBot] sendTelegramDocument error:', e.message);
+          subResolve(false);
+        }
+      });
+    };
+
+    sendDocWithCaption(caption, 'HTML').then(resolve);
   });
 }
 
@@ -668,19 +685,45 @@ async function handleCommand(rawText, handlers) {
       if (sendToChat) {
         await sendLongTelegramText(exp.content);
       } else {
-        const liveSign = (exp.liveStats && exp.liveStats.netUSD >= 0) ? '+' : '-';
-        const liveRSign = (exp.liveStats && exp.liveStats.netR >= 0) ? '+' : '';
+        const s6Sign = (exp.s6Stats && exp.s6Stats.netUSD >= 0) ? '+' : '-';
+        const s6RSign = (exp.s6Stats && exp.s6Stats.netR >= 0) ? '+' : '';
+        const s5bSign = (exp.s5bStats && exp.s5bStats.netUSD >= 0) ? '+' : (exp.liveStats && exp.liveStats.netUSD >= 0 ? '+' : '-');
+        const s5bRSign = (exp.s5bStats && exp.s5bStats.netR >= 0) ? '+' : (exp.liveStats && exp.liveStats.netR >= 0 ? '+' : '');
         const smcSign = (exp.smcStats && exp.smcStats.netUSD >= 0) ? '+' : '-';
         const smcRSign = (exp.smcStats && exp.smcStats.netR >= 0) ? '+' : '';
+
+        const s6Trades = exp.s6Stats ? exp.s6Stats.trades : 0;
+        const s6Wins = exp.s6Stats ? exp.s6Stats.wins : 0;
+        const s6Losses = exp.s6Stats ? exp.s6Stats.losses : 0;
+        const s6WR = exp.s6Stats ? exp.s6Stats.winRate : '0.0';
+        const s6USD = Math.abs(exp.s6Stats ? exp.s6Stats.netUSD : 0).toFixed(2);
+        const s6R = (exp.s6Stats ? exp.s6Stats.netR : 0).toFixed(1);
+
+        const s5bTrades = exp.s5bStats ? exp.s5bStats.trades : (exp.liveStats ? exp.liveStats.trades : exp.liveCount);
+        const s5bWins = exp.s5bStats ? exp.s5bStats.wins : (exp.liveStats ? exp.liveStats.wins : exp.wins);
+        const s5bLosses = exp.s5bStats ? exp.s5bStats.losses : (exp.liveStats ? exp.liveStats.losses : exp.losses);
+        const s5bWR = exp.s5bStats ? exp.s5bStats.winRate : (exp.liveStats ? exp.liveStats.winRate : '0.0');
+        const s5bUSD = Math.abs(exp.s5bStats ? exp.s5bStats.netUSD : (exp.liveStats ? exp.liveStats.netUSD : exp.netUSD)).toFixed(2);
+        const s5bR = (exp.s5bStats ? exp.s5bStats.netR : (exp.liveStats ? exp.liveStats.netR : exp.netR)).toFixed(1);
+
+        const smcTrades = exp.smcStats ? exp.smcStats.trades : 0;
+        const smcWins = exp.smcStats ? exp.smcStats.wins : 0;
+        const smcLosses = exp.smcStats ? exp.smcStats.losses : 0;
+        const smcWR = exp.smcStats ? exp.smcStats.winRate : '0.0';
+        const smcUSD = Math.abs(exp.smcStats ? exp.smcStats.netUSD : 0).toFixed(2);
+        const smcR = (exp.smcStats ? exp.smcStats.netR : 0).toFixed(1);
 
         const captionLines = [
           `📋 <b>[MYTRADA TRADE EXPORT — ${exp.dateStr}]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `👑 <b>Strategy 5B Pro (Live):</b>`,
-          `• <code>${exp.liveStats ? exp.liveStats.trades : exp.liveCount} Trades (${exp.liveStats ? exp.liveStats.wins : exp.wins}W / ${exp.liveStats ? exp.liveStats.losses : exp.losses}L • ${exp.liveStats ? exp.liveStats.winRate : '0.0'}% WR) • ${liveSign}$${Math.abs(exp.liveStats ? exp.liveStats.netUSD : exp.netUSD).toFixed(2)} (${liveRSign}${(exp.liveStats ? exp.liveStats.netR : exp.netR).toFixed(1)}R)</code>`,
+          `🛡️ <b>Strategy 6 (Pure OB/Imbalance):</b>`,
+          `• <code>${s6Trades} Trades (${s6Wins}W / ${s6Losses}L • ${s6WR}% WR) • ${s6Sign}$${s6USD} (${s6RSign}${s6R}R)</code>`,
+          ``,
+          `🚀 <b>Strategy 5B Pro (Sandbox/Live):</b>`,
+          `• <code>${s5bTrades} Trades (${s5bWins}W / ${s5bLosses}L • ${s5bWR}% WR) • ${s5bSign}$${s5bUSD} (${s5bRSign}${s5bR}R)</code>`,
           ``,
           `🔬 <b>Strategy SMC Sweep (Paper Test):</b>`,
-          `• <code>${exp.smcStats ? exp.smcStats.trades : 0} Trades (${exp.smcStats ? exp.smcStats.wins : 0}W / ${exp.smcStats ? exp.smcStats.losses : 0}L • ${exp.smcStats ? exp.smcStats.winRate : '0.0'}% WR) • ${smcSign}$${Math.abs(exp.smcStats ? exp.smcStats.netUSD : 0).toFixed(2)} (${smcRSign}${(exp.smcStats ? exp.smcStats.netR : 0).toFixed(1)}R)</code>`
+          `• <code>${smcTrades} Trades (${smcWins}W / ${smcLosses}L • ${smcWR}% WR) • ${smcSign}$${smcUSD} (${smcRSign}${smcR}R)</code>`
         ];
 
         if (exp.otherPaperStats && (exp.otherPaperStats.trades > 0 || exp.otherPaperStats.open > 0)) {

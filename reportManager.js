@@ -1260,6 +1260,13 @@ function generateDayTradeExport(targetDateStr) {
   const smcNetR = smcPaperClosed.reduce((sum, t) => sum + (t.rMultiple || t.pnlR || (t.outcome === 'WIN' ? 1.3 : (t.outcome === 'LOSS' ? -1.0 : 0))), 0);
   const smcWinRate = smcPaperClosed.length > 0 ? ((smcWins / smcPaperClosed.length) * 100).toFixed(1) : '0.0';
 
+  // Other Paper / Quarantine stats
+  const otherWins = otherPaperClosed.filter(t => t.outcome === 'WIN').length;
+  const otherLosses = otherPaperClosed.filter(t => t.outcome === 'LOSS').length;
+  const otherNetUSD = otherPaperClosed.reduce((sum, t) => sum + (t.pnlUSD || 0), 0);
+  const otherNetR = otherPaperClosed.reduce((sum, t) => sum + (t.rMultiple || t.pnlR || (t.outcome === 'WIN' ? 1.3 : (t.outcome === 'LOSS' ? -1.0 : 0))), 0);
+  const otherWinRate = otherPaperClosed.length > 0 ? ((otherWins / otherPaperClosed.length) * 100).toFixed(1) : '0.0';
+
   // Determine Leader among all strategies
   const stratScores = [
     { name: 'Strategy 6', netR: s6NetR },
@@ -1402,6 +1409,24 @@ function generateDayTradeExport(targetDateStr) {
       netUSD: liveNetUSD,
       netR: liveNetR,
       open: liveOpen.length
+    },
+    s5bStats: {
+      trades: s5bPaperClosed.length + liveClosed.length,
+      wins: s5bWins + liveWins,
+      losses: s5bLosses + liveLosses,
+      winRate: (s5bPaperClosed.length + liveClosed.length) > 0 ? (((s5bWins + liveWins) / (s5bPaperClosed.length + liveClosed.length)) * 100).toFixed(1) : '0.0',
+      netUSD: s5bNetUSD + liveNetUSD,
+      netR: s5bNetR + liveNetR,
+      open: s5bPaperOpen.length + liveOpen.length
+    },
+    s6Stats: {
+      trades: s6PaperClosed.length,
+      wins: s6Wins,
+      losses: s6Losses,
+      winRate: s6WinRate,
+      netUSD: s6NetUSD,
+      netR: s6NetR,
+      open: s6PaperOpen.length
     },
     smcStats: {
       trades: smcPaperClosed.length,
