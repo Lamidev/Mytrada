@@ -1149,7 +1149,11 @@ const telegramHandlers = {
     const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || dynamicState.activeStrategy === 'BOTH' || dynamicState.activeStrategy === 'ALL';
     const isGlobalPaper = dynamicState.executionMode === 'PAPER';
 
-    if (isTriEngine || isGlobalPaper) {
+    if (dynamicState.activeStrategy === 'BOTH') {
+      const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode5b === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+      const modeSweepLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode6pro === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+      stratBadge = `⚡ <b>DUAL-ENGINE PAPER SUITE</b> (5B Pro: ${mode5bLabel} | SMC Sweep: ${modeSweepLabel})`;
+    } else if (isTriEngine || isGlobalPaper) {
       const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode5b === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
       const modeS6Label = dynamicState.isS6Paused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode6 === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
       const modeSweepLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode6pro === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
@@ -2641,7 +2645,7 @@ async function buildDailyStructureWatchlist() {
   return out.join('\n');
 }
 
-// ── STRATEGY 5B PRO SIGNAL DETECTION ENGINE ──
+// ── STRATEGY 5B PRO SIGNAL DETECTION ENGINE (UPGRADED: ENERGY + DECELERATION + IGNITION) ──
 function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCandles, mode, minSpikesRequired, symbol) {
   if (!ltfCandles || !htf1hCandles || ltfCandles.length < 25 || htf1hCandles.length < 55) return null;
 
@@ -2649,94 +2653,71 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
   if (!ms.ready || !ms.chopOk) return null;
 
   const { htf1hTrend, htf4hTrend, dailyTrend, h1ClearancePct } = ms;
-  const confirmCount = (symbol && config.SYMBOLS[symbol] && config.SYMBOLS[symbol].confirm_candles) || config.CONFIRMATION_CANDLES || 2;
-  const minSpikes = minSpikesRequired || config.MIN_SPIKES || 2;
 
   // ── CASE 1: SELL (BOOM) ──
   if (mode === 'BOOM') {
     if (!ms.is5BAligned) return null;
 
-    // 1. Multi-Candle Confirmation: Check closed RED candles (close < open)
-    let confirmCandles = [];
-    for (let cIdx = 0; cIdx < 2; cIdx++) {
-      const c = ltfCandles[ltfCandles.length - 1 - cIdx];
-      if (!c || c.close >= c.open) break;
-      confirmCandles.push(c);
-    }
-    if (confirmCandles.length < 1) return null;
-
-    const c0 = confirmCandles[0];
-    const c0Range = c0.high - c0.low;
-    const c0Body = Math.abs(c0.close - c0.open);
-    const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
-    if (bodyRatio < 0.40) return null;
-
     const atr = calculateATR(ltfCandles, 14);
     if (!atr || atr === 0) return null;
 
-    // 2. Dynamic Spike Exhaustion: 1 Monster Spike (>=1.5x ATR) OR 2-3 Spike Cluster (>=1.2x ATR)
-    let activeConfirmCount = confirmCandles.length;
-    let s0 = ltfCandles[ltfCandles.length - 1 - activeConfirmCount];
+    // 1. Ignition Bar Trigger: The latest closed 5M bar c0 must confirm the sell move has physically started
+    const c0 = ltfCandles[ltfCandles.length - 1];
+    const c1 = ltfCandles[ltfCandles.length - 2];
+    if (!c0 || !c1) return null;
 
-    if (!s0 || s0.close <= s0.open) {
-      if (activeConfirmCount === 2) {
-        activeConfirmCount = 1;
-        confirmCandles = [confirmCandles[0]];
-        s0 = ltfCandles[ltfCandles.length - 1 - activeConfirmCount];
-      }
-      if (!s0 || s0.close <= s0.open) return null;
-    }
+    const isRed = c0.close < c0.open;
+    const c0Range = c0.high - c0.low;
+    const c0Body = c0.open - c0.close;
+    const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
 
-    const spikeCandles = [s0];
-    const s0Range = s0.high - s0.low;
+    // Must be a solid red candle with body >= 40% of range
+    if (!isRed || bodyRatio < 0.40) return null;
 
-    for (let s = 1; s <= 2; s++) {
-      const c = ltfCandles[ltfCandles.length - 1 - activeConfirmCount - s];
-      if (c && c.close > c.open) {
-        spikeCandles.push(c);
-      } else {
+    // Ignition Break: Must break below the preceding candle's low (proving tick flow reversal has started)
+    if (c0.close >= c1.low) return null;
+
+    // 2. Measure Cumulative Spike Energy & Momentum Deceleration in the preceding 1-5 bars
+    let cumulativeSpikeRange = 0;
+    let spikePeak = -Infinity;
+    const spikesFound = [];
+
+    for (let i = 1; i <= 5; i++) {
+      const b = ltfCandles[ltfCandles.length - 1 - i];
+      if (!b) break;
+      const isSpike = (b.close > b.open) && ((b.high - b.low) >= (atr * 0.7));
+      if (isSpike) {
+        spikesFound.push(b.high - b.low);
+        cumulativeSpikeRange += (b.high - b.low);
+        if (b.high > spikePeak) spikePeak = b.high;
+      } else if (spikesFound.length > 0) {
         break;
       }
     }
 
-    const spikePeak = Math.max(...confirmCandles.map(c => c.high), ...spikeCandles.map(c => c.high));
-    const spikeClusterRange = Math.max(...spikeCandles.map(c => c.high)) - Math.min(...spikeCandles.map(c => c.low));
+    if (spikesFound.length === 0) return null;
 
-    const isSingleMonster = spikeCandles.length === 1 && s0Range >= (atr * 1.50);
-    const isMultiCluster = spikeCandles.length >= 2 && spikeClusterRange >= (atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20));
+    // Metric 1: Energy Depletion (Cumulative spikes >= 2.0x ATR or Single Monster Spike >= 2.0x ATR)
+    const isMonster = spikesFound.length === 1 && spikesFound[0] >= (atr * 2.0);
+    const isEnergyDepleted = cumulativeSpikeRange >= (atr * 2.0);
+    if (!isMonster && !isEnergyDepleted) return null;
 
-    if (!isSingleMonster && !isMultiCluster) return null;
-
-    // 🛡️ Option 4: Super-Monster Spike Guard (>= 2.5x ATR requires 2 confirmation candles)
-    const isSuperMonster = s0Range >= (atr * 2.50) || spikeClusterRange >= (atr * 2.50);
-    if (isSuperMonster && activeConfirmCount < 2) {
-      return null;
+    // Metric 2: Momentum Deceleration Guard (Spikes must be dying down, NOT accelerating)
+    if (spikesFound.length >= 2) {
+      const latestSpike = spikesFound[0];
+      const prevSpike = spikesFound[1];
+      if (latestSpike > prevSpike * 1.3) {
+        return null;
+      }
     }
 
-    const spikeCountLabel = isSuperMonster
-      ? (isSingleMonster ? '1 Super-Monster Spike (2x 5M Confirm)' : `${spikeCandles.length} Spikes (Super-Cluster 2x 5M Confirm)`)
-      : (isSingleMonster ? '1 Monster Spike' : `${spikeCandles.length} Spikes`);
-    // 👑 5M 50 EMA Value Zone Guard: reject if price has not pulled back near the value zone
-    const ltfCloses = ltfCandles.map(c => c.close);
-    const ltfEMA = calculateEMA(ltfCloses, 50);
-    const lastLtfEma = ltfEMA && ltfEMA.length > 0 ? ltfEMA[ltfEMA.length - 1] : null;
-    const maxAtrDist = (config.VALUE_ZONE_MAX_ATR_DIST || 2.5) * atr;
-    if (lastLtfEma && (lastLtfEma - spikePeak) > maxAtrDist) return null;
-
-    // 👑 Cumulative Displacement Confirmation: Combined recovery bodies must be >= 20% of preceding spike
-    const lastBoomSpike = spikeCandles[0];
-    const lastSpikeRange = Math.abs(lastBoomSpike.close - lastBoomSpike.open);
-    const totalRecoveryBody = confirmCandles.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0);
-    const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
-    if (totalRecoveryBody < (lastSpikeRange * minDisplacementRatio)) return null;
-
-    const valueZoneTouched = `Price Action Displacement (${activeConfirmCount}x 5M Recovery >=20%)`;
-
+    const spikePeakClean = Math.max(spikePeak, c0.high, c1.high);
     const entry = c0.close;
-    const sl = spikePeak + (atr * 1.5);
-    const slDist = sl - entry;
-    if (slDist <= 0) return null;
+    let slDist = (spikePeakClean - entry) + (atr * 1.2);
+    if (slDist < (atr * 0.8)) slDist = atr * 0.8;
+    if (slDist <= 0 || slDist > (atr * 4.5)) return null;
 
+    const sl = entry + slDist;
     const tp = entry - (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
@@ -2747,17 +2728,11 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     let isBlocked = exhaustion5B.isExhausted;
     let blockedReason = exhaustion5B.reason ? `5B Macro Momentum Guard: ${exhaustion5B.reason}` : null;
 
-    // 👑 Active 1H Candle Guard: Reject SELL on Boom if the active 1-hour candle is green (close > open)
-    const active1hCfg = config.ACTIVE_1H_CANDLE_GUARD || {};
-    if (active1hCfg.ENABLED) {
-      const current1hCandle = htf1hCandles && htf1hCandles.length > 0 ? htf1hCandles[htf1hCandles.length - 1] : null;
-      if (!isBlocked && current1hCandle && current1hCandle.close > current1hCandle.open) {
-        isBlocked = true;
-        blockedReason = `Active 1H Bar Guard: Current 1H candle is Bullish Green (${current1hCandle.close.toFixed(2)} > open ${current1hCandle.open.toFixed(2)})`;
-      }
-    }
+    const energyRatio = (cumulativeSpikeRange / atr).toFixed(1);
+    const spikeCountLabel = `${spikesFound.length} Spikes (Energy: ${energyRatio}x ATR • Decelerated • Ignition Break)`;
     const valuationLabel = `Macro Range: ${exhaustion5B.rangePct.toFixed(1)}% (5B Pro SMC Corridor [${minSell5B.toFixed(0)}%-${maxBuy5B.toFixed(0)}%])`;
-    const liquidityLabel = `SMC Anchor (PDH/PDL Range)`;
+    const liquidityLabel = `Energy Exhaustion (${energyRatio}x ATR)`;
+    const valueZoneTouched = `Ignition Break (c0.close < c1.low • body ${(bodyRatio * 100).toFixed(0)}%)`;
 
     return {
       strategy: 'Strategy 5B Pro',
@@ -2771,12 +2746,12 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
       tp,
       slDist,
       atr,
-      refPrice: spikePeak,
+      refPrice: spikePeakClean,
       h1ClearancePct,
       bodyRatio,
       valueZoneTouched,
       candleEpoch,
-      confirmCount: activeConfirmCount,
+      confirmCount: 1,
       spikeCountLabel,
       valuationLabel,
       liquidityLabel,
@@ -2789,87 +2764,66 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
   if (mode === 'CRASH') {
     if (!ms.is5BAligned) return null;
 
-    // 1. Multi-Candle Confirmation: Check closed GREEN candles (close > open)
-    let confirmCandles = [];
-    for (let cIdx = 0; cIdx < 2; cIdx++) {
-      const c = ltfCandles[ltfCandles.length - 1 - cIdx];
-      if (!c || c.close <= c.open) break;
-      confirmCandles.push(c);
-    }
-    if (confirmCandles.length < 1) return null;
-
-    const c0 = confirmCandles[0];
-    const c0Range = c0.high - c0.low;
-    const c0Body = Math.abs(c0.close - c0.open);
-    const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
-    if (bodyRatio < 0.40) return null;
-
     const atr = calculateATR(ltfCandles, 14);
     if (!atr || atr === 0) return null;
 
-    // 2. Dynamic Crash Exhaustion: 1 Monster Crash (>=1.5x ATR) OR 2-3 Crash Cluster (>=1.2x ATR)
-    let activeConfirmCount = confirmCandles.length;
-    let s0 = ltfCandles[ltfCandles.length - 1 - activeConfirmCount];
+    // 1. Ignition Bar Trigger: The latest closed 5M bar c0 must confirm the buy move has physically started
+    const c0 = ltfCandles[ltfCandles.length - 1];
+    const c1 = ltfCandles[ltfCandles.length - 2];
+    if (!c0 || !c1) return null;
 
-    if (!s0 || s0.close >= s0.open) {
-      if (activeConfirmCount === 2) {
-        activeConfirmCount = 1;
-        confirmCandles = [confirmCandles[0]];
-        s0 = ltfCandles[ltfCandles.length - 1 - activeConfirmCount];
-      }
-      if (!s0 || s0.close >= s0.open) return null;
-    }
+    const isGreen = c0.close > c0.open;
+    const c0Range = c0.high - c0.low;
+    const c0Body = c0.close - c0.open;
+    const bodyRatio = c0Range > 0 ? (c0Body / c0Range) : 0;
 
-    const crashCandles = [s0];
-    const s0Range = s0.high - s0.low;
+    // Must be a solid green candle with body >= 40% of range
+    if (!isGreen || bodyRatio < 0.40) return null;
 
-    for (let s = 1; s <= 2; s++) {
-      const c = ltfCandles[ltfCandles.length - 1 - activeConfirmCount - s];
-      if (c && c.close < c.open) {
-        crashCandles.push(c);
-      } else {
+    // Ignition Break: Must break above the preceding candle's high (proving upward tick flow reversal has started)
+    if (c0.close <= c1.high) return null;
+
+    // 2. Measure Cumulative Crash Spike Energy & Momentum Deceleration in the preceding 1-5 bars
+    let cumulativeSpikeRange = 0;
+    let crashTrough = Infinity;
+    const crashesFound = [];
+
+    for (let i = 1; i <= 5; i++) {
+      const b = ltfCandles[ltfCandles.length - 1 - i];
+      if (!b) break;
+      const isCrash = (b.close < b.open) && ((b.high - b.low) >= (atr * 0.7));
+      if (isCrash) {
+        crashesFound.push(b.high - b.low);
+        cumulativeSpikeRange += (b.high - b.low);
+        if (b.low < crashTrough) crashTrough = b.low;
+      } else if (crashesFound.length > 0) {
         break;
       }
     }
 
-    const crashTrough = Math.min(...confirmCandles.map(c => c.low), ...crashCandles.map(c => c.low));
-    const crashClusterRange = Math.max(...crashCandles.map(c => c.high)) - Math.min(...crashCandles.map(c => c.low));
+    if (crashesFound.length === 0) return null;
 
-    const isSingleMonster = crashCandles.length === 1 && s0Range >= (atr * 1.50);
-    const isMultiCluster = crashCandles.length >= 2 && crashClusterRange >= (atr * (config.MIN_SPIKE_CLUSTER_ATR_RATIO || 1.20));
+    // Metric 1: Energy Depletion (Cumulative crashes >= 2.0x ATR or Single Monster Crash >= 2.0x ATR)
+    const isMonster = crashesFound.length === 1 && crashesFound[0] >= (atr * 2.0);
+    const isEnergyDepleted = cumulativeSpikeRange >= (atr * 2.0);
+    if (!isMonster && !isEnergyDepleted) return null;
 
-    if (!isSingleMonster && !isMultiCluster) return null;
-
-    // 🛡️ Option 4: Super-Monster Crash Guard (>= 2.5x ATR requires 2 confirmation candles)
-    const isSuperMonster = s0Range >= (atr * 2.50) || crashClusterRange >= (atr * 2.50);
-    if (isSuperMonster && activeConfirmCount < 2) {
-      return null;
+    // Metric 2: Momentum Deceleration Guard (Crash spikes must be dying down, NOT accelerating)
+    if (crashesFound.length >= 2) {
+      const latestCrash = crashesFound[0];
+      const prevCrash = crashesFound[1];
+      if (latestCrash > prevCrash * 1.3) {
+        return null;
+      }
     }
 
-    const spikeCountLabel = isSuperMonster
-      ? (isSingleMonster ? '1 Super-Monster Spike (2x 5M Confirm)' : `${crashCandles.length} Spikes (Super-Cluster 2x 5M Confirm)`)
-      : (isSingleMonster ? '1 Monster Spike' : `${crashCandles.length} Spikes`);
-    // 👑 5M 50 EMA Value Zone Guard: reject if price has not pulled back near the value zone (overbought ceiling)
-    const ltfCloses = ltfCandles.map(c => c.close);
-    const ltfEMA = calculateEMA(ltfCloses, 50);
-    const lastLtfEma = ltfEMA && ltfEMA.length > 0 ? ltfEMA[ltfEMA.length - 1] : null;
-    const maxAtrDist = (config.VALUE_ZONE_MAX_ATR_DIST || 2.5) * atr;
-    if (lastLtfEma && (crashTrough - lastLtfEma) > maxAtrDist) return null;
-
-    // 👑 Cumulative Displacement Confirmation: Combined recovery bodies must be >= 20% of preceding crash
-    const lastCrashSpike = crashCandles[0];
-    const lastSpikeRange = Math.abs(lastCrashSpike.close - lastCrashSpike.open);
-    const totalRecoveryBody = confirmCandles.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0);
-    const minDisplacementRatio = config.MIN_CANDLE0_DISPLACEMENT_RATIO || 0.20;
-    if (totalRecoveryBody < (lastSpikeRange * minDisplacementRatio)) return null;
-
-    const valueZoneTouched = `Price Action Displacement (${activeConfirmCount}x 5M Recovery >=20%)`;
-
+    const crashTroughClean = Math.min(crashTrough, c0.low, c1.low);
     const entry = c0.close;
-    const sl = crashTrough - (atr * 1.5);
-    const slDist = entry - sl;
-    if (slDist <= 0) return null;
+    let slDist = (entry - crashTroughClean) + (atr * 1.2);
+    if (slDist < (atr * 0.8)) slDist = atr * 0.8;
+    if (slDist <= 0 || slDist > (atr * 4.5)) return null;
 
+    const sl = entry - slDist;
     const tp = entry + (slDist * (config.REWARD_RATIO || 1.3));
     const candleEpoch = c0.epoch || c0.time;
 
@@ -2880,17 +2834,11 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
     let isBlocked = exhaustion5B.isExhausted;
     let blockedReason = exhaustion5B.reason ? `5B Macro Momentum Guard: ${exhaustion5B.reason}` : null;
 
-    // 👑 Active 1H Candle Guard: Reject BUY on Crash if the active 1-hour candle is red (close < open)
-    const active1hCfg = config.ACTIVE_1H_CANDLE_GUARD || {};
-    if (active1hCfg.ENABLED) {
-      const current1hCandle = htf1hCandles && htf1hCandles.length > 0 ? htf1hCandles[htf1hCandles.length - 1] : null;
-      if (!isBlocked && current1hCandle && current1hCandle.close < current1hCandle.open) {
-        isBlocked = true;
-        blockedReason = `Active 1H Bar Guard: Current 1H candle is Bearish Red (${current1hCandle.close.toFixed(2)} < open ${current1hCandle.open.toFixed(2)})`;
-      }
-    }
+    const energyRatio = (cumulativeSpikeRange / atr).toFixed(1);
+    const spikeCountLabel = `${crashesFound.length} Spikes (Energy: ${energyRatio}x ATR • Decelerated • Ignition Break)`;
     const valuationLabel = `Macro Range: ${exhaustion5B.rangePct.toFixed(1)}% (5B Pro SMC Corridor [${minSell5B.toFixed(0)}%-${maxBuy5B.toFixed(0)}%])`;
-    const liquidityLabel = `SMC Anchor (PDH/PDL Range)`;
+    const liquidityLabel = `Energy Exhaustion (${energyRatio}x ATR)`;
+    const valueZoneTouched = `Ignition Break (c0.close > c1.high • body ${(bodyRatio * 100).toFixed(0)}%)`;
 
     return {
       strategy: 'Strategy 5B Pro',
@@ -2904,12 +2852,12 @@ function detectStrategy5BSetup(ltfCandles, htf1hCandles, htf4hCandles, dailyCand
       tp,
       slDist,
       atr,
-      refPrice: crashTrough,
+      refPrice: crashTroughClean,
       h1ClearancePct,
       bodyRatio,
       valueZoneTouched,
       candleEpoch,
-      confirmCount: activeConfirmCount,
+      confirmCount: 1,
       spikeCountLabel,
       valuationLabel,
       liquidityLabel,
@@ -3201,11 +3149,13 @@ async function monitorMarket() {
   }
 
   const isBoth = dynamicState.activeStrategy === 'BOTH';
-  const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || isBoth || dynamicState.activeStrategy === 'ALL';
+  const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || dynamicState.activeStrategy === 'ALL';
   const isGlobalPaper = dynamicState.executionMode === 'PAPER';
-  const scanStratLabel = isTriEngine
-    ? 'Tri-Engine Test Sandbox (5B Pro + Strategy 6 + SMC Sweep — ALL PAPER)'
-    : (dynamicState.activeStrategy === 'STRATEGY_6' ? 'Strategy 6' : (dynamicState.activeStrategy === 'STRATEGY_6_PRO' ? 'Strategy SMC Sweep' : 'Strategy 5B Pro'));
+  const scanStratLabel = isBoth
+    ? 'Dual-Engine Paper Suite (5B Pro + SMC Sweep — ALL PAPER)'
+    : (isTriEngine
+      ? 'Tri-Engine Test Sandbox (5B Pro + Strategy 6 + SMC Sweep — ALL PAPER)'
+      : (dynamicState.activeStrategy === 'STRATEGY_6' ? 'Strategy 6' : (dynamicState.activeStrategy === 'STRATEGY_6_PRO' ? 'Strategy SMC Sweep' : 'Strategy 5B Pro')));
 
   console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for ${scanStratLabel}...${RESET}`);
   console.log(`-------------------------------------------------------------------------------------------------`);
@@ -3221,15 +3171,20 @@ async function monitorMarket() {
       const symHealth = getPairHealth(symbol);
       const isQuarantined = symHealth.isQuarantined === true;
 
-      // ── INDEPENDENT STRATEGY COOLDOWN VERIFICATION (Tri-Engine Architecture) ──
-      const isMonitorOnly = Boolean(symConfig.monitorOnly);
-      const is6proLockedState = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
-      const is6proPaper = isGlobalPaper || is6proLockedState || isQuarantined || isMonitorOnly || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
-      const is5bPaper = isGlobalPaper || is6proLockedState || isQuarantined || isMonitorOnly || (dynamicState.mode5b || 'PAPER') === 'PAPER';
-      const isS6Paper = isGlobalPaper || is6proLockedState || isQuarantined || isMonitorOnly || (dynamicState.mode6 || 'PAPER') === 'PAPER';
+      // ── INDEPENDENT STRATEGY COOLDOWN VERIFICATION (Dual/Tri-Engine Architecture) ──
+      // For 5B Pro and Strategy 6, respect symConfig.monitorOnly (BOOM150N, CRASH150N, BOOM1000 in incubator)
+      const is5bMonitorOnly = Boolean(symConfig.monitorOnly);
+      const isS6MonitorOnly = Boolean(symConfig.monitorOnly);
+      // For SMC Sweep (6PRO), BOOM150N and CRASH150N are promoted to active pairs (not incubator / monitorOnly)
+      const is6proMonitorOnly = Boolean(symConfig.monitorOnly && symbol !== 'BOOM150N' && symbol !== 'CRASH150N');
 
-      const is6proEnabled = !dynamicState.is6proPaused && (isTriEngine || dynamicState.activeStrategy === 'STRATEGY_6_PRO');
-      const is5bEnabled = !dynamicState.is5bPaused && (isTriEngine || dynamicState.activeStrategy === 'STRATEGY_5B');
+      const is6proLockedState = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
+      const is6proPaper = isGlobalPaper || is6proLockedState || isQuarantined || is6proMonitorOnly || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
+      const is5bPaper = isGlobalPaper || is6proLockedState || isQuarantined || is5bMonitorOnly || (dynamicState.mode5b || 'PAPER') === 'PAPER';
+      const isS6Paper = isGlobalPaper || is6proLockedState || isQuarantined || isS6MonitorOnly || (dynamicState.mode6 || 'PAPER') === 'PAPER';
+
+      const is6proEnabled = !dynamicState.is6proPaused && (isBoth || isTriEngine || dynamicState.activeStrategy === 'STRATEGY_6_PRO');
+      const is5bEnabled = !dynamicState.is5bPaused && (isBoth || isTriEngine || dynamicState.activeStrategy === 'STRATEGY_5B');
       const isS6Enabled = !dynamicState.isS6Paused && (isTriEngine || dynamicState.activeStrategy === 'STRATEGY_6');
 
       const cb6pro = isSymbolInCooldown(symbol, is6proPaper);
@@ -3405,7 +3360,8 @@ async function monitorMarket() {
           }
 
           // Target / Loss Locks Check
-          let isPaperMode = symConfig.monitorOnly || strat.isPaper;
+          const isStratMonitorOnly = strat.id === '6PRO' ? is6proMonitorOnly : is5bMonitorOnly;
+          let isPaperMode = isStratMonitorOnly || strat.isPaper;
           if (!isPaperMode && (dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked || dynamicState.isManuallyPaused)) {
             console.log(`  [${mode}] ${symbol.padEnd(12)} | [${strat.displayName}] Setup ignored: Locked/Paused state.`);
             break;
@@ -3698,14 +3654,17 @@ async function main() {
     ].join('\n'));
   } else {
     const isBoth = dynamicState.activeStrategy === 'BOTH';
-    const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || isBoth || dynamicState.activeStrategy === 'ALL';
+    const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || dynamicState.activeStrategy === 'ALL';
     const isGlobalPaper = dynamicState.executionMode === 'PAPER';
     const is6 = dynamicState.activeStrategy === 'STRATEGY_6';
     const is6Pro = dynamicState.activeStrategy === 'STRATEGY_6_PRO';
 
     let stratDisplayName = 'Strategy 5B Pro';
     let bannerTitle = 'STRATEGY 5B PRO';
-    if (isTriEngine || isGlobalPaper) {
+    if (isBoth) {
+      stratDisplayName = 'Dual-Engine Paper Suite (5B Pro + SMC Sweep — ALL PAPER)';
+      bannerTitle = 'DUAL-ENGINE PAPER SUITE';
+    } else if (isTriEngine || isGlobalPaper) {
       stratDisplayName = 'Tri-Engine Test Sandbox (5B Pro + Strategy 6 + SMC Sweep — ALL PAPER)';
       bannerTitle = 'TRI-ENGINE TEST SANDBOX';
     } else if (is6) {
