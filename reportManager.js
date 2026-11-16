@@ -1285,7 +1285,7 @@ function generateDayTradeExport(targetDateStr) {
   sections.push(`============================================================\n`);
 
   sections.push(`--- [TRI-ENGINE STRATEGY HEAD-TO-HEAD PERFORMANCE AUDIT] ---`);
-  sections.push(`🛡️ [1] STRATEGY 6 (STRUCTURAL MOMENTUM SNIPER — PAPER):`);
+  sections.push(`🛡️ [1] STRATEGY 6 (BREAK & RETEST CONTINUATION — PAPER):`);
   sections.push(`• Closed Trades: ${s6PaperClosed.length} (${s6Wins}W / ${s6Losses}L • ${s6WinRate}% Win Rate)`);
   sections.push(`• Theoretical Net: ${s6NetUSD >= 0 ? '+' : '-'}$${Math.abs(s6NetUSD).toFixed(2)} USD (${s6NetR >= 0 ? '+' : ''}${s6NetR.toFixed(1)}R)`);
   if (s6PaperOpen.length > 0) sections.push(`• Active/Open: ${s6PaperOpen.length} trade(s) running`);
