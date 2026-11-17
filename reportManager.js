@@ -950,7 +950,7 @@ function formatReportTelegramHTML(report) {
       if (sName.includes('Strategy 6') || sName.includes('STRATEGY_6')) icon = '🛡️';
       else if (sName.includes('6 Pro')) icon = '👑';
       else if (sName.includes('5B Pro') || sName.includes('5B')) icon = '🚀';
-      else if (sName.includes('Sweep')) icon = '🔬';
+      else if (sName.includes('Sweep') || sName.includes('SMC')) icon = '🔬';
 
       if (live && live.total > 0) {
         const pSign = live.pnlUSD >= 0 ? '+' : '-';
@@ -1241,16 +1241,34 @@ function generateDayTradeExport(targetDateStr) {
     !(t.strategy || '').includes('Sweep')
   );
 
-  // Live closed vs open
+  // Live closed vs open per strategy
   const liveClosed = allLiveForExport.filter(t => t.outcome === 'WIN' || t.outcome === 'LOSS' || t.outcome === 'BREAKEVEN');
   const liveOpen = allLiveForExport.filter(t => t.outcome === 'OPEN' || t.status === 'OPEN' || !t.closedTime);
 
-  // Strategy 5B Pro Live stats
-  const liveWins = liveClosed.filter(t => t.outcome === 'WIN').length;
-  const liveLosses = liveClosed.filter(t => t.outcome === 'LOSS').length;
-  const liveNetUSD = liveClosed.reduce((sum, t) => sum + (t.pnlUSD || 0), 0);
-  const liveNetR = liveClosed.reduce((sum, t) => sum + (t.pnlR || (t.outcome === 'WIN' ? 1.3 : (t.outcome === 'LOSS' ? -1.0 : 0))), 0);
-  const liveWinRate = liveClosed.length > 0 ? ((liveWins / liveClosed.length) * 100).toFixed(1) : '0.0';
+  // Strategy SMC Live
+  const smcLiveClosed = liveClosed.filter(t => (t.strategy || '').includes('SMC') || (t.strategy || '').includes('Sweep'));
+  const smcLiveOpen = liveOpen.filter(t => (t.strategy || '').includes('SMC') || (t.strategy || '').includes('Sweep'));
+  const smcLiveWins = smcLiveClosed.filter(t => t.outcome === 'WIN').length;
+  const smcLiveLosses = smcLiveClosed.filter(t => t.outcome === 'LOSS').length;
+  const smcLiveNetUSD = smcLiveClosed.reduce((sum, t) => sum + (t.pnlUSD || 0), 0);
+  const smcLiveNetR = smcLiveClosed.reduce((sum, t) => sum + (t.pnlR || (t.outcome === 'WIN' ? 1.3 : (t.outcome === 'LOSS' ? -1.0 : 0))), 0);
+
+  // Strategy 6 Live
+  const s6LiveClosed = liveClosed.filter(t => (t.strategy || '').includes('Strategy 6') || (t.strategy || '').includes('STRATEGY_6'));
+  const s6LiveOpen = liveOpen.filter(t => (t.strategy || '').includes('Strategy 6') || (t.strategy || '').includes('STRATEGY_6'));
+  const s6LiveWins = s6LiveClosed.filter(t => t.outcome === 'WIN').length;
+  const s6LiveLosses = s6LiveClosed.filter(t => t.outcome === 'LOSS').length;
+  const s6LiveNetUSD = s6LiveClosed.reduce((sum, t) => sum + (t.pnlUSD || 0), 0);
+  const s6LiveNetR = s6LiveClosed.reduce((sum, t) => sum + (t.pnlR || (t.outcome === 'WIN' ? 1.3 : (t.outcome === 'LOSS' ? -1.0 : 0))), 0);
+
+  // Strategy 5B Pro Live (everything else, or explicitly 5B)
+  const s5bLiveClosed = liveClosed.filter(t => (t.strategy || '').includes('5B') || (!(t.strategy || '').includes('SMC') && !(t.strategy || '').includes('Sweep') && !(t.strategy || '').includes('Strategy 6') && !(t.strategy || '').includes('STRATEGY_6')));
+  const s5bLiveOpen = liveOpen.filter(t => (t.strategy || '').includes('5B') || (!(t.strategy || '').includes('SMC') && !(t.strategy || '').includes('Sweep') && !(t.strategy || '').includes('Strategy 6') && !(t.strategy || '').includes('STRATEGY_6')));
+  const liveWins = s5bLiveClosed.filter(t => t.outcome === 'WIN').length;
+  const liveLosses = s5bLiveClosed.filter(t => t.outcome === 'LOSS').length;
+  const liveNetUSD = s5bLiveClosed.reduce((sum, t) => sum + (t.pnlUSD || 0), 0);
+  const liveNetR = s5bLiveClosed.reduce((sum, t) => sum + (t.pnlR || (t.outcome === 'WIN' ? 1.3 : (t.outcome === 'LOSS' ? -1.0 : 0))), 0);
+  const liveWinRate = s5bLiveClosed.length > 0 ? ((liveWins / s5bLiveClosed.length) * 100).toFixed(1) : '0.0';
 
   // Strategy 5B Pro Paper stats
   const s5bWins = s5bPaperClosed.filter(t => t.outcome === 'WIN').length;
@@ -1280,11 +1298,33 @@ function generateDayTradeExport(targetDateStr) {
   const otherNetR = otherPaperClosed.reduce((sum, t) => sum + (t.rMultiple || t.pnlR || (t.outcome === 'WIN' ? 1.3 : (t.outcome === 'LOSS' ? -1.0 : 0))), 0);
   const otherWinRate = otherPaperClosed.length > 0 ? ((otherWins / otherPaperClosed.length) * 100).toFixed(1) : '0.0';
 
+  // Combined totals per strategy
+  const total5bClosed = s5bPaperClosed.length + s5bLiveClosed.length;
+  const total5bWins = s5bWins + liveWins;
+  const total5bLosses = s5bLosses + liveLosses;
+  const total5bNetUSD = s5bNetUSD + liveNetUSD;
+  const total5bNetR = s5bNetR + liveNetR;
+  const total5bWR = total5bClosed > 0 ? ((total5bWins / total5bClosed) * 100).toFixed(1) : '0.0';
+
+  const totalSmcClosed = smcPaperClosed.length + smcLiveClosed.length;
+  const totalSmcWins = smcWins + smcLiveWins;
+  const totalSmcLosses = smcLosses + smcLiveLosses;
+  const totalSmcNetUSD = smcNetUSD + smcLiveNetUSD;
+  const totalSmcNetR = smcNetR + smcLiveNetR;
+  const totalSmcWR = totalSmcClosed > 0 ? ((totalSmcWins / totalSmcClosed) * 100).toFixed(1) : '0.0';
+
+  const totalS6Closed = s6PaperClosed.length + s6LiveClosed.length;
+  const totalS6Wins = s6Wins + s6LiveWins;
+  const totalS6Losses = s6Losses + s6LiveLosses;
+  const totalS6NetUSD = s6NetUSD + s6LiveNetUSD;
+  const totalS6NetR = s6NetR + s6LiveNetR;
+  const totalS6WR = totalS6Closed > 0 ? ((totalS6Wins / totalS6Closed) * 100).toFixed(1) : '0.0';
+
   // Determine Leader among all strategies
   const stratScores = [
-    { name: 'Strategy 6', netR: s6NetR },
-    { name: 'Strategy 5B Pro', netR: s5bNetR + liveNetR },
-    { name: 'Strategy SMC', netR: smcNetR }
+    { name: 'Strategy 6', netR: totalS6NetR },
+    { name: 'Strategy 5B Pro', netR: total5bNetR },
+    { name: 'Strategy SMC', netR: totalSmcNetR }
   ];
   stratScores.sort((a, b) => b.netR - a.netR);
   const leaderText = `${stratScores[0].name} leading (${stratScores[0].netR >= 0 ? '+' : ''}${stratScores[0].netR.toFixed(1)}R)`;
@@ -1298,28 +1338,22 @@ function generateDayTradeExport(targetDateStr) {
   sections.push(`============================================================\n`);
 
   sections.push(`--- [TRI-ENGINE STRATEGY HEAD-TO-HEAD PERFORMANCE AUDIT] ---`);
-  sections.push(`🛡️ [1] STRATEGY 6 (BREAK & RETEST CONTINUATION — PAPER):`);
-  sections.push(`• Closed Trades: ${s6PaperClosed.length} (${s6Wins}W / ${s6Losses}L • ${s6WinRate}% Win Rate)`);
-  sections.push(`• Theoretical Net: ${s6NetUSD >= 0 ? '+' : '-'}$${Math.abs(s6NetUSD).toFixed(2)} USD (${s6NetR >= 0 ? '+' : ''}${s6NetR.toFixed(1)}R)`);
-  if (s6PaperOpen.length > 0) sections.push(`• Active/Open: ${s6PaperOpen.length} trade(s) running`);
+  sections.push(`🛡️ [1] STRATEGY 6 (BREAK & RETEST CONTINUATION):`);
+  sections.push(`• Closed Trades: ${totalS6Closed} (${totalS6Wins}W / ${totalS6Losses}L • ${totalS6WR}% Win Rate)`);
+  sections.push(`• Net Impact: ${totalS6NetUSD >= 0 ? '+' : '-'}$${Math.abs(totalS6NetUSD).toFixed(2)} USD (${totalS6NetR >= 0 ? '+' : ''}${totalS6NetR.toFixed(1)}R)`);
+  if (s6PaperOpen.length > 0 || s6LiveOpen.length > 0) sections.push(`• Active/Open: ${s6PaperOpen.length + s6LiveOpen.length} trade(s) running`);
   sections.push(``);
 
-  sections.push(`🚀 [2] STRATEGY 5B PRO (TEST SANDBOX):`);
-  const total5bClosed = s5bPaperClosed.length + liveClosed.length;
-  const total5bWins = s5bWins + liveWins;
-  const total5bLosses = s5bLosses + liveLosses;
-  const total5bNetUSD = s5bNetUSD + liveNetUSD;
-  const total5bNetR = s5bNetR + liveNetR;
-  const total5bWR = total5bClosed > 0 ? ((total5bWins / total5bClosed) * 100).toFixed(1) : '0.0';
+  sections.push(`🚀 [2] STRATEGY 5B PRO (DUAL-DESK LIVE / TEST SANDBOX):`);
   sections.push(`• Closed Trades: ${total5bClosed} (${total5bWins}W / ${total5bLosses}L • ${total5bWR}% Win Rate)`);
   sections.push(`• Net Impact: ${total5bNetUSD >= 0 ? '+' : '-'}$${Math.abs(total5bNetUSD).toFixed(2)} USD (${total5bNetR >= 0 ? '+' : ''}${total5bNetR.toFixed(1)}R)`);
-  if (s5bPaperOpen.length > 0 || liveOpen.length > 0) sections.push(`• Active/Open: ${s5bPaperOpen.length + liveOpen.length} trade(s) running`);
+  if (s5bPaperOpen.length > 0 || s5bLiveOpen.length > 0) sections.push(`• Active/Open: ${s5bPaperOpen.length + s5bLiveOpen.length} trade(s) running`);
   sections.push(``);
 
-  sections.push(`🔬 [3] STRATEGY SMC (PAPER SANDBOX):`);
-  sections.push(`• Closed Trades: ${smcPaperClosed.length} (${smcWins}W / ${smcLosses}L • ${smcWinRate}% Win Rate)`);
-  sections.push(`• Theoretical Net: ${smcNetUSD >= 0 ? '+' : '-'}$${Math.abs(smcNetUSD).toFixed(2)} USD (${smcNetR >= 0 ? '+' : ''}${smcNetR.toFixed(1)}R)`);
-  if (smcPaperOpen.length > 0) sections.push(`• Active/Open: ${smcPaperOpen.length} paper trade(s) running`);
+  sections.push(`🔬 [3] STRATEGY SMC (DUAL-DESK LIVE / TEST SANDBOX):`);
+  sections.push(`• Closed Trades: ${totalSmcClosed} (${totalSmcWins}W / ${totalSmcLosses}L • ${totalSmcWR}% Win Rate)`);
+  sections.push(`• Net Impact: ${totalSmcNetUSD >= 0 ? '+' : '-'}$${Math.abs(totalSmcNetUSD).toFixed(2)} USD (${totalSmcNetR >= 0 ? '+' : ''}${totalSmcNetR.toFixed(1)}R)`);
+  if (smcPaperOpen.length > 0 || smcLiveOpen.length > 0) sections.push(`• Active/Open: ${smcPaperOpen.length + smcLiveOpen.length} trade(s) running`);
   sections.push(``);
 
   sections.push(`⚖️ STRATEGY VERDICT: ${leaderText}`);
@@ -1424,31 +1458,31 @@ function generateDayTradeExport(targetDateStr) {
       open: liveOpen.length
     },
     s5bStats: {
-      trades: s5bPaperClosed.length + liveClosed.length,
-      wins: s5bWins + liveWins,
-      losses: s5bLosses + liveLosses,
-      winRate: (s5bPaperClosed.length + liveClosed.length) > 0 ? (((s5bWins + liveWins) / (s5bPaperClosed.length + liveClosed.length)) * 100).toFixed(1) : '0.0',
-      netUSD: s5bNetUSD + liveNetUSD,
-      netR: s5bNetR + liveNetR,
-      open: s5bPaperOpen.length + liveOpen.length
+      trades: total5bClosed,
+      wins: total5bWins,
+      losses: total5bLosses,
+      winRate: total5bWR,
+      netUSD: total5bNetUSD,
+      netR: total5bNetR,
+      open: s5bPaperOpen.length + s5bLiveOpen.length
     },
     s6Stats: {
-      trades: s6PaperClosed.length,
-      wins: s6Wins,
-      losses: s6Losses,
-      winRate: s6WinRate,
-      netUSD: s6NetUSD,
-      netR: s6NetR,
-      open: s6PaperOpen.length
+      trades: totalS6Closed,
+      wins: totalS6Wins,
+      losses: totalS6Losses,
+      winRate: totalS6WR,
+      netUSD: totalS6NetUSD,
+      netR: totalS6NetR,
+      open: s6PaperOpen.length + s6LiveOpen.length
     },
     smcStats: {
-      trades: smcPaperClosed.length,
-      wins: smcWins,
-      losses: smcLosses,
-      winRate: smcWinRate,
-      netUSD: smcNetUSD,
-      netR: smcNetR,
-      open: smcPaperOpen.length
+      trades: totalSmcClosed,
+      wins: totalSmcWins,
+      losses: totalSmcLosses,
+      winRate: totalSmcWR,
+      netUSD: totalSmcNetUSD,
+      netR: totalSmcNetR,
+      open: smcPaperOpen.length + smcLiveOpen.length
     },
     otherPaperStats: {
       trades: otherPaperClosed.length,

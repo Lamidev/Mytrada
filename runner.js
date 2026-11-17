@@ -3459,9 +3459,14 @@ async function monitorMarket() {
       const is5bLockedState = masterLocked || (dynamicState.desk5b && (dynamicState.desk5b.targetLocked || dynamicState.desk5b.lossLocked));
       const is6proLockedState = masterLocked || (dynamicState.deskSMC && (dynamicState.deskSMC.targetLocked || dynamicState.deskSMC.lossLocked));
 
-      const is6proPaper = isGlobalPaper || is6proLockedState || isSmcQuarantined || is6proMonitorOnly || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
-      const is5bPaper = isGlobalPaper || is5bLockedState || is5bQuarantined || is5bMonitorOnly || (dynamicState.mode5b || 'PAPER') === 'PAPER';
-      const isS6Paper = isGlobalPaper || is6proLockedState || is5bQuarantined || isS6MonitorOnly || (dynamicState.mode6 || 'PAPER') === 'PAPER';
+      // 🛡️ Midnight Alignment Buffer (00:00 - 00:15 UTC): Observe initial 15M candle completion before live orders
+      const utcHours = now.getUTCHours();
+      const utcMins = now.getUTCMinutes();
+      const isMidnightBuffer = (utcHours === 0 && utcMins < 15);
+
+      const is6proPaper = isGlobalPaper || isMidnightBuffer || is6proLockedState || isSmcQuarantined || is6proMonitorOnly || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
+      const is5bPaper = isGlobalPaper || isMidnightBuffer || is5bLockedState || is5bQuarantined || is5bMonitorOnly || (dynamicState.mode5b || 'PAPER') === 'PAPER';
+      const isS6Paper = isGlobalPaper || isMidnightBuffer || is6proLockedState || is5bQuarantined || isS6MonitorOnly || (dynamicState.mode6 || 'PAPER') === 'PAPER';
 
       const is6proEnabled = !dynamicState.is6proPaused && (isBoth || isTriEngine || dynamicState.activeStrategy === 'STRATEGY_6_PRO');
       const is5bEnabled = !dynamicState.is5bPaused && (isBoth || isTriEngine || dynamicState.activeStrategy === 'STRATEGY_5B');
