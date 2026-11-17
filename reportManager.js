@@ -350,8 +350,8 @@ function generateDailyReport(targetDateStr) {
         sName = 'Strategy 6 Pro';
       } else if (t.strategy.includes('5B Pro') || t.strategy.includes('5B') || t.strategy.includes('5b')) {
         sName = 'Strategy 5B Pro';
-      } else if (t.strategy.includes('SMC Sweep') || t.strategy.includes('Sweep')) {
-        sName = 'Strategy SMC Sweep';
+      } else if (t.strategy.includes('SMC') || t.strategy.includes('Sweep')) {
+        sName = 'Strategy SMC';
       } else {
         sName = t.strategy;
       }
@@ -402,12 +402,12 @@ function generateDailyReport(targetDateStr) {
   let paperTotalWins = 0, paperTotalLosses = 0, paperTotalUSD = 0, paperTotalR = 0;
 
   paperToday.forEach(t => {
-    let sName = 'Strategy SMC Sweep';
+    let sName = 'Strategy SMC';
     if (t.strategy) {
       if (t.strategy.includes('Strategy 6') || t.strategy.includes('STRATEGY_6')) {
         sName = 'Strategy 6';
-      } else if (t.strategy.includes('SMC Sweep') || t.strategy.includes('Sweep')) {
-        sName = 'Strategy SMC Sweep';
+      } else if (t.strategy.includes('SMC') || t.strategy.includes('Sweep')) {
+        sName = 'Strategy SMC';
       } else if (t.strategy.includes('6 Pro') || t.strategy.includes('6PRO')) {
         sName = 'Strategy 6 Pro';
       } else if (t.strategy.includes('5B Pro') || t.strategy.includes('5B') || t.strategy.includes('5b')) {
@@ -601,8 +601,8 @@ function generateWeeklyReport(reanchor = false, referenceDate = null) {
         sName = 'Strategy 6 Pro';
       } else if (t.strategy.includes('5B Pro') || t.strategy.includes('5B') || t.strategy.includes('5b')) {
         sName = 'Strategy 5B Pro';
-      } else if (t.strategy.includes('SMC Sweep') || t.strategy.includes('Sweep')) {
-        sName = 'Strategy SMC Sweep';
+      } else if (t.strategy.includes('SMC') || t.strategy.includes('Sweep')) {
+        sName = 'Strategy SMC';
       } else {
         sName = t.strategy;
       }
@@ -659,12 +659,12 @@ function generateWeeklyReport(reanchor = false, referenceDate = null) {
   let paperTotalWins = 0, paperTotalLosses = 0, paperTotalUSD = 0, paperTotalR = 0;
 
   paperThisWeek.forEach(t => {
-    let sName = 'Strategy SMC Sweep';
+    let sName = 'Strategy SMC';
     if (t.strategy) {
       if (t.strategy.includes('Strategy 6') || t.strategy.includes('STRATEGY_6')) {
         sName = 'Strategy 6';
-      } else if (t.strategy.includes('SMC Sweep') || t.strategy.includes('Sweep')) {
-        sName = 'Strategy SMC Sweep';
+      } else if (t.strategy.includes('SMC') || t.strategy.includes('Sweep')) {
+        sName = 'Strategy SMC';
       } else if (t.strategy.includes('6 Pro') || t.strategy.includes('6PRO')) {
         sName = 'Strategy 6 Pro';
       } else if (t.strategy.includes('5B Pro') || t.strategy.includes('5B') || t.strategy.includes('5b')) {
@@ -889,20 +889,17 @@ function formatReportTelegramHTML(report) {
     const dynamicStatePath = path.join(CACHE_DIR, 'dynamic_state.json');
     if (fs.existsSync(dynamicStatePath)) {
       const ds = JSON.parse(fs.readFileSync(dynamicStatePath, 'utf8'));
-      if (ds.activeStrategy === 'TRI_ENGINE' || (ds.executionMode === 'PAPER' && (ds.activeStrategy === 'BOTH' || ds.activeStrategy === 'TRI_ENGINE'))) {
-        stratName = "Tri-Engine Sandbox (5B Pro + Strategy 6 + SMC Sweep — All Paper)";
+      if (ds.activeStrategy === 'TRI_ENGINE' || (ds.executionMode === 'PAPER' && ds.activeStrategy === 'TRI_ENGINE')) {
+        stratName = "Tri-Engine Sandbox (5B Pro + Strategy 6 + SMC — All Paper)";
       } else if (ds.activeStrategy === 'STRATEGY_6' || ds.activeStrategy === '6') {
         stratName = "Strategy 6 (Structural Momentum Sniper)";
-      } else if (ds.activeStrategy === 'BOTH' || (ds.mode5b === 'LIVE' && ds.modeSMCSweep === 'PAPER')) {
-        stratName = "Strategy 5B Pro Live | Strategy SMC Sweep Paper";
-      } else if (ds.activeStrategy === 'STRATEGY_5B_PRO' || ds.activeStrategy === '5B_PRO') {
-        stratName = "Strategy 5B Pro (SMC Momentum Corridor)";
-      } else if (ds.mode6pro === 'LIVE' && ds.mode5b === 'PAPER') {
-        stratName = "Strategy 6 Pro Live (GodEyes SMC) | 5B Paper Sandbox";
-      } else if (ds.mode6pro === 'LIVE' || ds.activeStrategy === 'STRATEGY_6_PRO') {
-        stratName = "Strategy 6 Pro (GodEyes SMC Institutional Sniper)";
       } else if (ds.activeStrategy === 'BOTH') {
-        stratName = "Dual Engine (5B Pro Live / SMC Sweep Paper)";
+        const isLive = ds.executionMode === 'LIVE';
+        stratName = isLive ? "Dual-Desk Suite (Strategy 5B Pro Live + Strategy SMC Live)" : "Dual-Engine Suite (Strategy 5B Pro Paper + Strategy SMC Paper)";
+      } else if (ds.activeStrategy === 'STRATEGY_5B_PRO' || ds.activeStrategy === 'STRATEGY_5B' || ds.activeStrategy === '5B_PRO') {
+        stratName = "Strategy 5B Pro (SMC Momentum Corridor)";
+      } else if (ds.mode6pro === 'LIVE' || ds.activeStrategy === 'STRATEGY_6_PRO') {
+        stratName = "Strategy SMC (15M Liquidity Sweeps)";
       }
     }
   } catch (e) {}
@@ -1091,47 +1088,61 @@ function getCurrentAccountBalance() {
  * Returns active weekly compounded trade risk, reward target, and account balance.
  * Trade risk is fixed based on the Weekly Anchor Balance set at the start of each week.
  */
-function getWeeklyCompoundedRisk(customPercent = null) {
+function getWeeklyCompoundedRisk(customPercent = null, deskAllocation = null) {
   const anchorBalance = getWeeklyAnchorBalance();
   const liveBalance = getCurrentAccountBalance();
   let riskPercent = config.RISK_PERCENT || 3.0;
+  let allocation = 1.0;
+
+  const dynamicStatePath = path.join(CACHE_DIR, 'dynamic_state.json');
+  let ds = null;
+  if (fs.existsSync(dynamicStatePath)) {
+    try {
+      ds = JSON.parse(fs.readFileSync(dynamicStatePath, 'utf8'));
+      if (ds && typeof ds.customRiskPercent === 'number' && ds.customRiskPercent > 0) {
+        riskPercent = ds.customRiskPercent;
+      }
+    } catch (e) {}
+  }
 
   if (customPercent && typeof customPercent === 'number' && customPercent > 0) {
     riskPercent = customPercent;
-  } else {
-    const dynamicStatePath = path.join(CACHE_DIR, 'dynamic_state.json');
-    if (fs.existsSync(dynamicStatePath)) {
-      try {
-        const ds = JSON.parse(fs.readFileSync(dynamicStatePath, 'utf8'));
-        if (ds && typeof ds.customRiskPercent === 'number' && ds.customRiskPercent > 0) {
-          riskPercent = ds.customRiskPercent;
-        }
-      } catch (e) {}
-    }
   }
-  
+
+  if (typeof deskAllocation === 'number' && deskAllocation > 0 && deskAllocation <= 1) {
+    allocation = deskAllocation;
+  } else if (ds && (ds.activeStrategy === 'BOTH' || ds.activeStrategy === 'TRI_ENGINE') && ds.balanceAllocation) {
+    allocation = ds.balanceAllocation;
+  }
+
+  const effectiveBaseBalance = (liveBalance > 0 ? liveBalance : anchorBalance) * allocation;
+
   if (!config.DYNAMIC_RISK_COMPOUNDING) {
-    const fallbackRisk = config.RISK_AMOUNT_USD || 3.0;
+    const fallbackRisk = (config.RISK_AMOUNT_USD || 3.0) * allocation;
     return {
-      balance: parseFloat(anchorBalance.toFixed(2)),
+      balance: parseFloat((anchorBalance * allocation).toFixed(2)),
       liveBalance: parseFloat(liveBalance.toFixed(2)),
-      riskUSD: fallbackRisk,
+      effectiveDeskBalance: parseFloat(effectiveBaseBalance.toFixed(2)),
+      riskUSD: parseFloat(fallbackRisk.toFixed(2)),
       rewardUSD: parseFloat((fallbackRisk * (config.REWARD_RATIO || 1.3)).toFixed(2)),
-      riskPercent
+      riskPercent,
+      allocation
     };
   }
 
-  const rawRisk = anchorBalance * (riskPercent / 100);
+  const rawRisk = effectiveBaseBalance * (riskPercent / 100);
   const minRiskFloor = config.MIN_RISK_AMOUNT_USD || 3.0;
   const riskUSD = parseFloat(Math.max(minRiskFloor, rawRisk).toFixed(2));
   const rewardUSD = parseFloat((riskUSD * (config.REWARD_RATIO || 1.3)).toFixed(2));
 
   return {
-    balance: parseFloat(anchorBalance.toFixed(2)),
+    balance: parseFloat((anchorBalance * allocation).toFixed(2)),
     liveBalance: parseFloat(liveBalance.toFixed(2)),
+    effectiveDeskBalance: parseFloat(effectiveBaseBalance.toFixed(2)),
     riskUSD,
     rewardUSD,
-    riskPercent
+    riskPercent,
+    allocation
   };
 }
 
@@ -1209,23 +1220,25 @@ function generateDayTradeExport(targetDateStr) {
     getDateString(t.triggeredTime) === targetDateStr
   );
 
-  // Group paper trades by strategy: 5B Pro vs Strategy 6 vs SMC Sweep
+  // Group paper trades by strategy: 5B Pro vs Strategy 6 vs Strategy SMC
   const s5bPaperClosed = paperTrades.filter(t => (t.strategy || '').includes('5B'));
   const s6PaperClosed = paperTrades.filter(t => (t.strategy || '').includes('Strategy 6') || (t.strategy || '').includes('STRATEGY_6'));
-  const smcPaperClosed = paperTrades.filter(t => (t.strategy || '').includes('SMC Sweep') || (t.strategy || '').includes('Sweep'));
+  const smcPaperClosed = paperTrades.filter(t => (t.strategy || '').includes('SMC') || (t.strategy || '').includes('Sweep'));
   const otherPaperClosed = paperTrades.filter(t => 
     !(t.strategy || '').includes('5B') && 
     !(t.strategy || '').includes('Strategy 6') && 
-    !(t.strategy || '').includes('SMC Sweep')
+    !(t.strategy || '').includes('SMC') &&
+    !(t.strategy || '').includes('Sweep')
   );
 
   const s5bPaperOpen = openPaperTrades.filter(t => (t.strategy || '').includes('5B'));
   const s6PaperOpen = openPaperTrades.filter(t => (t.strategy || '').includes('Strategy 6') || (t.strategy || '').includes('STRATEGY_6'));
-  const smcPaperOpen = openPaperTrades.filter(t => (t.strategy || '').includes('SMC Sweep') || (t.strategy || '').includes('Sweep'));
+  const smcPaperOpen = openPaperTrades.filter(t => (t.strategy || '').includes('SMC') || (t.strategy || '').includes('Sweep'));
   const otherPaperOpen = openPaperTrades.filter(t => 
     !(t.strategy || '').includes('5B') && 
     !(t.strategy || '').includes('Strategy 6') && 
-    !(t.strategy || '').includes('SMC Sweep')
+    !(t.strategy || '').includes('SMC') &&
+    !(t.strategy || '').includes('Sweep')
   );
 
   // Live closed vs open
@@ -1253,7 +1266,7 @@ function generateDayTradeExport(targetDateStr) {
   const s6NetR = s6PaperClosed.reduce((sum, t) => sum + (t.rMultiple || t.pnlR || (t.outcome === 'WIN' ? 1.3 : (t.outcome === 'LOSS' ? -1.0 : 0))), 0);
   const s6WinRate = s6PaperClosed.length > 0 ? ((s6Wins / s6PaperClosed.length) * 100).toFixed(1) : '0.0';
 
-  // Strategy SMC Sweep Paper stats
+  // Strategy SMC Paper stats
   const smcWins = smcPaperClosed.filter(t => t.outcome === 'WIN').length;
   const smcLosses = smcPaperClosed.filter(t => t.outcome === 'LOSS').length;
   const smcNetUSD = smcPaperClosed.reduce((sum, t) => sum + (t.pnlUSD || 0), 0);
@@ -1271,7 +1284,7 @@ function generateDayTradeExport(targetDateStr) {
   const stratScores = [
     { name: 'Strategy 6', netR: s6NetR },
     { name: 'Strategy 5B Pro', netR: s5bNetR + liveNetR },
-    { name: 'Strategy SMC Sweep', netR: smcNetR }
+    { name: 'Strategy SMC', netR: smcNetR }
   ];
   stratScores.sort((a, b) => b.netR - a.netR);
   const leaderText = `${stratScores[0].name} leading (${stratScores[0].netR >= 0 ? '+' : ''}${stratScores[0].netR.toFixed(1)}R)`;
@@ -1303,7 +1316,7 @@ function generateDayTradeExport(targetDateStr) {
   if (s5bPaperOpen.length > 0 || liveOpen.length > 0) sections.push(`• Active/Open: ${s5bPaperOpen.length + liveOpen.length} trade(s) running`);
   sections.push(``);
 
-  sections.push(`🔬 [3] STRATEGY SMC SWEEP (PAPER SANDBOX):`);
+  sections.push(`🔬 [3] STRATEGY SMC (PAPER SANDBOX):`);
   sections.push(`• Closed Trades: ${smcPaperClosed.length} (${smcWins}W / ${smcLosses}L • ${smcWinRate}% Win Rate)`);
   sections.push(`• Theoretical Net: ${smcNetUSD >= 0 ? '+' : '-'}$${Math.abs(smcNetUSD).toFixed(2)} USD (${smcNetR >= 0 ? '+' : ''}${smcNetR.toFixed(1)}R)`);
   if (smcPaperOpen.length > 0) sections.push(`• Active/Open: ${smcPaperOpen.length} paper trade(s) running`);

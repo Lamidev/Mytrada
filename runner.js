@@ -242,6 +242,32 @@ function loadDynamicState() {
         data.isManuallyPaused = false;
         data.is5bPaused = false;
         data.is6proPaused = false;
+        data.desk5b = {
+          netUSD: 0,
+          netR: 0,
+          wins: 0,
+          losses: 0,
+          targetUSD: 908.43,
+          maxLossUSD: 698.79,
+          targetLocked: false,
+          lossLocked: false,
+          isPaused: false
+        };
+        data.deskSMC = {
+          netUSD: 0,
+          netR: 0,
+          wins: 0,
+          losses: 0,
+          targetUSD: 908.43,
+          maxLossUSD: 698.79,
+          targetLocked: false,
+          lossLocked: false,
+          isPaused: false
+        };
+        data.masterAccount = {
+          maxDailyLossUSD: 1397.58,
+          dailyLossLocked: false
+        };
         saveDynamicState(data);
       }
       if (data.dailyTargetUSD === 250 || data.dailyTargetUSD === 598.35 || data.dailyTargetUSD === undefined || (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.AUTO_TARGET_ENABLED && data.dailyTargetUSD === 0)) {
@@ -255,7 +281,7 @@ function loadDynamicState() {
         saveDynamicState(data);
       }
       if (!data.activeStrategy) {
-        data.activeStrategy = 'NONE';
+        data.activeStrategy = 'BOTH';
         saveDynamicState(data);
       }
       if (!data.executionMode) {
@@ -263,7 +289,7 @@ function loadDynamicState() {
         saveDynamicState(data);
       }
       if (!data.mode5b) {
-        data.mode5b = 'PAPER';
+        data.mode5b = 'LIVE';
         saveDynamicState(data);
       }
       if (!data.mode6pro) {
@@ -272,6 +298,39 @@ function loadDynamicState() {
       }
       if (data.is5bPaused === undefined) data.is5bPaused = false;
       if (data.is6proPaused === undefined) data.is6proPaused = false;
+      if (data.balanceAllocation === undefined) data.balanceAllocation = 0.50;
+      if (!data.desk5b) {
+        data.desk5b = {
+          netUSD: 0,
+          netR: 0,
+          wins: 0,
+          losses: 0,
+          targetUSD: 908.43,
+          maxLossUSD: 698.79,
+          targetLocked: false,
+          lossLocked: false,
+          isPaused: false
+        };
+      }
+      if (!data.deskSMC) {
+        data.deskSMC = {
+          netUSD: 0,
+          netR: 0,
+          wins: 0,
+          losses: 0,
+          targetUSD: 908.43,
+          maxLossUSD: 698.79,
+          targetLocked: false,
+          lossLocked: false,
+          isPaused: false
+        };
+      }
+      if (!data.masterAccount) {
+        data.masterAccount = {
+          maxDailyLossUSD: 1397.58,
+          dailyLossLocked: false
+        };
+      }
       return data;
     } catch (e) {
       console.warn("[runner] Warning loading dynamic state:", e.message);
@@ -292,10 +351,37 @@ function loadDynamicState() {
     portfolioPauseUntil: 0,
     activeStrategy: 'BOTH',
     executionMode: 'LIVE',
-    mode5b: 'PAPER',
+    mode5b: 'LIVE',
     mode6pro: 'LIVE',
     is5bPaused: false,
-    is6proPaused: false
+    is6proPaused: false,
+    balanceAllocation: 0.50,
+    desk5b: {
+      netUSD: 0,
+      netR: 0,
+      wins: 0,
+      losses: 0,
+      targetUSD: 908.43,
+      maxLossUSD: 698.79,
+      targetLocked: false,
+      lossLocked: false,
+      isPaused: false
+    },
+    deskSMC: {
+      netUSD: 0,
+      netR: 0,
+      wins: 0,
+      losses: 0,
+      targetUSD: 908.43,
+      maxLossUSD: 698.79,
+      targetLocked: false,
+      lossLocked: false,
+      isPaused: false
+    },
+    masterAccount: {
+      maxDailyLossUSD: 1397.58,
+      dailyLossLocked: false
+    }
   };
   saveDynamicState(freshState);
   return freshState;
@@ -403,25 +489,39 @@ function savePairHealthState(state) {
 
 let pairHealthState = loadPairHealthState();
 
-function getPairHealth(symbol) {
-  if (!pairHealthState[symbol]) {
-    pairHealthState[symbol] = {
-      symbol,
-      consecutiveLosses: 0,
-      consecutivePaperWins: 0,
-      weeklyNetR: 0.0,
-      isQuarantined: false,
-      quarantineReason: null,
-      quarantinedAt: null,
-      totalRealWins: 0,
-      totalRealLosses: 0
-    };
-  }
-  return pairHealthState[symbol];
+function getStratKey(stratId) {
+  const s = String(stratId || '').toUpperCase();
+  if (s.includes('SMC') || s.includes('6PRO') || s.includes('SWEEP') || s.includes('6_PRO')) return 'SMC';
+  return '5B';
 }
 
-async function updatePairHealthOnLiveClose(symbol, outcome) {
-  const rec = getPairHealth(symbol);
+function getPairHealth(symbol, stratId = '5B') {
+  const stratKey = getStratKey(stratId);
+  const compositeKey = `${stratKey}_${symbol}`;
+  if (!pairHealthState[compositeKey]) {
+    const legacy = pairHealthState[symbol];
+    const isQuar = legacy && stratKey === '5B' ? (legacy.isQuarantined || false) : false;
+    const qReason = legacy && stratKey === '5B' ? legacy.quarantineReason : null;
+    pairHealthState[compositeKey] = {
+      symbol,
+      strategy: stratKey,
+      consecutiveLosses: legacy && stratKey === '5B' ? (legacy.consecutiveLosses || 0) : 0,
+      consecutivePaperWins: 0,
+      weeklyNetR: legacy && stratKey === '5B' ? (legacy.weeklyNetR || 0.0) : 0.0,
+      isQuarantined: isQuar,
+      quarantineReason: qReason,
+      quarantinedAt: legacy && stratKey === '5B' ? legacy.quarantinedAt : null,
+      totalRealWins: legacy && stratKey === '5B' ? (legacy.totalRealWins || 0) : 0,
+      totalRealLosses: legacy && stratKey === '5B' ? (legacy.totalRealLosses || 0) : 0
+    };
+  }
+  return pairHealthState[compositeKey];
+}
+
+async function updatePairHealthOnLiveClose(symbol, outcome, stratId = '5B') {
+  const stratKey = getStratKey(stratId);
+  const stratName = stratKey === 'SMC' ? 'Strategy SMC' : 'Strategy 5B Pro';
+  const rec = getPairHealth(symbol, stratKey);
   if (outcome === 'WIN') {
     rec.consecutiveLosses = 0;
     rec.weeklyNetR = (rec.weeklyNetR || 0) + 1.3;
@@ -432,8 +532,6 @@ async function updatePairHealthOnLiveClose(symbol, outcome) {
     rec.totalRealLosses = (rec.totalRealLosses || 0) + 1;
 
     // 🛡️ SMART 2-LOSS AUTO-QUARANTINE RULES:
-    // Rule 1: 2 consecutive losses with thin/negative profit buffer (< 1.0R) ➔ Instant Demotion (Locks in profit & prevents flip to negative)
-    // Rule 2: 3 consecutive losses (hard safety floor for all pairs) ➔ Instant Demotion
     const isBufferThin = rec.weeklyNetR < 1.0;
     const shouldQuarantine = (rec.consecutiveLosses >= 2 && isBufferThin) || (rec.consecutiveLosses >= 3);
 
@@ -448,34 +546,34 @@ async function updatePairHealthOnLiveClose(symbol, outcome) {
       savePairHealthState(pairHealthState);
 
       const alertMsg = [
-        `⚠️ 🛡️ <b>[MYTRADA AUTO-QUARANTINE ACTIVATED]</b>`,
+        `⚠️ 🛡️ <b>[MYTRADA AUTO-QUARANTINE ACTIVATED — ${stratName.toUpperCase()}]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+        `<b>Engine:</b> <code>${stratName}</code>`,
         `<b>Trigger:</b> <code>${rec.quarantineReason}</code>`,
-        `<b>Action:</b> <b>Demoted to Paper Test Mode ($0 Real Risk)</b>`,
+        `<b>Action:</b> <b>Demoted to Paper Test Mode for ${stratName} ($0 Real Risk)</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `📊 <b>Pair Record:</b> <code>${rec.totalRealWins}W / ${rec.totalRealLosses}L (${rec.weeklyNetR >= 0 ? '+' : ''}${rec.weeklyNetR.toFixed(1)}R)</code>`,
+        `📊 <b>Pair Record (${stratName}):</b> <code>${rec.totalRealWins}W / ${rec.totalRealLosses}L (${rec.weeklyNetR >= 0 ? '+' : ''}${rec.weeklyNetR.toFixed(1)}R)</code>`,
         `💵 <b>Live Account Balance Protected:</b> <code>$${getCurrentAccountBalance().toFixed(2)} USD</code>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💡 <i>Bot will safely forward-test this pair in paper sandbox until it scores 2 winning paper setups, or send /unquarantine ${symbol} to override.</i>`
+        `💡 <i>Bot will safely forward-test this pair in paper sandbox until it scores 2 winning paper setups, or send /unquarantine ${symbol} ${stratKey.toLowerCase()} to override.</i>`
       ].join('\n');
 
       await sendTelegramMessage(alertMsg);
-      console.log(`\n⚠️ [AUTO-QUARANTINE] ${symbol} demoted to Paper Mode: ${rec.quarantineReason}\n`);
+      console.log(`\n⚠️ [AUTO-QUARANTINE] ${symbol} demoted to Paper Mode for ${stratName}: ${rec.quarantineReason}\n`);
     }
   }
 
   savePairHealthState(pairHealthState);
 }
 
-async function updatePairHealthOnPaperClose(symbol, outcome, trade = null) {
-  const rec = getPairHealth(symbol);
+async function updatePairHealthOnPaperClose(symbol, outcome, trade = null, stratId = null) {
+  const stratKey = getStratKey(stratId || (trade && trade.strategy) || (trade && trade.setupId) || '5B');
+  const stratName = stratKey === 'SMC' ? 'Strategy SMC' : 'Strategy 5B Pro';
+  const rec = getPairHealth(symbol, stratKey);
   if (!rec.isQuarantined) return;
 
   if (outcome === 'WIN') {
-    // 🛡️ DUAL-ENGINE SETUP DEDUPLICATION GUARD:
-    // If multiple strategies (e.g. 5B and 6 Pro) both take paper trades on the same market setup/candle,
-    // only count ONE win towards graduation. A pair must prove itself across 2 INDEPENDENT market setups!
     const setupEpoch = trade && (trade.candleEpoch || 0);
     const triggerTime = trade && (trade.triggeredTime || 0);
 
@@ -484,7 +582,7 @@ async function updatePairHealthOnPaperClose(symbol, outcome, trade = null) {
     const isInstantCloseDup = rec.lastPaperWinClosedAt && (Date.now() - rec.lastPaperWinClosedAt < 5 * 60 * 1000);
 
     if (isSameEpoch || isSameTriggerWindow || isInstantCloseDup) {
-      console.log(`[QUARANTINE] 🛡️ Ignored duplicate dual-engine paper TP for ${symbol} (${trade && trade.strategy ? trade.strategy : 'Dual Engine'}). Already credited for this market setup.`);
+      console.log(`[QUARANTINE] 🛡️ Ignored duplicate paper TP for ${symbol} (${stratName}). Already credited for this market setup.`);
       return;
     }
 
@@ -494,7 +592,6 @@ async function updatePairHealthOnPaperClose(symbol, outcome, trade = null) {
     rec.consecutivePaperWins = (rec.consecutivePaperWins || 0) + 1;
 
     if (rec.consecutivePaperWins >= 2) {
-      // 🏆 Proof-of-Health Achieved: Restore to Live Trading!
       rec.isQuarantined = false;
       rec.consecutiveLosses = 0;
       rec.consecutivePaperWins = 0;
@@ -506,31 +603,21 @@ async function updatePairHealthOnPaperClose(symbol, outcome, trade = null) {
 
       savePairHealthState(pairHealthState);
 
-      const cbRec = circuitBreakerState.symbols && circuitBreakerState.symbols[symbol];
-      const isDailyLocked = cbRec && cbRec.dailyLosses >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2);
-
-      const actionLine = isDailyLocked
-        ? `<b>Action:</b> <b>Restored for Tomorrow Morning!</b>`
-        : `<b>Action:</b> <b>Restored to Live Real Trading Universe!</b>`;
-
-      const noteLine = isDailyLocked
-        ? `🛡️ <i>Proof of health achieved! Cleared for Live trading upon 12:00 AM UTC rollover (today's daily 2-loss limit shields real balance until then).</i>`
-        : `🚀 <i>Market structure & trend clarity have stabilized. Real execution re-enabled.</i>`;
-
       const alertMsg = [
         `🏆 🟢 <b>[PAIR GRADUATION: RESTORED TO LIVE]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+        `<b>Strategy:</b> <code>${stratName}</code>`,
         `<b>Achievement:</b> <code>2 Consecutive Winning Paper Setups (+2.6R)</code>`,
-        actionLine,
+        `<b>Action:</b> <b>Restored to Live Real Trading for ${stratName}!</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        noteLine
+        `🚀 <i>Market structure & trend clarity have stabilized. Real execution re-enabled.</i>`
       ].join('\n');
 
       await sendTelegramMessage(alertMsg);
-      console.log(`\n🏆 [PAIR GRADUATION] ${symbol} achieved 2 winning paper trades -> Restored to Live Trading${isDailyLocked ? ' (active tomorrow after rollover)' : ''}!\n`);
+      console.log(`\n🏆 [PAIR GRADUATION] ${symbol} achieved 2 winning paper trades -> Restored to Live Trading for ${stratName}!\n`);
     } else {
-      console.log(`\n🔬 [QUARANTINE PROGRESS] ${symbol} recorded Paper Win 1/2. Waiting for next distinct setup to graduate.\n`);
+      console.log(`\n🔬 [QUARANTINE PROGRESS] ${symbol} (${stratName}) recorded Paper Win 1/2. Waiting for next distinct setup to graduate.\n`);
     }
   } else if (outcome === 'LOSS') {
     rec.consecutivePaperWins = 0;
@@ -542,24 +629,117 @@ async function updatePairHealthOnPaperClose(symbol, outcome, trade = null) {
   savePairHealthState(pairHealthState);
 }
 
-function manualSetQuarantine(symbol, isQuarantined, reason = 'Manual update via Telegram') {
+function manualSetQuarantine(symbol, isQuarantined, reason = 'Manual update via Telegram', stratTarget = 'ALL') {
   if (!config.SYMBOLS[symbol]) {
     return { success: false, error: `Symbol ${symbol} not in configured universe.` };
   }
-  const rec = getPairHealth(symbol);
-  rec.isQuarantined = isQuarantined;
-  if (isQuarantined) {
-    rec.quarantineReason = reason;
-    rec.quarantinedAt = new Date().toISOString();
-    rec.consecutivePaperWins = 0;
-  } else {
-    rec.consecutiveLosses = 0;
-    rec.consecutivePaperWins = 0;
-    rec.quarantineReason = null;
-    rec.quarantinedAt = null;
+  const sUpper = String(stratTarget || 'ALL').toUpperCase();
+  let strats = ['5B', 'SMC'];
+  if (sUpper.includes('5B')) strats = ['5B'];
+  else if (sUpper.includes('SMC') || sUpper.includes('6PRO') || sUpper.includes('SWEEP')) strats = ['SMC'];
+
+  for (const s of strats) {
+    const rec = getPairHealth(symbol, s);
+    rec.isQuarantined = isQuarantined;
+    if (isQuarantined) {
+      rec.quarantineReason = reason;
+      rec.quarantinedAt = new Date().toISOString();
+      rec.consecutivePaperWins = 0;
+    } else {
+      rec.consecutiveLosses = 0;
+      rec.consecutivePaperWins = 0;
+      rec.quarantineReason = null;
+      rec.quarantinedAt = null;
+    }
   }
   savePairHealthState(pairHealthState);
   return { success: true };
+}
+
+async function recordTradeOutcomeToDesk(stratId, outcome, pnlUsd, pnlR) {
+  dynamicState = loadDynamicState();
+  const stratKey = getStratKey(stratId);
+  const isSmc = stratKey === 'SMC';
+  const deskKey = isSmc ? 'deskSMC' : 'desk5b';
+  const deskName = isSmc ? 'Strategy SMC' : 'Strategy 5B Pro';
+
+  if (!dynamicState[deskKey]) {
+    dynamicState[deskKey] = {
+      netUSD: 0,
+      netR: 0,
+      wins: 0,
+      losses: 0,
+      targetUSD: 908.43,
+      maxLossUSD: 698.79,
+      targetLocked: false,
+      lossLocked: false,
+      isPaused: false
+    };
+  }
+
+  const desk = dynamicState[deskKey];
+  desk.netUSD = parseFloat(((desk.netUSD || 0) + pnlUsd).toFixed(2));
+  desk.netR = parseFloat(((desk.netR || 0) + pnlR).toFixed(1));
+  if (outcome === 'WIN') {
+    desk.wins = (desk.wins || 0) + 1;
+  } else if (outcome === 'LOSS') {
+    desk.losses = (desk.losses || 0) + 1;
+  }
+
+  // 1. Check Desk Daily Target (+$908.43 / +3.9R)
+  if (desk.targetUSD && desk.netUSD >= desk.targetUSD && !desk.targetLocked) {
+    desk.targetLocked = true;
+    saveDynamicState(dynamicState);
+    const targetMsg = [
+      `🎯 🔒 <b>[${deskName.toUpperCase()} — DAILY TARGET ACHIEVED]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `🏆 <b>Desk Net Profit:</b> <code>+$${desk.netUSD.toFixed(2)} USD (+${desk.netR.toFixed(1)}R)</code>`,
+      `🎯 <b>Target:</b> <code>+$${desk.targetUSD.toFixed(2)} USD (${desk.wins}W / ${desk.losses}L)</code>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `🛡️ <b>Action:</b> <i>Desk profit locked for the day! Real trading halted for ${deskName} to protect gains until midnight UTC. (Other desk continues trading if unlocked).</i>`
+    ].join('\n');
+    await sendTelegramMessage(targetMsg);
+  }
+
+  // 2. Check Desk Daily Max Loss Floor (-$698.79 / -3.0R)
+  if (desk.maxLossUSD && desk.netUSD <= -desk.maxLossUSD && !desk.lossLocked) {
+    desk.lossLocked = true;
+    saveDynamicState(dynamicState);
+    const lossMsg = [
+      `🛑 🔒 <b>[${deskName.toUpperCase()} — DAILY MAX LOSS REACHED]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `💸 <b>Desk Net Loss:</b> <code>-$${Math.abs(desk.netUSD).toFixed(2)} USD (${desk.netR.toFixed(1)}R)</code>`,
+      `🛑 <b>Max Loss Floor:</b> <code>-$${desk.maxLossUSD.toFixed(2)} USD (${desk.losses} Losses)</code>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `🛡️ <b>Action:</b> <i>Circuit breaker engaged! Trading halted for ${deskName} until midnight UTC to protect capital. (Other desk continues normally if within limits).</i>`
+    ].join('\n');
+    await sendTelegramMessage(lossMsg);
+  }
+
+  // 3. Check Master Account Emergency Valve (-$1,397.58 USD combined loss)
+  const master = dynamicState.masterAccount || { maxDailyLossUSD: 1397.58, dailyLossLocked: false };
+  const combinedNetUSD = (dynamicState.desk5b?.netUSD || 0) + (dynamicState.deskSMC?.netUSD || 0);
+  if (combinedNetUSD <= -master.maxDailyLossUSD && !master.dailyLossLocked) {
+    master.dailyLossLocked = true;
+    dynamicState.masterAccount = master;
+    if (dynamicState.desk5b) dynamicState.desk5b.lossLocked = true;
+    if (dynamicState.deskSMC) dynamicState.deskSMC.lossLocked = true;
+    dynamicState.dailyLossLocked = true;
+    saveDynamicState(dynamicState);
+
+    const masterAlert = [
+      `🚨 🛑 <b>[MASTER EMERGENCY CIRCUIT BREAKER ENGAGED]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `💸 <b>Combined Account Daily Drawdown:</b> <code>-$${Math.abs(combinedNetUSD).toFixed(2)} USD</code>`,
+      `🛑 <b>Combined Emergency Floor:</b> <code>-$${master.maxDailyLossUSD.toFixed(2)} USD (-3.0R Total Equity)</code>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `🔒 <b>Action: ALL TRADING HALTED ACROSS BOTH ENGINES.</b>`,
+      `🛡️ <i>Both Strategy 5B Pro and Strategy SMC locked until next daily rollover to preserve master account balance.</i>`
+    ].join('\n');
+    await sendTelegramMessage(masterAlert);
+  }
+
+  saveDynamicState(dynamicState);
 }
 
 function formatHealthTelegramHTML() {
@@ -569,43 +749,45 @@ function formatHealthTelegramHTML() {
     `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
   ];
 
-  let liveCount = 0;
-  let quarantinedCount = 0;
+  let live5b = 0, quar5b = 0;
+  let liveSmc = 0, quarSmc = 0;
 
   for (const sym of symbols) {
     const symConfig = config.SYMBOLS[sym];
-    const rec = getPairHealth(sym);
-    const isIncub = symConfig.monitorOnly;
+    const rec5b = getPairHealth(sym, '5B');
+    const recSmc = getPairHealth(sym, 'SMC');
 
-    let badge = '🟢 <b>HEALTHY</b>';
-    let statusText = 'Live Trading';
-
-    if (isIncub) {
-      badge = '🔬 <b>INCUBATION</b>';
-      statusText = 'Permanent Sandbox';
-    } else if (rec.isQuarantined) {
-      badge = '🔴 <b>QUARANTINED</b>';
-      statusText = `Paper Mode (${rec.consecutivePaperWins || 0}/2 Wins to Graduate)`;
-      quarantinedCount++;
-    } else if (rec.consecutiveLosses === 1) {
-      badge = '🟡 <b>PROBATION</b>';
-      statusText = `1 Loss (Watching)`;
-      liveCount++;
+    // 5B badge
+    let badge5b = '🟢 LIVE';
+    if (symConfig.monitorOnly) {
+      badge5b = '🔬 INCUBATOR';
+    } else if (rec5b.isQuarantined) {
+      badge5b = `🔴 QUARANTINE (${rec5b.consecutivePaperWins || 0}/2)`;
+      quar5b++;
     } else {
-      liveCount++;
+      live5b++;
     }
 
-    const netR = rec.weeklyNetR || 0.0;
-    const rSign = netR >= 0 ? '+' : '';
+    // SMC badge (BOOM150N & CRASH150N are active for SMC, not incubator)
+    let badgeSmc = '🟢 LIVE';
+    if (symConfig.monitorOnly && sym !== 'BOOM150N' && sym !== 'CRASH150N') {
+      badgeSmc = '🔬 INCUBATOR';
+    } else if (recSmc.isQuarantined) {
+      badgeSmc = `🔴 QUARANTINE (${recSmc.consecutivePaperWins || 0}/2)`;
+      quarSmc++;
+    } else {
+      liveSmc++;
+    }
 
-    lines.push(`• <b>${sym}:</b> ${badge}`);
-    lines.push(`  ├ <b>Status:</b> <code>${statusText}</code>`);
-    lines.push(`  └ <b>Weekly Net:</b> <code>${rSign}${netR.toFixed(1)}R (${rec.totalRealWins || 0}W / ${rec.totalRealLosses || 0}L)</code>`);
+    lines.push(`• <b>${sym}:</b>`);
+    lines.push(`  ├ <b>5B Pro:</b> ${badge5b} [${rec5b.weeklyNetR >= 0 ? '+' : ''}${(rec5b.weeklyNetR || 0).toFixed(1)}R]`);
+    lines.push(`  └ <b>SMC:</b>    ${badgeSmc} [${recSmc.weeklyNetR >= 0 ? '+' : ''}${(recSmc.weeklyNetR || 0).toFixed(1)}R]`);
   }
 
   lines.push(`<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`);
-  lines.push(`📊 <b>Summary:</b> <code>${liveCount} Live Pairs | ${quarantinedCount} Quarantined</code>`);
-  lines.push(`💡 <i>Use /quarantine &lt;sym&gt; or /unquarantine &lt;sym&gt; to manage.</i>`);
+  lines.push(`📊 <b>5B Pro:</b> <code>${live5b} Live | ${quar5b} Quarantined</code>`);
+  lines.push(`📊 <b>Strategy SMC:</b> <code>${liveSmc} Live | ${quarSmc} Quarantined</code>`);
+  lines.push(`💡 <i>Use /quarantine &lt;sym&gt; [5b|smc] or /unquarantine &lt;sym&gt; [5b|smc] to manage.</i>`);
 
   return lines.join('\n');
 }
@@ -748,7 +930,7 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
       rec.paperConsecutiveLosses = 0;
       rec.paperConsecutiveWins = (rec.paperConsecutiveWins || 0) + 1;
       const stratName = (tradeDetails && tradeDetails.strategy) ? tradeDetails.strategy : 'Strategy Sandbox';
-      rec.lastPaperStrat = stratName.includes('SMC Sweep') ? 'SMC Sweep' : (stratName.includes('5B') ? '5B Pro' : stratName);
+      rec.lastPaperStrat = (stratName.includes('SMC') || stratName.includes('Sweep')) ? 'Strategy SMC' : (stratName.includes('5B') ? '5B Pro' : stratName);
       const maxWinsPerSymbol = config.CIRCUIT_BREAKER.MAX_CONSECUTIVE_WINS_PER_SYMBOL || 2;
       const winLockMins = config.CIRCUIT_BREAKER.SYMBOL_WIN_LOCK_MINS || 90;
       if (rec.paperConsecutiveWins >= maxWinsPerSymbol) {
@@ -763,7 +945,7 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
       rec.paperConsecutiveLosses = (rec.paperConsecutiveLosses || 0) + 1;
       rec.paperDailyLosses = (rec.paperDailyLosses || 0) + 1;
       const stratName = (tradeDetails && tradeDetails.strategy) ? tradeDetails.strategy : 'Strategy Sandbox';
-      rec.lastPaperStrat = stratName.includes('SMC Sweep') ? 'SMC Sweep' : (stratName.includes('5B') ? '5B Pro' : stratName);
+      rec.lastPaperStrat = (stratName.includes('SMC') || stratName.includes('Sweep')) ? 'Strategy SMC' : (stratName.includes('5B') ? '5B Pro' : stratName);
 
       if (rec.paperDailyLosses >= maxDaily || rec.paperConsecutiveLosses >= 2) {
         const endOfDay = new Date();
@@ -788,7 +970,7 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
   } else {
     // ── 👑 LIVE REAL TRADING CIRCUIT BREAKER (Strategy 6 Pro / 5B Pro) ──
     const stratName = (tradeDetails && tradeDetails.strategy) ? tradeDetails.strategy : 'Strategy 5B Pro';
-    rec.lastLiveStrat = stratName.includes('SMC Sweep') ? 'SMC Sweep' : (stratName.includes('5B') ? '5B Pro' : stratName);
+    rec.lastLiveStrat = (stratName.includes('SMC') || stratName.includes('Sweep')) ? 'Strategy SMC' : (stratName.includes('5B') ? '5B Pro' : stratName);
 
     if (outcome === 'WIN') {
       rec.consecutiveLosses = 0;
@@ -924,6 +1106,8 @@ async function closeTradeManually(symbol, skipTargetCheck = false) {
   const outcome = pnlUSD >= 0 ? 'WIN' : 'LOSS';
 
   recordSymbolTradeOutcome(symbol, outcome, false, trade);
+  await updatePairHealthOnLiveClose(symbol, outcome, trade.strategy);
+  await recordTradeOutcomeToDesk(trade.strategy, outcome, pnlUSD, pnlR);
   recordClose(trade.setupId, outcome, livePrice, pnlUSD, pnlR, 'MANUAL_CLOSE');
 
   const updatedTrades = activeTrades.filter(t => t.setupId !== trade.setupId);
@@ -1093,7 +1277,7 @@ const telegramHandlers = {
         const isLiveLocked = (rec.dailyLosses || 0) >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2) || (rec.consecutiveLosses || 0) >= 2;
         const isPaperLocked = (rec.paperDailyLosses || 0) >= (config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2) || (rec.paperConsecutiveLosses || 0) >= 2;
 
-        const paperStratTag = ` (${rec.lastPaperStrat || 'SMC Sweep'})`;
+        const paperStratTag = ` (${rec.lastPaperStrat || 'Strategy SMC'})`;
         const liveStratTag = ` (${rec.lastLiveStrat || '5B Pro'})`;
 
         if (isLiveLocked) {
@@ -1145,29 +1329,9 @@ const telegramHandlers = {
       ? `-$${dynamicState.dailyMaxLossUSD.toFixed(2)} USD ${dynamicState.dailyLossLocked ? '🛑 (HIT)' : `(Remaining Buffer: $${Math.max(0, dynamicState.dailyMaxLossUSD + report.netUSD).toFixed(2)})`}`
       : 'Disabled (No Floor)';
 
-    let stratBadge = '🟡 <b>STANDBY (Awaiting /strategy command)</b>';
-    const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || dynamicState.activeStrategy === 'BOTH' || dynamicState.activeStrategy === 'ALL';
+    const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || dynamicState.activeStrategy === 'ALL';
+    const isBoth = dynamicState.activeStrategy === 'BOTH';
     const isGlobalPaper = dynamicState.executionMode === 'PAPER';
-
-    if (dynamicState.activeStrategy === 'BOTH') {
-      const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode5b === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      const modeSweepLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode6pro === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      stratBadge = `⚡ <b>DUAL-ENGINE PAPER SUITE</b> (5B Pro: ${mode5bLabel} | SMC Sweep: ${modeSweepLabel})`;
-    } else if (isTriEngine || isGlobalPaper) {
-      const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode5b === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      const modeS6Label = dynamicState.isS6Paused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode6 === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      const modeSweepLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode6pro === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      stratBadge = `⚡ <b>TRI-ENGINE TEST SANDBOX</b> (5B Pro: ${mode5bLabel} | Strategy 6: ${modeS6Label} | SMC Sweep: ${modeSweepLabel})`;
-    } else if (dynamicState.activeStrategy === 'STRATEGY_6') {
-      const modeS6Label = dynamicState.isS6Paused ? '⏸️ PAUSED' : (dynamicState.mode6 === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      stratBadge = `🛡️ <b>Strategy 6 (Structural Sniper)</b> (${modeS6Label})`;
-    } else if (dynamicState.activeStrategy === 'STRATEGY_6_PRO') {
-      const modeSweepLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.mode6pro === 'LIVE' ? '🟢 LIVE' : '🔬 PAPER');
-      stratBadge = `🔬 <b>Strategy SMC Sweep</b> (${modeSweepLabel})`;
-    } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
-      const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (dynamicState.executionMode === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
-      stratBadge = `🚀 <b>Strategy 5B Pro</b> (${mode5bLabel})`;
-    }
 
     const liveTradesCount = activeTrades.filter(t => !t.isIncubation).length;
     const paperTradesCount = activeTrades.filter(t => t.isIncubation).length;
@@ -1176,24 +1340,88 @@ const telegramHandlers = {
       ? `${liveTradesCount}/${maxLiveLimit} Live | ${paperTradesCount} Paper`
       : `${liveTradesCount}/${maxLiveLimit} Live Trade(s)`;
 
-    const lines = [
-      `👑 <b>[MYTRADA LIVE STATUS MONITOR]</b>`,
-      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-      `💵 <b>Starting Balance:</b> <code>$${(report.startingBalance || 100.0).toFixed(2)} USD</code>`,
-      `💰 <b>Current Balance:</b> <code>$${(report.newBalance || 100.0).toFixed(2)} USD</code>`,
-      `📈 <b>Today's Realized PnL:</b> <code>${pnlSign}$${Math.abs(report.netUSD).toFixed(2)} USD (${pnlSign}${report.netR.toFixed(1)}R)</code>`,
-      `📊 <b>Today's Record:</b> <code>${report.wins} Wins / ${report.losses} Losses (${report.winRate}% WR)</code>`,
-      `🎯 <b>Daily Profit Target:</b> <code>${targetStatus}</code>`,
-      `🛡️ <b>Daily Max Loss Floor:</b> <code>${maxLossStatus}</code>`,
-      `🛡️ <b>Risk Per Trade:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0).toFixed(1)}%)</code>`,
-      `🏛️ <b>Strategy Configuration:</b> ${stratBadge}`,
-      `🧠 <b>GodEyes Memory Brain:</b> 🟢 <b>ACTIVE (True SMC Premium/Discount Armor + Multi-Day Anchors)</b>`,
-      `📂 <b>Active Positions:</b> <code>${posLabel}</code>`
-    ];
+    let lines = [];
+
+    if (dynamicState.desk5b && dynamicState.deskSMC) {
+      const d5b = dynamicState.desk5b;
+      const dSmc = dynamicState.deskSMC;
+      const d5bSign = d5b.netUSD >= 0 ? '+' : '-';
+      const dSmcSign = dSmc.netUSD >= 0 ? '+' : '-';
+      const d5bTargetStatus = d5b.targetLocked ? '🎯 🔒 (HIT)' : `(Need: +$${Math.max(0, d5b.targetUSD - d5b.netUSD).toFixed(2)})`;
+      const d5bLossStatus = d5b.lossLocked ? '🛑 🔒 (HIT)' : `(Buffer: $${Math.max(0, d5b.maxLossUSD + d5b.netUSD).toFixed(2)})`;
+      const dSmcTargetStatus = dSmc.targetLocked ? '🎯 🔒 (HIT)' : `(Need: +$${Math.max(0, dSmc.targetUSD - dSmc.netUSD).toFixed(2)})`;
+      const dSmcLossStatus = dSmc.lossLocked ? '🛑 🔒 (HIT)' : `(Buffer: $${Math.max(0, dSmc.maxLossUSD + dSmc.netUSD).toFixed(2)})`;
+
+      const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode5b === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+      const modeSmcLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode6pro === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+
+      const master = dynamicState.masterAccount || { maxDailyLossUSD: 1397.58, dailyLossLocked: false };
+      const combinedUSD = (d5b.netUSD || 0) + (dSmc.netUSD || 0);
+      const combinedR = (d5b.netR || 0) + (dSmc.netR || 0);
+      const combinedSign = combinedUSD >= 0 ? '+' : '-';
+      const combinedWins = (d5b.wins || 0) + (dSmc.wins || 0);
+      const combinedLosses = (d5b.losses || 0) + (dSmc.losses || 0);
+      const combinedTotal = combinedWins + combinedLosses;
+      const combinedWR = combinedTotal > 0 ? ((combinedWins / combinedTotal) * 100).toFixed(1) : '0.0';
+
+      lines = [
+        `👑 <b>[MYTRADA DUAL-DESK LIVE DASHBOARD]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `💵 <b>Total Account Equity:</b> <code>$${(report.newBalance || compRisk.liveBalance || 15528.46).toFixed(2)} USD</code>`,
+        `💰 <b>Desk Allocation (50/50):</b> <code>$${(compRisk.effectiveDeskBalance || 7764.23).toFixed(2)} USD each</code>`,
+        `🛡️ <b>Single Trade Risk:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (1.5% Equity / 3.0% Desk)</code>`,
+        `🎯 <b>Single Trade Reward:</b> <code>+$${compRisk.rewardUSD.toFixed(2)} USD (+1.3R Target)</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `🚀 <b>DESK 1: STRATEGY 5B PRO</b> (${mode5bLabel})`,
+        `  ├ <b>Realized Today:</b> <code>${d5bSign}$${Math.abs(d5b.netUSD).toFixed(2)} USD (${d5bSign}${d5b.netR.toFixed(1)}R • ${d5b.wins || 0}W / ${d5b.losses || 0}L)</code>`,
+        `  ├ <b>Daily Target:</b> <code>+$${(d5b.targetUSD || 908.43).toFixed(2)} USD ${d5bTargetStatus}</code>`,
+        `  └ <b>Daily Loss Floor:</b> <code>-$${(d5b.maxLossUSD || 698.79).toFixed(2)} USD ${d5bLossStatus}</code>`,
+        ``,
+        `🔬 <b>DESK 2: STRATEGY SMC</b> (${modeSmcLabel})`,
+        `  ├ <b>Realized Today:</b> <code>${dSmcSign}$${Math.abs(dSmc.netUSD).toFixed(2)} USD (${dSmcSign}${dSmc.netR.toFixed(1)}R • ${dSmc.wins || 0}W / ${dSmc.losses || 0}L)</code>`,
+        `  ├ <b>Daily Target:</b> <code>+$${(dSmc.targetUSD || 908.43).toFixed(2)} USD ${dSmcTargetStatus}</code>`,
+        `  └ <b>Daily Loss Floor:</b> <code>-$${(dSmc.maxLossUSD || 698.79).toFixed(2)} USD ${dSmcLossStatus}</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `📈 <b>COMBINED PERFORMANCE TODAY:</b>`,
+        `  ├ <b>Total PnL:</b> <code>${combinedSign}$${Math.abs(combinedUSD).toFixed(2)} USD (${combinedSign}${combinedR.toFixed(1)}R • ${combinedWins}W / ${combinedLosses}L • ${combinedWR}% WR)</code>`,
+        `  └ <b>Master Emergency Valve:</b> <code>-$${master.maxDailyLossUSD.toFixed(2)} USD ${master.dailyLossLocked ? '🛑 LOCKED' : '(🟢 Healthy)'}</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `🧠 <b>GodEyes Memory Brain:</b> 🟢 <b>ACTIVE (SMC Premium/Discount Armor)</b>`,
+        `📂 <b>Active Positions:</b> <code>${posLabel}</code>`
+      ];
+    } else {
+      let stratBadge = '🟡 <b>STANDBY (Awaiting /strategy command)</b>';
+      if (dynamicState.activeStrategy === 'BOTH') {
+        const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode5b === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+        const modeSmcLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (isGlobalPaper || dynamicState.mode6pro === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+        stratBadge = `⚡ <b>DUAL-ENGINE SUITE</b> (5B Pro: ${mode5bLabel} | SMC: ${modeSmcLabel})`;
+      } else if (dynamicState.activeStrategy === 'STRATEGY_6_PRO') {
+        const modeSmcLabel = dynamicState.is6proPaused ? '⏸️ PAUSED' : (dynamicState.mode6pro === 'LIVE' ? '🟢 LIVE' : '🔬 PAPER');
+        stratBadge = `🔬 <b>Strategy SMC</b> (${modeSmcLabel})`;
+      } else if (dynamicState.activeStrategy === 'STRATEGY_5B') {
+        const mode5bLabel = dynamicState.is5bPaused ? '⏸️ PAUSED' : (dynamicState.executionMode === 'PAPER' ? '🔬 PAPER' : '🟢 LIVE');
+        stratBadge = `🚀 <b>Strategy 5B Pro</b> (${mode5bLabel})`;
+      }
+
+      lines = [
+        `👑 <b>[MYTRADA LIVE STATUS MONITOR]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `💵 <b>Starting Balance:</b> <code>$${(report.startingBalance || 100.0).toFixed(2)} USD</code>`,
+        `💰 <b>Current Balance:</b> <code>$${(report.newBalance || 100.0).toFixed(2)} USD</code>`,
+        `📈 <b>Today's Realized PnL:</b> <code>${pnlSign}$${Math.abs(report.netUSD).toFixed(2)} USD (${pnlSign}${report.netR.toFixed(1)}R)</code>`,
+        `📊 <b>Today's Record:</b> <code>${report.wins} Wins / ${report.losses} Losses (${report.winRate}% WR)</code>`,
+        `🎯 <b>Daily Profit Target:</b> <code>${targetStatus}</code>`,
+        `🛡️ <b>Daily Max Loss Floor:</b> <code>${maxLossStatus}</code>`,
+        `🛡️ <b>Risk Per Trade:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (${(dynamicState.customRiskPercent || config.RISK_PERCENT || 3.0).toFixed(1)}%)</code>`,
+        `🏛️ <b>Strategy Configuration:</b> ${stratBadge}`,
+        `🧠 <b>GodEyes Memory Brain:</b> 🟢 <b>ACTIVE (True SMC Premium/Discount Armor)</b>`,
+        `📂 <b>Active Positions:</b> <code>${posLabel}</code>`
+      ];
+    }
 
     if (activeTrades.length > 0) {
       for (const t of activeTrades) {
-        const stratName = t.strategy ? (t.strategy.includes('Strategy 6') ? 'Strategy 6' : (t.strategy.includes('SMC Sweep') ? 'SMC Sweep' : (t.strategy.includes('5B') ? '5B Pro' : t.strategy))) : (t.isIncubation ? 'Paper Sandbox' : '5B Pro');
+        const stratName = t.strategy ? (t.strategy.includes('Strategy 6') ? 'Strategy 6' : ((t.strategy.includes('SMC') || t.strategy.includes('Sweep')) ? 'Strategy SMC' : (t.strategy.includes('5B') ? '5B Pro' : t.strategy))) : (t.isIncubation ? 'Paper Sandbox' : '5B Pro');
         const modeBadge = t.isIncubation ? '🔬 Paper' : '⚡ Live';
         const dirLabel = t.type === 'bullish' ? '🟢 BUY' : '🔴 SELL';
         lines.push(`   └ <code>${t.symbol}</code>: ${modeBadge} (<b>${stratName}</b>) ${dirLabel} @ <code>${t.entryPrice.toFixed(2)}</code>`);
@@ -1245,7 +1473,7 @@ const telegramHandlers = {
       const symName = config.SYMBOLS[t.symbol] ? config.SYMBOLS[t.symbol].name : t.symbol;
       const slDist = Math.abs(t.entryPrice - t.stopLoss).toFixed(2);
       const tpDist = Math.abs(t.entryPrice - t.takeProfit).toFixed(2);
-      const stratName = t.strategy ? (t.strategy.includes('Strategy 6') ? 'Strategy 6' : (t.strategy.includes('SMC Sweep') ? 'Strategy SMC Sweep' : (t.strategy.includes('5B') ? 'Strategy 5B Pro' : t.strategy))) : (t.isIncubation ? 'Strategy SMC Sweep' : 'Strategy 5B Pro');
+      const stratName = t.strategy ? (t.strategy.includes('Strategy 6') ? 'Strategy 6' : ((t.strategy.includes('SMC') || t.strategy.includes('Sweep')) ? 'Strategy SMC' : (t.strategy.includes('5B') ? 'Strategy 5B Pro' : t.strategy))) : (t.isIncubation ? 'Strategy SMC' : 'Strategy 5B Pro');
       const modeTag = t.isIncubation ? '🔬 [PAPER SANDBOX]' : '⚡ [LIVE REAL MONEY]';
 
       let statusTag = t.isBreakeven ? ' 🛡️ [BREAKEVEN]' : '';
@@ -1301,10 +1529,19 @@ const telegramHandlers = {
     return { alreadyHit, todayNet: finalReport.netUSD };
   },
 
-  lockDailyProfit: async () => {
-    dynamicState.dailyTargetLocked = true;
+  lockDailyProfit: async (targetDesk = 'all') => {
+    const t = String(targetDesk || 'all').toLowerCase();
+    if (t.includes('5b')) {
+      if (dynamicState.desk5b) dynamicState.desk5b.targetLocked = true;
+    } else if (t.includes('smc') || t.includes('sweep') || t.includes('6pro') || t.includes('6')) {
+      if (dynamicState.deskSMC) dynamicState.deskSMC.targetLocked = true;
+    } else {
+      if (dynamicState.desk5b) dynamicState.desk5b.targetLocked = true;
+      if (dynamicState.deskSMC) dynamicState.deskSMC.targetLocked = true;
+      dynamicState.dailyTargetLocked = true;
+      await closeAllTradesManually();
+    }
     saveDynamicState(dynamicState);
-    await closeAllTradesManually();
     const todayStr = getLocalDateStr();
     const report = generateDailyReport(todayStr);
     return {
@@ -1324,9 +1561,20 @@ const telegramHandlers = {
     dynamicState.is5bPaused = false;
     dynamicState.is6proPaused = false;
     dynamicState.dailyTargetLocked = false;
-    dynamicState.dailyTargetUSD = 0; // Clear target so it does not immediately re-lock
     dynamicState.dailyLossLocked = false;
-    dynamicState.dailyMaxLossUSD = 0; // Clear max loss so it does not immediately re-lock
+    if (dynamicState.desk5b) {
+      dynamicState.desk5b.targetLocked = false;
+      dynamicState.desk5b.lossLocked = false;
+      dynamicState.desk5b.isPaused = false;
+    }
+    if (dynamicState.deskSMC) {
+      dynamicState.deskSMC.targetLocked = false;
+      dynamicState.deskSMC.lossLocked = false;
+      dynamicState.deskSMC.isPaused = false;
+    }
+    if (dynamicState.masterAccount) {
+      dynamicState.masterAccount.dailyLossLocked = false;
+    }
     dynamicState.portfolioPauseUntil = 0;
     dynamicState.portfolioConsecutiveLosses = 0;
 
@@ -1437,8 +1685,9 @@ const telegramHandlers = {
     dynamicState.is6proPaused = false;
     if (strat === 'BOTH') {
       dynamicState.mode5b = 'LIVE';
-      dynamicState.mode6pro = 'PAPER';
+      dynamicState.mode6pro = 'LIVE';
       dynamicState.executionMode = 'LIVE';
+      dynamicState.balanceAllocation = 0.50;
     } else if (strat === 'STRATEGY_6_PRO') {
       dynamicState.mode6pro = 'LIVE';
       dynamicState.executionMode = 'LIVE';
@@ -1467,24 +1716,47 @@ const telegramHandlers = {
   },
 
   pauseStrategy: (strat) => {
-    if (strat === '5b') dynamicState.is5bPaused = true;
-    if (strat === '6pro') dynamicState.is6proPaused = true;
+    const s = String(strat || '').toLowerCase();
+    if (s.includes('5b')) {
+      dynamicState.is5bPaused = true;
+      if (dynamicState.desk5b) dynamicState.desk5b.isPaused = true;
+    }
+    if (s.includes('smc') || s.includes('sweep') || s.includes('6pro') || s.includes('6')) {
+      dynamicState.is6proPaused = true;
+      if (dynamicState.deskSMC) dynamicState.deskSMC.isPaused = true;
+    }
     saveDynamicState(dynamicState);
   },
 
   resumeStrategy: (strat) => {
-    if (strat === '5b') dynamicState.is5bPaused = false;
-    if (strat === '6pro') dynamicState.is6proPaused = false;
+    const s = String(strat || '').toLowerCase();
+    if (s.includes('5b')) {
+      dynamicState.is5bPaused = false;
+      if (dynamicState.desk5b) {
+        dynamicState.desk5b.isPaused = false;
+        dynamicState.desk5b.targetLocked = false;
+        dynamicState.desk5b.lossLocked = false;
+      }
+    }
+    if (s.includes('smc') || s.includes('sweep') || s.includes('6pro') || s.includes('6')) {
+      dynamicState.is6proPaused = false;
+      if (dynamicState.deskSMC) {
+        dynamicState.deskSMC.isPaused = false;
+        dynamicState.deskSMC.targetLocked = false;
+        dynamicState.deskSMC.lossLocked = false;
+      }
+    }
     dynamicState.isManuallyPaused = false; // 👑 Unpause global engine so scanning resumes
     if (dynamicState.activeStrategy === 'NONE') {
-      dynamicState.activeStrategy = strat === '5b' ? 'STRATEGY_5B' : 'STRATEGY_6_PRO';
+      dynamicState.activeStrategy = s.includes('5b') ? 'STRATEGY_5B' : 'STRATEGY_6_PRO';
     }
     saveDynamicState(dynamicState);
   },
 
   setStrategyMode: (strat, mode) => {
-    if (strat === '5b') dynamicState.mode5b = mode;
-    if (strat === '6pro') dynamicState.mode6pro = mode;
+    const s = String(strat || '').toLowerCase();
+    if (s.includes('5b')) dynamicState.mode5b = mode;
+    if (s.includes('smc') || s.includes('sweep') || s.includes('6pro') || s.includes('6')) dynamicState.mode6pro = mode;
     saveDynamicState(dynamicState);
   },
 
@@ -1572,12 +1844,12 @@ const telegramHandlers = {
     return formatHealthTelegramHTML();
   },
 
-  quarantinePair: (symbol, reason) => {
-    return manualSetQuarantine(symbol, true, reason);
+  quarantinePair: (symbol, reason, stratTarget = 'ALL') => {
+    return manualSetQuarantine(symbol, true, reason, stratTarget);
   },
 
-  unquarantinePair: (symbol) => {
-    return manualSetQuarantine(symbol, false);
+  unquarantinePair: (symbol, stratTarget = 'ALL') => {
+    return manualSetQuarantine(symbol, false, null, stratTarget);
   },
 
   promotePair: (symbol) => {
@@ -2109,7 +2381,8 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
       const pnlUsd = trade.rewardUSD || compRisk.rewardUSD;
 
       recordSymbolTradeOutcome(symbol, 'WIN', false, trade);
-      await updatePairHealthOnLiveClose(symbol, 'WIN');
+      await updatePairHealthOnLiveClose(symbol, 'WIN', trade.strategy);
+      await recordTradeOutcomeToDesk(trade.strategy, 'WIN', pnlUsd, 1.3);
       recordClose(trade.setupId, 'WIN', trade.takeProfit, pnlUsd, 1.3, trade.aiVisionVerdict);
       const updatedBalance = getCurrentAccountBalance();
 
@@ -2117,7 +2390,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         `🏆 🟢 <b>[MYTRADA TP HIT (+1.3R)]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-        `<b>Strategy:</b> <code>${trade.strategy || 'Strategy 6 Pro'} (Live Real Money)</code>`,
+        `<b>Strategy:</b> <code>${trade.strategy || 'Strategy 5B Pro'} (Live Real Money)</code>`,
         `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `💰 <b>Profit:</b> <code>+$${pnlUsd.toFixed(2)} USD (+1.3R)</code>`,
@@ -2157,7 +2430,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           `🛡️ 🟡 <b>[MYTRADA BREAKEVEN EXIT ($0 RISK)]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-          `<b>Strategy:</b> <code>${trade.strategy || 'Strategy 6 Pro'} (Live Real Money)</code>`,
+          `<b>Strategy:</b> <code>${trade.strategy || 'Strategy 5B Pro'} (Live Real Money)</code>`,
           `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💸 <b>Outcome:</b> <code>$0.00 USD (0.0R Breakeven)</code>`,
@@ -2171,7 +2444,8 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         await new Promise(r => setTimeout(r, 1200));
       } else {
         recordSymbolTradeOutcome(symbol, 'LOSS', false, trade);
-        await updatePairHealthOnLiveClose(symbol, 'LOSS');
+        await updatePairHealthOnLiveClose(symbol, 'LOSS', trade.strategy);
+        await recordTradeOutcomeToDesk(trade.strategy, 'LOSS', -riskUSD, -1.0);
         recordClose(trade.setupId, 'LOSS', trade.stopLoss, -riskUSD, -1.0, trade.aiVisionVerdict);
         const updatedBalance = getCurrentAccountBalance();
 
@@ -2179,7 +2453,7 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
           `🔴 🛡️ <b>[MYTRADA STOP LOSS HIT (-1.0R)]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
-          `<b>Strategy:</b> <code>${trade.strategy || 'Strategy 6 Pro'} (Live Real Money)</code>`,
+          `<b>Strategy:</b> <code>${trade.strategy || 'Strategy 5B Pro'} (Live Real Money)</code>`,
           `<b>Direction:</b> ${isBullish ? '🟢 BUY' : '🔴 SELL'}`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💸 <b>Loss:</b> <code>-$${riskUSD.toFixed(2)} USD (-1.0R)</code>`,
@@ -2959,7 +3233,7 @@ function detectStrategySMCSweepSetup(ltfCandles, htf1hCandles, htf4hCandles, dai
       const tp = entry + (slDist * 1.3);
 
       return {
-        strategy: 'Strategy SMC Sweep',
+        strategy: 'Strategy SMC',
         direction: 'BUY',
         type: 'bullish',
         entry,
@@ -2995,7 +3269,7 @@ function detectStrategySMCSweepSetup(ltfCandles, htf1hCandles, htf4hCandles, dai
       const tp = entry - (slDist * 1.3);
 
       return {
-        strategy: 'Strategy SMC Sweep',
+        strategy: 'Strategy SMC',
         direction: 'SELL',
         type: 'bearish',
         entry,
@@ -3152,10 +3426,10 @@ async function monitorMarket() {
   const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || dynamicState.activeStrategy === 'ALL';
   const isGlobalPaper = dynamicState.executionMode === 'PAPER';
   const scanStratLabel = isBoth
-    ? 'Dual-Engine Paper Suite (5B Pro + SMC Sweep — ALL PAPER)'
+    ? 'Dual-Desk Live Engine (5B Pro + Strategy SMC — 50/50 Allocation)'
     : (isTriEngine
-      ? 'Tri-Engine Test Sandbox (5B Pro + Strategy 6 + SMC Sweep — ALL PAPER)'
-      : (dynamicState.activeStrategy === 'STRATEGY_6' ? 'Strategy 6' : (dynamicState.activeStrategy === 'STRATEGY_6_PRO' ? 'Strategy SMC Sweep' : 'Strategy 5B Pro')));
+      ? 'Tri-Engine Test Sandbox (5B Pro + Strategy 6 + Strategy SMC — ALL PAPER)'
+      : (dynamicState.activeStrategy === 'STRATEGY_6' ? 'Strategy 6' : (dynamicState.activeStrategy === 'STRATEGY_6_PRO' ? 'Strategy SMC' : 'Strategy 5B Pro')));
 
   console.log(`\n${CYAN}[${now.toLocaleTimeString()}] Scanning ${Object.keys(config.SYMBOLS).length} Elite Boom/Crash Pairs for ${scanStratLabel}...${RESET}`);
   console.log(`-------------------------------------------------------------------------------------------------`);
@@ -3168,20 +3442,26 @@ async function monitorMarket() {
       const mode = symConfig.mode;
       const minSpikes = symConfig.min_spikes || 2;
 
-      const symHealth = getPairHealth(symbol);
-      const isQuarantined = symHealth.isQuarantined === true;
+      const symHealth5b = getPairHealth(symbol, '5B');
+      const symHealthSmc = getPairHealth(symbol, 'SMC');
+      const is5bQuarantined = symHealth5b.isQuarantined === true;
+      const isSmcQuarantined = symHealthSmc.isQuarantined === true;
 
       // ── INDEPENDENT STRATEGY COOLDOWN VERIFICATION (Dual/Tri-Engine Architecture) ──
       // For 5B Pro and Strategy 6, respect symConfig.monitorOnly (BOOM150N, CRASH150N, BOOM1000 in incubator)
       const is5bMonitorOnly = Boolean(symConfig.monitorOnly);
       const isS6MonitorOnly = Boolean(symConfig.monitorOnly);
-      // For SMC Sweep (6PRO), BOOM150N and CRASH150N are promoted to active pairs (not incubator / monitorOnly)
+      // For Strategy SMC (6PRO), BOOM150N and CRASH150N are promoted to active pairs (not incubator / monitorOnly)
       const is6proMonitorOnly = Boolean(symConfig.monitorOnly && symbol !== 'BOOM150N' && symbol !== 'CRASH150N');
 
-      const is6proLockedState = dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked;
-      const is6proPaper = isGlobalPaper || is6proLockedState || isQuarantined || is6proMonitorOnly || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
-      const is5bPaper = isGlobalPaper || is6proLockedState || isQuarantined || is5bMonitorOnly || (dynamicState.mode5b || 'PAPER') === 'PAPER';
-      const isS6Paper = isGlobalPaper || is6proLockedState || isQuarantined || isS6MonitorOnly || (dynamicState.mode6 || 'PAPER') === 'PAPER';
+      // Independent circuit breaker locks
+      const masterLocked = Boolean(dynamicState.masterAccount && dynamicState.masterAccount.dailyLossLocked);
+      const is5bLockedState = masterLocked || (dynamicState.desk5b && (dynamicState.desk5b.targetLocked || dynamicState.desk5b.lossLocked));
+      const is6proLockedState = masterLocked || (dynamicState.deskSMC && (dynamicState.deskSMC.targetLocked || dynamicState.deskSMC.lossLocked));
+
+      const is6proPaper = isGlobalPaper || is6proLockedState || isSmcQuarantined || is6proMonitorOnly || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
+      const is5bPaper = isGlobalPaper || is5bLockedState || is5bQuarantined || is5bMonitorOnly || (dynamicState.mode5b || 'PAPER') === 'PAPER';
+      const isS6Paper = isGlobalPaper || is6proLockedState || is5bQuarantined || isS6MonitorOnly || (dynamicState.mode6 || 'PAPER') === 'PAPER';
 
       const is6proEnabled = !dynamicState.is6proPaused && (isBoth || isTriEngine || dynamicState.activeStrategy === 'STRATEGY_6_PRO');
       const is5bEnabled = !dynamicState.is5bPaused && (isBoth || isTriEngine || dynamicState.activeStrategy === 'STRATEGY_5B');
@@ -3260,8 +3540,8 @@ async function monitorMarket() {
       }
 
       if (canRun6Pro) {
-        let displayName = 'Strategy SMC Sweep';
-        if (is6proPaper) displayName = 'Strategy SMC Sweep (Paper)';
+        let displayName = 'Strategy SMC';
+        if (is6proPaper) displayName = 'Strategy SMC (Paper)';
 
         strategiesToRun.push({
           id: '6PRO',
@@ -3295,7 +3575,7 @@ async function monitorMarket() {
               return (t.strategy || '').includes('5B') || (t.setupId || '').includes('_5B_');
             }
             if (strat.id === '6PRO') {
-              return (t.strategy || '').includes('SMC Sweep') || (t.strategy || '').includes('6 Pro') || (t.setupId || '').includes('_6PRO_');
+              return (t.strategy || '').includes('SMC') || (t.strategy || '').includes('Sweep') || (t.strategy || '').includes('6 Pro') || (t.setupId || '').includes('_6PRO_');
             }
             if (strat.id === 'S6') {
               return (t.strategy || '').includes('Strategy 6') || (t.setupId || '').includes('_S6_');
@@ -3362,7 +3642,8 @@ async function monitorMarket() {
           // Target / Loss Locks Check
           const isStratMonitorOnly = strat.id === '6PRO' ? is6proMonitorOnly : is5bMonitorOnly;
           let isPaperMode = isStratMonitorOnly || strat.isPaper;
-          if (!isPaperMode && (dynamicState.dailyTargetLocked || dynamicState.dailyLossLocked || dynamicState.isManuallyPaused)) {
+          const isStratLocked = strat.id === '6PRO' ? is6proLockedState : is5bLockedState;
+          if (!isPaperMode && (isStratLocked || dynamicState.isManuallyPaused)) {
             console.log(`  [${mode}] ${symbol.padEnd(12)} | [${strat.displayName}] Setup ignored: Locked/Paused state.`);
             break;
           }
@@ -3404,11 +3685,12 @@ async function monitorMarket() {
               alertLines.push(`🛡️ <i>Live capacity reached (${maxLiveTrades}/${maxLiveTrades} active). Setup rerouted to Paper Sandbox to eliminate floating risk.</i>`);
             }
 
-            if (isQuarantined) {
-              const safeReason = String(symHealth.quarantineReason || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const activeSymHealth = strat.id === '6PRO' ? symHealthSmc : symHealth5b;
+            if (activeSymHealth && activeSymHealth.isQuarantined) {
+              const safeReason = String(activeSymHealth.quarantineReason || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
               alertLines.push(
                 `🛡️ <b>Quarantine Reason:</b> <code>${safeReason}</code>`,
-                `⏳ <b>Graduation Progress:</b> <code>${symHealth.consecutivePaperWins || 0} / 2 Paper Wins</code>`
+                `⏳ <b>Graduation Progress:</b> <code>${activeSymHealth.consecutivePaperWins || 0} / 2 Paper Wins</code>`
               );
             }
 
@@ -3647,9 +3929,9 @@ async function main() {
       `• <b>Risk Model:</b> <code>Fixed 1:1.3 R:R (${activeRiskPct.toFixed(1)}% Risk • $${compRisk.riskUSD.toFixed(2)} USD/trade)</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `💡 <b>Send a command to launch your strategy:</b>`,
-      `• <code>/strategy sweep</code> — Launch Strategy SMC Sweep (Non-Spike Paper)`,
+      `• <code>/strategy smc</code> — Launch Strategy SMC`,
       `• <code>/strategy 5b</code> — Launch Strategy 5B Pro`,
-      `• <code>/strategy both</code> — Launch Both (5B Pro Live + SMC Sweep Paper Sandbox)`,
+      `• <code>/strategy both</code> — Launch Dual-Desk (5B Pro Live + Strategy SMC Live — 50/50 Split)`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
     ].join('\n'));
   } else {
@@ -3662,17 +3944,17 @@ async function main() {
     let stratDisplayName = 'Strategy 5B Pro';
     let bannerTitle = 'STRATEGY 5B PRO';
     if (isBoth) {
-      stratDisplayName = 'Dual-Engine Paper Suite (5B Pro + SMC Sweep — ALL PAPER)';
-      bannerTitle = 'DUAL-ENGINE PAPER SUITE';
+      stratDisplayName = 'Dual-Desk Live Engine (5B Pro + Strategy SMC — 50/50 Allocation)';
+      bannerTitle = 'DUAL-DESK LIVE ENGINE';
     } else if (isTriEngine || isGlobalPaper) {
-      stratDisplayName = 'Tri-Engine Test Sandbox (5B Pro + Strategy 6 + SMC Sweep — ALL PAPER)';
+      stratDisplayName = 'Tri-Engine Test Sandbox (5B Pro + Strategy 6 + Strategy SMC — ALL PAPER)';
       bannerTitle = 'TRI-ENGINE TEST SANDBOX';
     } else if (is6) {
       stratDisplayName = 'Strategy 6 (Structural Momentum Sniper)';
       bannerTitle = 'STRATEGY 6';
     } else if (is6Pro) {
-      stratDisplayName = 'Strategy SMC Sweep (Non-Spike)';
-      bannerTitle = 'STRATEGY SMC SWEEP';
+      stratDisplayName = 'Strategy SMC';
+      bannerTitle = 'STRATEGY SMC';
     }
 
     console.log(`\n👑 ${BOLD}${CYAN}Mytrada Institutional Signal Runner — ${stratDisplayName}${RESET}`);
@@ -3682,14 +3964,14 @@ async function main() {
       `🚀 <b>[MYTRADA SYSTEM ONLINE — ${bannerTitle}]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `• <b>Strategy Engine:</b> <code>${stratDisplayName}</code>`,
-      `• <b>Execution Mode:</b> <code>Paper Sandbox ($0 Real Risk • 2-Day A/B Test)</code>`,
-      `• <b>Live Capital Protected:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
+      `• <b>Execution Mode:</b> <code>${isGlobalPaper ? 'Paper Sandbox ($0 Real Risk)' : 'Dual-Desk Live Trading (50/50 Equity Split)'}</code>`,
+      `• <b>Live Capital:</b> <code>$${compRisk.liveBalance.toFixed(2)} USD</code>`,
+      `• <b>Desk Allocation:</b> <code>$${(compRisk.effectiveDeskBalance || 7764.23).toFixed(2)} USD per engine</code>`,
       `• <b>Universe:</b> <code>${Object.keys(config.SYMBOLS).length} Elite Pairs</code>`,
-      `• <b>Week Anchor Balance:</b> <code>$${compRisk.balance.toFixed(2)} USD</code>`,
-      `• <b>Theoretical Trade Risk:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (${activeRiskPct.toFixed(1)}% Risk • 1:1.3 R:R)</code>`,
+      `• <b>Trade Risk:</b> <code>$${compRisk.riskUSD.toFixed(2)} USD (1.5% Equity / 3.0% Desk • 1:1.3 R:R)</code>`,
       `• <b>Telegram Control:</b> <b>ACTIVE</b> (Send <code>/status</code>, <code>/strategy</code>, <code>/help</code>)`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-      `🧪 <i>5B Pro, Strategy 6, and SMC Sweep are all scanning concurrently in 100% Paper Sandbox mode. No real capital at risk!</i>`
+      `⚡ <i>Strategy 5B Pro and Strategy SMC are actively scanning in parallel with independent circuit breakers!</i>`
     ].join('\n'));
   }
 

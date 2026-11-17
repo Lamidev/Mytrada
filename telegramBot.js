@@ -461,24 +461,28 @@ async function handleCommand(rawText, handlers) {
         `• <code>/sync</code> ➜ Push today's live logs & trade ledger to GitHub for AI review`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🏛️ <b>STRATEGY & MODES:</b>`,
-        `• <code>/strategy tri</code> ➜ Launch Tri-Engine Test Sandbox (5B Pro + Strategy 6 + SMC Sweep — ALL PAPER)`,
-        `• <code>/strategy 6</code> ➜ Launch Strategy 6 (Structural Momentum Sniper)`,
+        `• <code>/strategy both</code> (or <code>/strategy dual</code>) ➜ Dual-Desk Live (5B Pro + Strategy SMC — 50/50 Equity Split)`,
+        `• <code>/strategy smc</code> ➜ Launch Strategy SMC (15M Liquidity Sweeps & 5M Rejections)`,
         `• <code>/strategy 5b</code> ➜ Launch Strategy 5B Pro`,
-        `• <code>/strategy sweep</code> ➜ Launch Strategy SMC Sweep (Institutional Liquidity)`,
+        `• <code>/strategy 6</code> ➜ Launch Strategy 6 (Structural Momentum Sniper)`,
+        `• <code>/strategy tri</code> ➜ Launch Tri-Engine Test Sandbox (ALL PAPER)`,
         `• <code>/strategy none</code> ➜ Put bot into Standby (0 entries)`,
-        `• <code>/mode paper</code> | <code>/mode live</code> ➜ Global execution mode`,
+        `• <code>/mode live</code> | <code>/mode paper</code> ➜ Global execution mode`,
+        `• <code>/mode 5b live</code> | <code>/mode 5b paper</code> ➜ 5B Pro desk execution mode`,
+        `• <code>/mode smc live</code> | <code>/mode smc paper</code> ➜ Strategy SMC desk execution mode`,
         `• <code>/mode gold paper</code> | <code>/mode gold live</code> ➜ Gold mode`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `🛡️ <b>RISK, QUARANTINE & GRADUATION:</b>`,
+        `🛡️ <b>RISK, QUARANTINE & DESK CONTROLS:</b>`,
         `• <code>/risk 3.0</code> ➜ Set risk % anchored to account equity`,
-        `• <code>/autotarget 2 2</code> ➜ Auto target & loss floor (e.g. 2 wins / 2 losses)`,
-        `• <code>/target 2w</code> ➜ Override daily profit target (e.g. <code>/target 2w</code> or <code>/target 250</code>)`,
-        `• <code>/maxloss 2l</code> ➜ Override daily max loss floor (e.g. <code>/maxloss 2l</code> or <code>/maxloss 150</code>)`,
+        `• <code>/autotarget 3 3</code> ➜ Auto target & loss floor (e.g. 3 wins / 3 losses)`,
+        `• <code>/target 3w</code> ➜ Override daily profit target (e.g. <code>/target 908.43</code>)`,
+        `• <code>/maxloss 3l</code> ➜ Override daily max loss floor (e.g. <code>/maxloss 698.79</code>)`,
+        `• <code>/lock 5b</code> | <code>/lock smc</code> | <code>/lock all</code> ➜ Lock daily profits & halt engine`,
+        `• <code>/quarantine &lt;sym&gt; [5b|smc]</code> ➜ Quarantine pair specifically for 5B or SMC`,
+        `• <code>/unquarantine &lt;sym&gt; [5b|smc]</code> ➜ Restore pair specifically for 5B or SMC`,
         `• <code>/promote CRASH150N</code> ➜ Graduate incubation pair to Live Trading`,
         `• <code>/demote CRASH150N</code> ➜ Demote pair back to Incubation Sandbox`,
-        `• <code>/quarantine BOOM300N</code> ➜ Move pair to Paper Mode ($0 risk)`,
-        `• <code>/resettoday [bal]</code> ➜ Reset today's trades & restore starting balance ($5,114.16)`,
-        `• <code>/unquarantine BOOM300N</code> ➜ Restore pair to Live Trading`,
+        `• <code>/resettoday [bal]</code> ➜ Reset today's trades & restore starting balance`,
         `• <code>/be</code> ➜ Move SL on open trades to Breakeven ($0 risk)`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `⚡ <b>CONTROL & EMERGENCY:</b>`,
@@ -487,8 +491,8 @@ async function handleCommand(rawText, handlers) {
         `• <code>/resume CRASH1000</code> ➜ Clear cooldown/lockout on pair & resume scanning`,
         `• <code>/stopall</code> (or <code>/halt</code>, <code>/pause</code>) ➜ Emergency complete halt: stops all strategies & Gold`,
         `• <code>/resumeall</code> (or <code>/resume</code>) ➜ Resume all strategy engines and scanners`,
-        `• <code>/pause 5b</code> | <code>/pause sweep</code> | <code>/pause gold</code> ➜ Pause specific engine`,
-        `• <code>/resume 5b</code> | <code>/resume sweep</code> | <code>/resume gold</code> ➜ Resume specific engine`,
+        `• <code>/pause 5b</code> | <code>/pause smc</code> | <code>/pause gold</code> ➜ Pause specific engine`,
+        `• <code>/resume 5b</code> | <code>/resume smc</code> | <code>/resume gold</code> ➜ Resume specific engine`,
         `• <code>/closeall</code> ➜ Close all active trades immediately at market`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`
       ].join('\n');
@@ -499,38 +503,50 @@ async function handleCommand(rawText, handlers) {
     case '/strategy':
     case '/strat': {
       if (!arg1) {
-        const cur = handlers.getActiveStrategy ? handlers.getActiveStrategy() : 'TRI_ENGINE';
-        let label = '⚡ <b>TRI-ENGINE TEST SANDBOX (5B Pro + Strategy 6 + SMC Sweep — ALL PAPER)</b>';
+        const cur = handlers.getActiveStrategy ? handlers.getActiveStrategy() : 'BOTH';
+        let label = '⚡ <b>DUAL-DESK LIVE ENGINE (5B Pro + Strategy SMC — 50/50 Allocation)</b>';
         if (cur === 'STRATEGY_6') label = '🛡️ <b>Strategy 6 Only (Structural Momentum Sniper)</b>';
-        else if (cur === 'STRATEGY_6_PRO') label = '🔬 <b>Strategy SMC Sweep Only (15M Liquidity Sweep & 5M Rejection)</b>';
+        else if (cur === 'STRATEGY_6_PRO') label = '🔬 <b>Strategy SMC Only (15M Liquidity Sweep & 5M Rejection)</b>';
         else if (cur === 'STRATEGY_5B') label = '🚀 <b>Strategy 5B Pro Only</b>';
+        else if (cur === 'TRI_ENGINE') label = '⚡ <b>TRI-ENGINE TEST SANDBOX (ALL PAPER)</b>';
 
         await sendTelegramMessage([
           `🏛️ <b>[MYTRADA ACTIVE STRATEGY ENGINE]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `• <b>Current Configuration:</b> ${label}`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `🛡️ <b>Strategy 6:</b> Structural Momentum Sniper (Lower Highs/Higher Lows + Density Guard)`,
-          `🚀 <b>Strategy 5B Pro:</b> Value-Zone Spike Exhaustion Sniper`,
-          `🔬 <b>Strategy SMC Sweep:</b> 15M Liquidity Sweeps & 5M Rejection (Non-Spike)`,
+          `🚀 <b>Strategy 5B Pro:</b> Value-Zone Spike Exhaustion Sniper ($7,764.23 USD / $232.93 Risk)`,
+          `🔬 <b>Strategy SMC:</b> 15M Liquidity Sweeps & 5M Rejection ($7,764.23 USD / $232.93 Risk)`,
+          `🛡️ <b>Strategy 6:</b> Structural Momentum Sniper (Lower Highs/Higher Lows)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💡 <b>Commands:</b>`,
-          `• <code>/strategy tri</code> (or <code>/strategy all</code>) — Run ALL THREE concurrently in Paper Sandbox`,
-          `• <code>/strategy 6</code> — Run Strategy 6 exclusively`,
+          `• <code>/strategy both</code> (or <code>/strategy dual</code>) — Run Dual-Desk LIVE (50/50 Equity Split)`,
           `• <code>/strategy 5b</code> — Run Strategy 5B Pro exclusively`,
-          `• <code>/strategy sweep</code> — Run Strategy SMC Sweep exclusively`
+          `• <code>/strategy smc</code> — Run Strategy SMC exclusively`,
+          `• <code>/strategy tri</code> — Run ALL THREE concurrently in Paper Sandbox`,
+          `• <code>/strategy none</code> — Put engines in Standby`
         ].join('\n'));
         break;
       }
       const choice = arg1.toLowerCase();
-      if (choice.includes('tri') || choice.includes('all') || choice.includes('both') || choice.includes('dual')) {
+      if (choice === 'both' || choice === 'dual' || choice.includes('both') || choice.includes('dual')) {
+        if (handlers.setActiveStrategy) handlers.setActiveStrategy('BOTH');
+        await sendTelegramMessage([
+          `⚡ <b>[DUAL-DESK LIVE ENGINE ACTIVATED]</b>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `• 🚀 <b>Strategy 5B Pro:</b> 🟢 <b>LIVE REAL TRADING</b> ($7,764.23 USD Allocation • $232.93 Risk)`,
+          `• 🔬 <b>Strategy SMC:</b> 🟢 <b>LIVE REAL TRADING</b> ($7,764.23 USD Allocation • $232.93 Risk)`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `🛡️ <i>Both engines are actively trading independently with 50/50 balance allocation and independent circuit breakers!</i>`
+        ].join('\n'));
+      } else if (choice.includes('tri') || choice.includes('all')) {
         if (handlers.setActiveStrategy) handlers.setActiveStrategy('TRI_ENGINE');
         await sendTelegramMessage([
           `⚡ <b>[TRI-ENGINE TEST SANDBOX ACTIVATED]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `• 🛡️ <b>Strategy 6:</b> <b>PAPER FORWARD TEST</b> (Structural Sniper)`,
           `• 🚀 <b>Strategy 5B Pro:</b> <b>PAPER FORWARD TEST</b> (Spike Exhaustion)`,
-          `• 🔬 <b>Strategy SMC Sweep:</b> <b>PAPER FORWARD TEST</b> (Liquidity Sweeps)`,
+          `• 🔬 <b>Strategy SMC:</b> <b>PAPER FORWARD TEST</b> (Liquidity Sweeps)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `🧪 <i>All 3 engines are actively scanning in parallel with $0 real capital risk!</i>`
         ].join('\n'));
@@ -539,7 +555,7 @@ async function handleCommand(rawText, handlers) {
         await sendTelegramMessage(`🛡️ <b>[STRATEGY SWITCHED ➔ STRATEGY 6]</b>\nBot is now scanning exclusively with <b>Strategy 6 (Structural Momentum Sniper)</b>.`);
       } else if (choice.includes('sweep') || choice.includes('smc') || choice.includes('sandbox') || choice.includes('paper') || choice.includes('6pro')) {
         if (handlers.setActiveStrategy) handlers.setActiveStrategy('STRATEGY_6_PRO');
-        await sendTelegramMessage(`🔬 <b>[STRATEGY SWITCHED ➔ STRATEGY SMC SWEEP]</b>\nBot is now scanning exclusively with <b>Strategy SMC Sweep (15M Liquidity Sweep & 5M Rejection)</b>.`);
+        await sendTelegramMessage(`🔬 <b>[STRATEGY SWITCHED ➔ STRATEGY SMC]</b>\nBot is now scanning exclusively with <b>Strategy SMC (15M Liquidity Sweep & 5M Rejection)</b>.`);
       } else if (choice.includes('5') || choice.includes('5b')) {
         if (handlers.setActiveStrategy) handlers.setActiveStrategy('STRATEGY_5B');
         await sendTelegramMessage(`🚀 <b>[STRATEGY SWITCHED ➔ STRATEGY 5B PRO]</b>\nBot is now scanning exclusively with <b>Strategy 5B Pro</b>.`);
@@ -547,7 +563,7 @@ async function handleCommand(rawText, handlers) {
         if (handlers.setActiveStrategy) handlers.setActiveStrategy('NONE');
         await sendTelegramMessage(`🟡 <b>[MYTRADA ENGINE IN STANDBY]</b>\nMarket scanning halted. Bot is awaiting your /strategy command.`);
       } else {
-        await sendTelegramMessage(`⚠️ Unknown strategy option. Use <code>/strategy tri</code>, <code>/strategy 6</code>, <code>/strategy 5b</code>, <code>/strategy sweep</code>, or <code>/strategy none</code>.`);
+        await sendTelegramMessage(`⚠️ Unknown strategy option. Use <code>/strategy both</code>, <code>/strategy 5b</code>, <code>/strategy smc</code>, <code>/strategy tri</code>, or <code>/strategy none</code>.`);
       }
       break;
     }
@@ -555,7 +571,7 @@ async function handleCommand(rawText, handlers) {
     case '/mode': {
       if (!arg1) {
         const curStrat = handlers.getActiveStrategy ? handlers.getActiveStrategy() : 'BOTH';
-        const curMode = handlers.getExecutionMode ? handlers.getExecutionMode() : 'PAPER';
+        const curMode = handlers.getExecutionMode ? handlers.getExecutionMode() : 'LIVE';
         const gState = getGoldState();
         await sendTelegramMessage([
           `🧪 <b>[MYTRADA EXECUTION MODES]</b>`,
@@ -565,10 +581,10 @@ async function handleCommand(rawText, handlers) {
           `• <b>Gold Scalper Mode:</b> <code>${gState.mode || 'PAPER'} (${gState.isPaused ? '⏸️ PAUSED' : '🟢 ACTIVE'})</code>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💡 <b>Commands:</b>`,
-          `• <code>/mode paper</code> — Global Boom/Crash Paper Sandbox ($0 risk)`,
           `• <code>/mode live</code> — Global Boom/Crash Live Real Trading`,
-          `• <code>/mode 5b live</code> | <code>/mode 5b paper</code>`,
-          `• <code>/mode sweep live</code> | <code>/mode sweep paper</code>`,
+          `• <code>/mode paper</code> — Global Boom/Crash Paper Sandbox ($0 risk)`,
+          `• <code>/mode 5b live</code> | <code>/mode 5b paper</code> — Toggle 5B Pro desk`,
+          `• <code>/mode smc live</code> | <code>/mode smc paper</code> — Toggle Strategy SMC desk`,
           `• <code>/mode gold paper</code> | <code>/mode gold live</code>`
         ].join('\n'));
         break;
@@ -586,26 +602,22 @@ async function handleCommand(rawText, handlers) {
         const isPaper = mTarget.includes('paper') || mTarget.includes('test');
         if (handlers.setStrategyMode) {
           handlers.setStrategyMode('5b', isPaper ? 'PAPER' : 'LIVE');
-          if (!isPaper) handlers.setStrategyMode('6pro', 'PAPER');
         }
-        const extraNote = !isPaper ? '\n🔬 <i>Strategy SMC Sweep automatically flipped to 🔬 PAPER SANDBOX</i>' : '';
-        await sendTelegramMessage(`🚀 <b>Strategy 5B Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>${extraNote}`);
-      } else if ((mChoice.includes('sweep') || mChoice.includes('smc') || mChoice.includes('6')) && mTarget) {
+        await sendTelegramMessage(`🚀 <b>Strategy 5B Pro Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>`);
+      } else if ((mChoice.includes('sweep') || mChoice.includes('smc') || mChoice.includes('6pro') || mChoice.includes('6')) && mTarget) {
         const isPaper = mTarget.includes('paper') || mTarget.includes('test');
         if (handlers.setStrategyMode) {
           handlers.setStrategyMode('6pro', isPaper ? 'PAPER' : 'LIVE');
-          if (!isPaper) handlers.setStrategyMode('5b', 'PAPER');
         }
-        const extraNote = !isPaper ? '\n🚀 <i>Strategy 5B automatically flipped to 🔬 PAPER SANDBOX</i>' : '';
-        await sendTelegramMessage(`🔬 <b>Strategy SMC Sweep Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>${extraNote}`);
+        await sendTelegramMessage(`🔬 <b>Strategy SMC Mode updated to:</b> <code>${isPaper ? '🔬 PAPER SANDBOX ($0 Risk)' : '🟢 LIVE REAL TRADING'}</code>`);
       } else if (mChoice.includes('paper') || mChoice.includes('test') || mChoice.includes('sandbox')) {
         if (handlers.setExecutionMode) handlers.setExecutionMode('PAPER');
         await sendTelegramMessage(`🔬 <b>[GLOBAL MODE ➔ PAPER SANDBOX]</b>\nAll signals across all strategies will now run as <b>Forward Test Setups ($0 real equity at risk)</b>.`);
       } else if (mChoice.includes('live') || mChoice.includes('real')) {
         if (handlers.setExecutionMode) handlers.setExecutionMode('LIVE');
-        await sendTelegramMessage(`🟢 <b>[GLOBAL MODE ➔ LIVE REAL TRADING]</b>\nSignals will now execute with <b>Real Live Account Equity</b>.`);
+        await sendTelegramMessage(`🟢 <b>[GLOBAL MODE ➔ LIVE REAL TRADING]</b>\nSignals will now execute with <b>Real Live Account Equity (50/50 Dual-Desk Allocation)</b>.`);
       } else {
-        await sendTelegramMessage(`⚠️ Unknown mode command. Use <code>/mode paper</code>, <code>/mode live</code>, <code>/mode 5b live</code>, <code>/mode 6pro paper</code>, or <code>/mode gold paper</code>.`);
+        await sendTelegramMessage(`⚠️ Unknown mode command. Use <code>/mode live</code>, <code>/mode paper</code>, <code>/mode 5b live</code>, <code>/mode smc live</code>, or <code>/mode gold paper</code>.`);
       }
       break;
     }
@@ -730,7 +742,7 @@ async function handleCommand(rawText, handlers) {
           `🚀 <b>Strategy 5B Pro (Sandbox/Live):</b>`,
           `• <code>${s5bTrades} Trades (${s5bWins}W / ${s5bLosses}L • ${s5bWR}% WR) • ${s5bSign}$${s5bUSD} (${s5bRSign}${s5bR}R)</code>`,
           ``,
-          `🔬 <b>Strategy SMC Sweep (Paper Test):</b>`,
+          `🔬 <b>Strategy SMC:</b>`,
           `• <code>${smcTrades} Trades (${smcWins}W / ${smcLosses}L • ${smcWR}% WR) • ${smcSign}$${smcUSD} (${smcRSign}${smcR}R)</code>`
         ];
 
@@ -974,14 +986,16 @@ async function handleCommand(rawText, handlers) {
 
     case '/lock':
     case '/lockprofit': {
+      const targetDesk = arg1 ? arg1.toLowerCase() : 'all';
       if (handlers.lockDailyProfit) {
-        const res = await handlers.lockDailyProfit();
+        const res = await handlers.lockDailyProfit(targetDesk);
+        const deskLabel = targetDesk.includes('5b') ? 'Strategy 5B Pro' : (targetDesk.includes('smc') || targetDesk.includes('sweep') || targetDesk.includes('6pro') ? 'Strategy SMC' : 'ALL ENGINES');
         await sendTelegramMessage([
-          `🔒 <b>[MYTRADA DAILY PROFIT LOCK ACTIVATED]</b>`,
+          `🔒 <b>[MYTRADA DAILY PROFIT LOCK ACTIVATED — ${deskLabel.toUpperCase()}]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `💰 <b>Locked Realized Today:</b> <code>+$${res.todayNet.toFixed(2)} USD (${res.todayR >= 0 ? '+' : ''}${res.todayR.toFixed(1)}R)</code>`,
           `💵 <b>Account Equity:</b> <code>$${res.liveBalance.toFixed(2)} USD</code>`,
-          `🛡️ <b>Status:</b> <b>NEW SIGNALS LOCKED FOR THE DAY</b>`,
+          `🛡️ <b>Status:</b> <b>NEW SIGNALS LOCKED FOR THE DAY (${deskLabel})</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `⏳ <i>Bot will automatically reset and resume tomorrow at 12:00 AM UTC. Send /resume to unlock immediately.</i>`
         ].join('\n'));
@@ -1078,10 +1092,10 @@ async function handleCommand(rawText, handlers) {
         await sendTelegramMessage(`⏸️ <b>[GOLD FLASH SCALPER PAUSED]</b>\nGold M1 daemon paused. Boom & Crash scanners remain active.`);
       } else if (pTarget.includes('5b')) {
         if (handlers.pauseStrategy) handlers.pauseStrategy('5b');
-        await sendTelegramMessage(`⏸️ <b>[STRATEGY 5B PAUSED]</b>\nStrategy 5B signal engine paused. Strategy 6 Pro remains active.`);
-      } else if (pTarget.includes('6') || pTarget.includes('pro')) {
+        await sendTelegramMessage(`⏸️ <b>[STRATEGY 5B PRO PAUSED]</b>\nStrategy 5B Pro signal engine paused. Strategy SMC remains active.`);
+      } else if (pTarget.includes('smc') || pTarget.includes('sweep') || pTarget.includes('6pro') || pTarget.includes('6')) {
         if (handlers.pauseStrategy) handlers.pauseStrategy('6pro');
-        await sendTelegramMessage(`⏸️ <b>[STRATEGY 6 PRO PAUSED]</b>\nStrategy 6 Pro signal engine paused. Strategy 5B remains active.`);
+        await sendTelegramMessage(`⏸️ <b>[STRATEGY SMC PAUSED]</b>\nStrategy SMC signal engine paused. Strategy 5B Pro remains active.`);
       } else {
         const gState = getGoldState();
         gState.isPaused = true;
@@ -1090,8 +1104,8 @@ async function handleCommand(rawText, handlers) {
         await sendTelegramMessage([
           `🛑 <b>[MYTRADA COMPLETE STOP — ALL ENGINES HALTED]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `• <b>Strategy 5B:</b> ⏸️ HALTED (Live & Paper)`,
-          `• <b>Strategy 6 Pro:</b> ⏸️ HALTED (Live & Paper)`,
+          `• <b>Strategy 5B Pro:</b> ⏸️ HALTED (Live & Paper)`,
+          `• <b>Strategy SMC:</b> ⏸️ HALTED (Live & Paper)`,
           `• <b>Gold Flash Scalper:</b> ⏸️ HALTED (M1 Daemon)`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `🔒 <b>All scanning stopped.</b> Zero new trades will be taken across all modes.`,
@@ -1112,7 +1126,7 @@ async function handleCommand(rawText, handlers) {
           const target = arg2 ? arg2.toLowerCase() : 'all';
           const res = handlers.resumeSymbol(upperSym, target);
           if (res.success) {
-            const targetBadge = target === 'paper' ? ' (5B Paper)' : (target === 'live' || target === '6pro' ? ' (6 Pro Live)' : '');
+            const targetBadge = target === 'paper' ? ' (5B Paper)' : (target === 'live' || target === '6pro' ? ' (Strategy SMC Live)' : '');
             await sendTelegramMessage([
               `▶️ 🟢 <b>[PAIR UNLOCKED: ${upperSym}${targetBadge}]</b>`,
               `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
@@ -1135,10 +1149,10 @@ async function handleCommand(rawText, handlers) {
         await sendTelegramMessage(`▶️ <b>[GOLD FLASH SCALPER RESUMED]</b>\nGold M1 daemon is now actively scanning.`);
       } else if (rTarget.includes('5b')) {
         if (handlers.resumeStrategy) handlers.resumeStrategy('5b');
-        await sendTelegramMessage(`▶️ <b>[STRATEGY 5B RESUMED]</b>\nStrategy 5B is now actively scanning.`);
-      } else if (rTarget.includes('6') || rTarget.includes('pro')) {
+        await sendTelegramMessage(`▶️ <b>[STRATEGY 5B PRO RESUMED]</b>\nStrategy 5B Pro is now actively scanning.`);
+      } else if (rTarget.includes('smc') || rTarget.includes('sweep') || rTarget.includes('6pro') || rTarget.includes('6')) {
         if (handlers.resumeStrategy) handlers.resumeStrategy('6pro');
-        await sendTelegramMessage(`▶️ <b>[STRATEGY 6 PRO RESUMED]</b>\nStrategy 6 Pro is now actively scanning.`);
+        await sendTelegramMessage(`▶️ <b>[STRATEGY SMC RESUMED]</b>\nStrategy SMC is now actively scanning.`);
       } else {
         const gState = getGoldState();
         gState.isPaused = false;
@@ -1148,8 +1162,8 @@ async function handleCommand(rawText, handlers) {
           await sendTelegramMessage([
             `▶️ 🟢 <b>[MYTRADA ALL ENGINES RESUMED]</b>`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-            `• <b>Strategy 5B:</b> 🟢 ACTIVE & SCANNING`,
-            `• <b>Strategy 6 Pro:</b> 🟢 ACTIVE & SCANNING`,
+            `• <b>Strategy 5B Pro:</b> 🟢 ACTIVE & SCANNING`,
+            `• <b>Strategy SMC:</b> 🟢 ACTIVE & SCANNING`,
             `• <b>Gold Flash Scalper:</b> 🟢 ACTIVE & SCANNING`,
             `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
             `🚀 Actively scanning <b>${res.symbolsCount} Elite Pairs</b> across all strategies.`
@@ -1242,15 +1256,26 @@ async function handleCommand(rawText, handlers) {
     case '/quarantine':
     case '/isolate': {
       if (!arg1) {
-        await sendTelegramMessage(`⚠️ Please specify symbol. Example: <code>/quarantine BOOM300N</code>`);
+        await sendTelegramMessage(`⚠️ Please specify symbol. Example: <code>/quarantine BOOM300N [5b|smc]</code>`);
         break;
       }
       const sym = arg1.toUpperCase();
-      const reason = arg2 ? args.slice(2).join(' ') : 'Manual quarantine via Telegram';
+      let stratTarget = 'ALL';
+      let reason = 'Manual quarantine via Telegram';
+      if (arg2) {
+        const a2 = arg2.toLowerCase();
+        if (a2 === '5b' || a2 === 'smc' || a2 === 'sweep' || a2 === 'all') {
+          stratTarget = a2;
+          if (args[3]) reason = args.slice(3).join(' ');
+        } else {
+          reason = args.slice(2).join(' ');
+        }
+      }
       if (handlers.quarantinePair) {
-        const res = handlers.quarantinePair(sym, reason);
+        const res = handlers.quarantinePair(sym, reason, stratTarget);
         if (res && res.success) {
-          await sendTelegramMessage(`🚨 <b>[PAIR QUARANTINED]</b>\n<code>${sym}</code> demoted to <b>Paper Test Mode ($0 Real Risk)</b>.\nReason: <i>${reason}</i>`);
+          const stratLabel = stratTarget === '5b' ? 'Strategy 5B Pro' : (stratTarget === 'smc' || stratTarget === 'sweep' ? 'Strategy SMC' : 'Both Engines');
+          await sendTelegramMessage(`🚨 <b>[PAIR QUARANTINED — ${stratLabel.toUpperCase()}]</b>\n<code>${sym}</code> demoted to <b>Paper Test Mode ($0 Real Risk) for ${stratLabel}</b>.\nReason: <i>${reason}</i>`);
         } else {
           await sendTelegramMessage(`⚠️ Error quarantining pair: ${res ? res.error : 'Unknown'}`);
         }
@@ -1261,14 +1286,16 @@ async function handleCommand(rawText, handlers) {
     case '/unquarantine':
     case '/restore': {
       if (!arg1) {
-        await sendTelegramMessage(`⚠️ Please specify symbol. Example: <code>/unquarantine BOOM300N</code>`);
+        await sendTelegramMessage(`⚠️ Please specify symbol. Example: <code>/unquarantine BOOM300N [5b|smc]</code>`);
         break;
       }
       const sym = arg1.toUpperCase();
+      const stratTarget = arg2 ? arg2.toLowerCase() : 'all';
       if (handlers.unquarantinePair) {
-        const res = handlers.unquarantinePair(sym);
+        const res = handlers.unquarantinePair(sym, stratTarget);
         if (res && res.success) {
-          await sendTelegramMessage(`🏆 🟢 <b>[PAIR RESTORED TO LIVE]</b>\n<code>${sym}</code> is now restored to <b>Live Real Trading</b>! Consecutive loss counters reset.`);
+          const stratLabel = stratTarget === '5b' ? 'Strategy 5B Pro' : (stratTarget === 'smc' || stratTarget === 'sweep' ? 'Strategy SMC' : 'Both Engines');
+          await sendTelegramMessage(`🏆 🟢 <b>[PAIR RESTORED TO LIVE — ${stratLabel.toUpperCase()}]</b>\n<code>${sym}</code> is now restored to <b>Live Real Trading for ${stratLabel}</b>! Consecutive loss counters reset.`);
         } else {
           await sendTelegramMessage(`⚠️ Error restoring pair: ${res ? res.error : 'Unknown'}`);
         }
