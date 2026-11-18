@@ -247,6 +247,8 @@ function loadDynamicState() {
           netR: 0,
           wins: 0,
           losses: 0,
+          consecutiveLosses: 0,
+          pauseUntil: 0,
           targetUSD: 908.43,
           maxLossUSD: 698.79,
           targetLocked: false,
@@ -258,6 +260,8 @@ function loadDynamicState() {
           netR: 0,
           wins: 0,
           losses: 0,
+          consecutiveLosses: 0,
+          pauseUntil: 0,
           targetUSD: 908.43,
           maxLossUSD: 698.79,
           targetLocked: false,
@@ -305,6 +309,8 @@ function loadDynamicState() {
           netR: 0,
           wins: 0,
           losses: 0,
+          consecutiveLosses: 0,
+          pauseUntil: 0,
           targetUSD: 908.43,
           maxLossUSD: 698.79,
           targetLocked: false,
@@ -318,6 +324,8 @@ function loadDynamicState() {
           netR: 0,
           wins: 0,
           losses: 0,
+          consecutiveLosses: 0,
+          pauseUntil: 0,
           targetUSD: 908.43,
           maxLossUSD: 698.79,
           targetLocked: false,
@@ -361,6 +369,8 @@ function loadDynamicState() {
       netR: 0,
       wins: 0,
       losses: 0,
+      consecutiveLosses: 0,
+      pauseUntil: 0,
       targetUSD: 908.43,
       maxLossUSD: 698.79,
       targetLocked: false,
@@ -372,6 +382,8 @@ function loadDynamicState() {
       netR: 0,
       wins: 0,
       losses: 0,
+      consecutiveLosses: 0,
+      pauseUntil: 0,
       targetUSD: 908.43,
       maxLossUSD: 698.79,
       targetLocked: false,
@@ -669,6 +681,8 @@ async function recordTradeOutcomeToDesk(stratId, outcome, pnlUsd, pnlR) {
       netR: 0,
       wins: 0,
       losses: 0,
+      consecutiveLosses: 0,
+      pauseUntil: 0,
       targetUSD: 908.43,
       maxLossUSD: 698.79,
       targetLocked: false,
@@ -682,11 +696,32 @@ async function recordTradeOutcomeToDesk(stratId, outcome, pnlUsd, pnlR) {
   desk.netR = parseFloat(((desk.netR || 0) + pnlR).toFixed(1));
   if (outcome === 'WIN') {
     desk.wins = (desk.wins || 0) + 1;
+    desk.consecutiveLosses = 0;
   } else if (outcome === 'LOSS') {
     desk.losses = (desk.losses || 0) + 1;
+    desk.consecutiveLosses = (desk.consecutiveLosses || 0) + 1;
   }
 
-  // 1. Check Desk Daily Target (+$908.43 / +3.9R)
+  // 1. Check Desk Consecutive Loss Cooldown (e.g. 3 consecutive live losses on this desk only)
+  const maxConsecLosses = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.PORTFOLIO_CONSECUTIVE_LOSS_LIMIT) || 3;
+  if (desk.consecutiveLosses >= maxConsecLosses && !desk.lossLocked) {
+    const pauseMins = (config.CIRCUIT_BREAKER && config.CIRCUIT_BREAKER.PORTFOLIO_LOSS_PAUSE_MINS) || 120;
+    desk.pauseUntil = Date.now() + (pauseMins * 60 * 1000);
+    desk.consecutiveLosses = 0; // Reset counter
+    saveDynamicState(dynamicState);
+    const pauseHours = (pauseMins / 60).toFixed(pauseMins % 60 === 0 ? 0 : 1);
+    const consecMsg = [
+      `⚠️ 🛡️ <b>[${deskName.toUpperCase()} CONSECUTIVE LOSS COOLDOWN]</b>`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `<b>Trigger:</b> <code>${maxConsecLosses} consecutive live losses</code> hit on <b>${deskName}</b>.`,
+      `<b>Action:</b> Real trading paused on <b>${deskName}</b> for <b>${pauseMins} minutes (${pauseHours}h)</b> to let market settle.`,
+      `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+      `👑 <i>The other desk remains completely independent & active! Send /resume to override.</i>`
+    ].join('\n');
+    await sendTelegramMessage(consecMsg).catch(() => null);
+  }
+
+  // 2. Check Desk Daily Target (+$908.43 / +3.9R)
   if (desk.targetUSD && desk.netUSD >= desk.targetUSD && !desk.targetLocked) {
     desk.targetLocked = true;
     saveDynamicState(dynamicState);
@@ -796,13 +831,17 @@ function formatHealthTelegramHTML() {
   return lines.join('\n');
 }
 
-function isSymbolInCooldown(symbol, isPaper = false, currentPrice = null) {
+function isSymbolInCooldown(symbol, isPaper = false, currentPrice = null, stratId = null) {
   if (!config.CIRCUIT_BREAKER || !config.CIRCUIT_BREAKER.ENABLED) return { inCooldown: false };
   
   // Always load fresh state from disk to guarantee instant cross-monitor synchronization
   circuitBreakerState = loadCircuitBreakerState();
 
-  const rec = circuitBreakerState.symbols && circuitBreakerState.symbols[symbol];
+  const stratKey = stratId ? getStratKey(stratId) : null;
+  const compositeKey = stratKey ? `${stratKey}_${symbol}` : null;
+  const rec = (compositeKey && circuitBreakerState.symbols && circuitBreakerState.symbols[compositeKey])
+    ? circuitBreakerState.symbols[compositeKey]
+    : (circuitBreakerState.symbols && circuitBreakerState.symbols[symbol]);
   if (!rec) return { inCooldown: false };
 
   const maxDaily = config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2;
@@ -869,9 +908,14 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
     dynamicState = loadDynamicState();
   }
 
+  const stratKey = (tradeDetails && tradeDetails.strategy) ? getStratKey(tradeDetails.strategy) : null;
+  const recKey = stratKey ? `${stratKey}_${symbol}` : symbol;
+
   if (!circuitBreakerState.symbols) circuitBreakerState.symbols = {};
-  if (!circuitBreakerState.symbols[symbol]) {
-    circuitBreakerState.symbols[symbol] = {
+  if (!circuitBreakerState.symbols[recKey]) {
+    circuitBreakerState.symbols[recKey] = {
+      symbol,
+      strategy: stratKey || 'ALL',
       consecutiveLosses: 0,
       dailyLosses: 0,
       consecutiveWins: 0,
@@ -885,7 +929,7 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
     };
   }
 
-  const rec = circuitBreakerState.symbols[symbol];
+  const rec = circuitBreakerState.symbols[recKey];
   const now = Date.now();
   const maxDaily = config.CIRCUIT_BREAKER.MAX_DAILY_LOSSES_PER_SYMBOL || 2;
   const postWinMins = config.CIRCUIT_BREAKER.POST_WIN_PAUSE_MINS || 60;
@@ -972,14 +1016,13 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
       }
     }
   } else {
-    // ── 👑 LIVE REAL TRADING CIRCUIT BREAKER (Strategy 6 Pro / 5B Pro) ──
+    // ── 👑 LIVE REAL TRADING CIRCUIT BREAKER (Strategy SMC / 5B Pro Independent) ──
     const stratName = (tradeDetails && tradeDetails.strategy) ? tradeDetails.strategy : 'Strategy 5B Pro';
     rec.lastLiveStrat = (stratName.includes('SMC') || stratName.includes('Sweep')) ? 'Strategy SMC' : (stratName.includes('5B') ? '5B Pro' : stratName);
 
     if (outcome === 'WIN') {
       rec.consecutiveLosses = 0;
       rec.consecutiveWins = (rec.consecutiveWins || 0) + 1;
-      dynamicState.portfolioConsecutiveLosses = 0;
 
       const maxWinsPerSymbol = config.CIRCUIT_BREAKER.MAX_CONSECUTIVE_WINS_PER_SYMBOL || 2;
       const winLockMins = config.CIRCUIT_BREAKER.SYMBOL_WIN_LOCK_MINS || 90;
@@ -989,13 +1032,14 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
         rec.isWinLocked = true;
         const lockHours = (winLockMins / 60).toFixed(winLockMins % 60 === 0 ? 0 : 1);
         sendTelegramMessage([
-          `🏆 🛡️ <b>[SYMBOL PROFIT LOCK ACTIVATED — LIVE TRADING]</b>`,
+          `🏆 🛡️ <b>[SYMBOL PROFIT LOCK ACTIVATED — ${rec.lastLiveStrat.toUpperCase()}]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Engine:</b> <code>${rec.lastLiveStrat}</code>`,
           `<b>Trigger:</b> <code>${rec.consecutiveWins} consecutive wins</code> banked today (+${(rec.consecutiveWins * 1.3).toFixed(1)}R).`,
-          `<b>Action:</b> Live trading paused on <b>${symbol}</b> for <b>${winLockMins} minutes (${lockHours}h)</b> to lock in gains and prevent late-trend exhaustion reversals.`,
+          `<b>Action:</b> Live trading paused on <b>${symbol}</b> for <b>${rec.lastLiveStrat}</b> for <b>${winLockMins} minutes (${lockHours}h)</b> to lock in gains.`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `👑 <i>Remaining healthy pairs will continue scanning normally.</i>`
+          `👑 <i>Remaining healthy pairs and other engines continue scanning normally.</i>`
         ].join('\n')).catch(() => null);
       } else {
         rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (postWinMins * 60 * 1000));
@@ -1005,7 +1049,6 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
       rec.isWinLocked = false;
       rec.consecutiveLosses = (rec.consecutiveLosses || 0) + 1;
       rec.dailyLosses = (rec.dailyLosses || 0) + 1;
-      dynamicState.portfolioConsecutiveLosses = (dynamicState.portfolioConsecutiveLosses || 0) + 1;
 
       if (rec.dailyLosses >= maxDaily || rec.consecutiveLosses >= 2) {
         const endOfDay = new Date();
@@ -1015,33 +1058,17 @@ function recordSymbolTradeOutcome(symbol, outcome, isPaper = false, tradeDetails
           ? `2 consecutive live losses (${rec.dailyLosses} total today)`
           : `${rec.dailyLosses} live losses today`;
         sendTelegramMessage([
-          `🛑 🛡️ <b>[SYMBOL DAILY LOSS LIMIT REACHED — LIVE TRADING]</b>`,
+          `🛑 🛡️ <b>[SYMBOL DAILY LOSS LIMIT REACHED — ${rec.lastLiveStrat.toUpperCase()}]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
           `<b>Asset:</b> <code>${symbol}</code> (${config.SYMBOLS[symbol] ? config.SYMBOLS[symbol].name : symbol})`,
+          `<b>Engine:</b> <code>${rec.lastLiveStrat}</code>`,
           `<b>Trigger:</b> <code>${triggerReason}</code>.`,
-          `<b>Action:</b> Live trading paused on <b>${symbol}</b> until <b>12:00 AM UTC</b> to protect performance.`,
+          `<b>Action:</b> Live trading paused on <b>${symbol}</b> for <b>${rec.lastLiveStrat}</b> until <b>12:00 AM UTC</b> to protect performance.`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `<i>Remaining healthy pairs will continue scanning normally.</i>`
+          `<i>Remaining healthy pairs and other engines continue scanning normally.</i>`
         ].join('\n')).catch(() => null);
       } else {
         rec.pauseUntil = Math.max(rec.pauseUntil || 0, now + (tier1Mins * 60 * 1000));
-      }
-
-      // Portfolio-Wide Consecutive Loss Breaker (Live real capital trades only):
-      const maxPortfolioLosses = config.CIRCUIT_BREAKER.PORTFOLIO_CONSECUTIVE_LOSS_LIMIT || 3;
-      if (dynamicState.portfolioConsecutiveLosses >= maxPortfolioLosses) {
-        const pauseMins = config.CIRCUIT_BREAKER.PORTFOLIO_LOSS_PAUSE_MINS || 120;
-        dynamicState.portfolioPauseUntil = now + (pauseMins * 60 * 1000);
-        dynamicState.portfolioConsecutiveLosses = 0; // Reset counter
-        const pauseHours = (pauseMins / 60).toFixed(pauseMins % 60 === 0 ? 0 : 1);
-        sendTelegramMessage([
-          `⚠️ 🛡️ <b>[MYTRADA PORTFOLIO CIRCUIT BREAKER]</b>`,
-          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `<b>Trigger:</b> <code>${maxPortfolioLosses} consecutive losses</code> hit across portfolio (Live Trading).`,
-          `<b>Action:</b> Entire bot paused for <b>${pauseMins} minutes (${pauseHours}h)</b> to let market turbulence settle.`,
-          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `<i>Active positions will continue monitoring to TP/SL. Send /resume to override.</i>`
-        ].join('\n')).catch(() => null);
       }
     }
   }
@@ -1328,44 +1355,55 @@ const telegramHandlers = {
         const paperStratTag = ` (${rec.lastPaperStrat || 'Strategy SMC'})`;
         const liveStratTag = ` (${rec.lastLiveStrat || '5B Pro'})`;
 
+        const displaySym = sym.replace(/^(5B|SMC)_/, '');
+
         if (isLiveLocked) {
           const reason = (rec.consecutiveLosses || 0) >= 2 ? `${rec.consecutiveLosses} consecutive` : `${rec.dailyLosses} daily`;
-          cooldowns.push(`• <code>${sym}</code>: 🛑 <b>LIVE LOCKED FOR TODAY${liveStratTag}</b> (${reason} losses hit — halts until 12 AM UTC)`);
+          cooldowns.push(`• <code>${displaySym}</code>: 🛑 <b>LIVE LOCKED FOR TODAY${liveStratTag}</b> (${reason} losses hit — halts until 12 AM UTC)`);
         } else if (rec.pauseUntil && now < rec.pauseUntil) {
           const rem = Math.ceil((rec.pauseUntil - now) / 60000);
           if (rec.isWinLocked) {
-            cooldowns.push(`• <code>${sym}</code>: 🏆 <b>2-WIN PROFIT LOCK${liveStratTag}</b> (${rem}m left — banked ${rec.consecutiveWins || 2} wins)`);
+            cooldowns.push(`• <code>${displaySym}</code>: 🏆 <b>2-WIN PROFIT LOCK${liveStratTag}</b> (${rem}m left — banked ${rec.consecutiveWins || 2} wins)`);
           } else {
-            cooldowns.push(`• <code>${sym}</code>: ⏳ Live${liveStratTag} ${rem}m cooldown (${rec.dailyLosses || 0} loss today)`);
+            cooldowns.push(`• <code>${displaySym}</code>: ⏳ Live${liveStratTag} ${rem}m cooldown (${rec.dailyLosses || 0} loss today)`);
           }
         }
 
         if (isPaperLocked) {
           const reason = (rec.paperConsecutiveLosses || 0) >= 2 ? `${rec.paperConsecutiveLosses} consecutive` : `${rec.paperDailyLosses} daily`;
-          cooldowns.push(`• <code>${sym}</code>: 🔬 <b>PAPER LOCKED FOR TODAY${paperStratTag}</b> (${reason} paper losses hit)`);
+          cooldowns.push(`• <code>${displaySym}</code>: 🔬 <b>PAPER LOCKED FOR TODAY${paperStratTag}</b> (${reason} paper losses hit)`);
         } else if (rec.paperPauseUntil && now < rec.paperPauseUntil) {
           const rem = Math.ceil((rec.paperPauseUntil - now) / 60000);
           if (rec.isPaperWinLocked) {
-            cooldowns.push(`• <code>${sym}</code>: 🔬 🏆 <b>PAPER 2-WIN PROFIT LOCK${paperStratTag}</b> (${rem}m left)`);
+            cooldowns.push(`• <code>${displaySym}</code>: 🔬 🏆 <b>PAPER 2-WIN PROFIT LOCK${paperStratTag}</b> (${rem}m left)`);
           } else {
-            cooldowns.push(`• <code>${sym}</code>: 🔬 Paper${paperStratTag} ${rem}m cooldown (${rec.paperDailyLosses || 0} loss today)`);
+            cooldowns.push(`• <code>${displaySym}</code>: 🔬 Paper${paperStratTag} ${rem}m cooldown (${rec.paperDailyLosses || 0} loss today)`);
           }
         }
 
         if (rec.trapZone && now < rec.trapZone.expiresAt) {
           const rem = Math.ceil((rec.trapZone.expiresAt - now) / 60000);
-          cooldowns.push(`• <code>${sym}</code>: 🛡️ Trap Armor [${rec.trapZone.zoneMin.toFixed(2)} - ${rec.trapZone.zoneMax.toFixed(2)}] (${rem}m left)`);
+          cooldowns.push(`• <code>${displaySym}</code>: 🛡️ Trap Armor [${rec.trapZone.zoneMin.toFixed(2)} - ${rec.trapZone.zoneMax.toFixed(2)}] (${rem}m left)`);
         }
       }
     }
 
     let stateBadge = '🟢 <b>ACTIVE & SCANNING</b>';
+    const is5bInPause = dynamicState.desk5b && dynamicState.desk5b.pauseUntil && now < dynamicState.desk5b.pauseUntil;
+    const isSmcInPause = dynamicState.deskSMC && dynamicState.deskSMC.pauseUntil && now < dynamicState.deskSMC.pauseUntil;
+
     if (dynamicState.isManuallyPaused) stateBadge = '⏸️ <b>MANUALLY PAUSED (/resume to restart)</b>';
     else if (dynamicState.dailyTargetLocked) stateBadge = '🎯 <b>DAILY TARGET LOCKED (Resumes 12 AM)</b>';
     else if (dynamicState.dailyLossLocked) stateBadge = '🛑 <b>DAILY MAX LOSS LOCKED (Resumes 12 AM)</b>';
-    else if (dynamicState.portfolioPauseUntil && now < dynamicState.portfolioPauseUntil) {
-      const rem = Math.ceil((dynamicState.portfolioPauseUntil - now) / 60000);
-      stateBadge = `⚠️ <b>PORTFOLIO COOLDOWN (${rem}m remaining)</b>`;
+    else if (is5bInPause && isSmcInPause) {
+      const rem = Math.max(Math.ceil((dynamicState.desk5b.pauseUntil - now) / 60000), Math.ceil((dynamicState.deskSMC.pauseUntil - now) / 60000));
+      stateBadge = `⚠️ <b>BOTH DESKS IN COOLDOWN (${rem}m remaining)</b>`;
+    } else if (is5bInPause) {
+      const rem = Math.ceil((dynamicState.desk5b.pauseUntil - now) / 60000);
+      stateBadge = `⚠️ <b>5B PRO COOLDOWN (${rem}m) | SMC ACTIVE</b>`;
+    } else if (isSmcInPause) {
+      const rem = Math.ceil((dynamicState.deskSMC.pauseUntil - now) / 60000);
+      stateBadge = `⚠️ <b>SMC COOLDOWN (${rem}m) | 5B PRO ACTIVE</b>`;
     }
 
     const pnlSign = report.netUSD >= 0 ? '+' : '-';
@@ -1614,11 +1652,15 @@ const telegramHandlers = {
       dynamicState.desk5b.targetLocked = false;
       dynamicState.desk5b.lossLocked = false;
       dynamicState.desk5b.isPaused = false;
+      dynamicState.desk5b.consecutiveLosses = 0;
+      dynamicState.desk5b.pauseUntil = 0;
     }
     if (dynamicState.deskSMC) {
       dynamicState.deskSMC.targetLocked = false;
       dynamicState.deskSMC.lossLocked = false;
       dynamicState.deskSMC.isPaused = false;
+      dynamicState.deskSMC.consecutiveLosses = 0;
+      dynamicState.deskSMC.pauseUntil = 0;
     }
     if (dynamicState.masterAccount) {
       dynamicState.masterAccount.dailyLossLocked = false;
@@ -3456,20 +3498,6 @@ async function monitorMarket() {
     return;
   }
 
-  // Check if portfolio is in global consecutive loss cooldown
-  if (dynamicState.portfolioPauseUntil && nowMs < dynamicState.portfolioPauseUntil) {
-    const remMins = Math.ceil((dynamicState.portfolioPauseUntil - nowMs) / 60000);
-    console.log(`\n⚠️ [PORTFOLIO COOLDOWN] 3 consecutive losses hit across bot. Paused for ${remMins}m more. Monitoring active positions...`);
-    for (const sym of Object.keys(config.SYMBOLS)) {
-      const ltf = await getCandles(sym, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
-      if (ltf) {
-        await checkActiveTradesForSymbol(sym, ltf);
-        await checkShadowTradesForSymbol(sym, ltf);
-      }
-    }
-    return;
-  }
-
   const isBoth = dynamicState.activeStrategy === 'BOTH';
   const isTriEngine = dynamicState.activeStrategy === 'TRI_ENGINE' || dynamicState.activeStrategy === 'ALL';
   const isGlobalPaper = dynamicState.executionMode === 'PAPER';
@@ -3502,10 +3530,13 @@ async function monitorMarket() {
       // For Strategy SMC (6PRO), BOOM150N and CRASH150N are promoted to active pairs (not incubator / monitorOnly)
       const is6proMonitorOnly = Boolean(symConfig.monitorOnly && symbol !== 'BOOM150N' && symbol !== 'CRASH150N');
 
-      // Independent circuit breaker locks
+      // Independent circuit breaker locks & independent desk consecutive loss cooldowns
       const masterLocked = Boolean(dynamicState.masterAccount && dynamicState.masterAccount.dailyLossLocked);
-      const is5bLockedState = masterLocked || (dynamicState.desk5b && (dynamicState.desk5b.targetLocked || dynamicState.desk5b.lossLocked));
-      const is6proLockedState = masterLocked || (dynamicState.deskSMC && (dynamicState.deskSMC.targetLocked || dynamicState.deskSMC.lossLocked));
+      const is5bInDeskPause = Boolean(dynamicState.desk5b && dynamicState.desk5b.pauseUntil && nowMs < dynamicState.desk5b.pauseUntil);
+      const is6proInDeskPause = Boolean(dynamicState.deskSMC && dynamicState.deskSMC.pauseUntil && nowMs < dynamicState.deskSMC.pauseUntil);
+
+      const is5bLockedState = masterLocked || is5bInDeskPause || (dynamicState.desk5b && (dynamicState.desk5b.targetLocked || dynamicState.desk5b.lossLocked));
+      const is6proLockedState = masterLocked || is6proInDeskPause || (dynamicState.deskSMC && (dynamicState.deskSMC.targetLocked || dynamicState.deskSMC.lossLocked));
 
       // 🛡️ Midnight Alignment Buffer (00:00 - 00:15 UTC): Observe initial 15M candle completion before live orders
       const utcHours = now.getUTCHours();
@@ -3520,9 +3551,9 @@ async function monitorMarket() {
       const is5bEnabled = !dynamicState.is5bPaused && (isBoth || isTriEngine || dynamicState.activeStrategy === 'STRATEGY_5B');
       const isS6Enabled = !dynamicState.isS6Paused && (isTriEngine || dynamicState.activeStrategy === 'STRATEGY_6');
 
-      const cb6pro = isSymbolInCooldown(symbol, is6proPaper);
-      const cb5b = isSymbolInCooldown(symbol, is5bPaper);
-      const cbS6 = isSymbolInCooldown(symbol, isS6Paper);
+      const cb6pro = isSymbolInCooldown(symbol, is6proPaper, null, 'SMC');
+      const cb5b = isSymbolInCooldown(symbol, is5bPaper, null, '5B');
+      const cbS6 = isSymbolInCooldown(symbol, isS6Paper, null, '5B');
 
       const canRun6Pro = is6proEnabled && !cb6pro.inCooldown;
       const canRun5B = is5bEnabled && !cb5b.inCooldown;
@@ -3685,7 +3716,7 @@ async function monitorMarket() {
           }
 
           // 🛡️ Same-Zone Re-entry Trap Armor Check
-          const trapCheck = isSymbolInCooldown(symbol, strat.isPaper, setup.entry);
+          const trapCheck = isSymbolInCooldown(symbol, strat.isPaper, setup.entry, strat.id);
           if (trapCheck.inCooldown) {
             console.log(`  [TRAP SHIELD] ${symbol.padEnd(12)} | [${strat.displayName}] 🛑 Setup blocked: ${trapCheck.reason}`);
             saveAlertedSetup(setupId);
