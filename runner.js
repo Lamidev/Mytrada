@@ -701,15 +701,20 @@ async function recordTradeOutcomeToDesk(stratId, outcome, pnlUsd, pnlR) {
     await sendTelegramMessage(targetMsg);
   }
 
-  // 2. Check Desk Daily Max Loss Floor (-$698.79 / -3.0R)
-  if (desk.maxLossUSD && desk.netUSD <= -desk.maxLossUSD && !desk.lossLocked) {
+  // 2. Check Desk Daily Max Loss Floor (-$698.79 / -3.0R or 3 losses)
+  const maxLossLimit = dynamicState.maxLossMultiplier || 3;
+  const isLossBreached = (desk.maxLossUSD && desk.netUSD <= -desk.maxLossUSD) || 
+                         ((desk.losses || 0) >= maxLossLimit) ||
+                         (((desk.losses || 0) + (desk.paperLosses || 0)) >= maxLossLimit);
+
+  if (isLossBreached && !desk.lossLocked) {
     desk.lossLocked = true;
     saveDynamicState(dynamicState);
     const lossMsg = [
       `🛑 🔒 <b>[${deskName.toUpperCase()} — DAILY MAX LOSS REACHED]</b>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `💸 <b>Desk Net Loss:</b> <code>-$${Math.abs(desk.netUSD).toFixed(2)} USD (${desk.netR.toFixed(1)}R)</code>`,
-      `🛑 <b>Max Loss Floor:</b> <code>-$${desk.maxLossUSD.toFixed(2)} USD (${desk.losses} Losses)</code>`,
+      `🛑 <b>Max Loss Floor:</b> <code>-$${(desk.maxLossUSD || 698.79).toFixed(2)} USD (${desk.losses} Live / ${desk.paperLosses || 0} Paper Losses)</code>`,
       `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
       `🛡️ <b>Action:</b> <i>Circuit breaker engaged! Trading halted for ${deskName} until midnight UTC to protect capital. (Other desk continues normally if within limits).</i>`
     ].join('\n');
@@ -1220,6 +1225,52 @@ async function checkDailyMaxLossLock() {
   const todayStr = getLocalDateStr();
   if (!dynamicState || dynamicState.date !== todayStr) {
     dynamicState = loadDynamicState();
+  }
+
+  const maxLossLimit = dynamicState.maxLossMultiplier || 3;
+
+  // 1. Independent Desk 5B check
+  if (dynamicState.desk5b && !dynamicState.desk5b.lossLocked) {
+    const d5b = dynamicState.desk5b;
+    const is5bBreached = (d5b.maxLossUSD && d5b.netUSD <= -d5b.maxLossUSD) ||
+                         ((d5b.losses || 0) >= maxLossLimit) ||
+                         (((d5b.losses || 0) + (d5b.paperLosses || 0)) >= maxLossLimit);
+    if (is5bBreached) {
+      d5b.lossLocked = true;
+      saveDynamicState(dynamicState);
+      const msg = [
+        `🛑 🔒 <b>[STRATEGY 5B PRO — DAILY MAX LOSS REACHED]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `💸 <b>Desk Net Loss:</b> <code>-$${Math.abs(d5b.netUSD || 0).toFixed(2)} USD (${d5b.losses || 0} Live / ${d5b.paperLosses || 0} Paper Losses)</code>`,
+        `🛑 <b>Max Loss Floor:</b> <code>-$${(d5b.maxLossUSD || 698.79).toFixed(2)} USD (${maxLossLimit} Losses Cap)</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `🛡️ <b>Action:</b> <i>Trading halted for Strategy 5B Pro until midnight UTC to protect capital.</i>`
+      ].join('\n');
+      await sendTelegramMessage(msg);
+      console.log(`\n🛑 [DESK 5B LOSS LOCKED] Strategy 5B Pro reached daily max loss limit. Halted for today.\n`);
+    }
+  }
+
+  // 2. Independent Desk SMC check
+  if (dynamicState.deskSMC && !dynamicState.deskSMC.lossLocked) {
+    const dSmc = dynamicState.deskSMC;
+    const isSmcBreached = (dSmc.maxLossUSD && dSmc.netUSD <= -dSmc.maxLossUSD) ||
+                          ((dSmc.losses || 0) >= maxLossLimit) ||
+                          (((dSmc.losses || 0) + (dSmc.paperLosses || 0)) >= maxLossLimit);
+    if (isSmcBreached) {
+      dSmc.lossLocked = true;
+      saveDynamicState(dynamicState);
+      const msg = [
+        `🛑 🔒 <b>[STRATEGY SMC — DAILY MAX LOSS REACHED]</b>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `💸 <b>Desk Net Loss:</b> <code>-$${Math.abs(dSmc.netUSD || 0).toFixed(2)} USD (${dSmc.losses || 0} Live / ${dSmc.paperLosses || 0} Paper Losses)</code>`,
+        `🛑 <b>Max Loss Floor:</b> <code>-$${(dSmc.maxLossUSD || 698.79).toFixed(2)} USD (${maxLossLimit} Losses Cap)</code>`,
+        `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+        `🛡️ <b>Action:</b> <i>Trading halted for Strategy SMC until midnight UTC to protect capital.</i>`
+      ].join('\n');
+      await sendTelegramMessage(msg);
+      console.log(`\n🛑 [DESK SMC LOSS LOCKED] Strategy SMC reached daily max loss limit. Halted for today.\n`);
+    }
   }
 
   if (dynamicState.dailyLossLocked || !dynamicState.dailyMaxLossUSD || dynamicState.dailyMaxLossUSD <= 0) {
@@ -2223,6 +2274,13 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
         await updatePairHealthOnPaperClose(symbol, 'WIN', trade);
         recordSymbolTradeOutcome(symbol, 'WIN', true, trade);
 
+        const pStratWin = trade.strategy || 'Strategy 5B Pro';
+        const pDeskKeyWin = (pStratWin.includes('SMC') || pStratWin.includes('Sweep')) ? 'deskSMC' : 'desk5b';
+        if (dynamicState && dynamicState[pDeskKeyWin]) {
+          dynamicState[pDeskKeyWin].paperWins = (dynamicState[pDeskKeyWin].paperWins || 0) + 1;
+          saveDynamicState(dynamicState);
+        }
+
         const isMonitorOnly = config.SYMBOLS[symbol] && config.SYMBOLS[symbol].monitorOnly;
         const stratName = trade.strategy || 'Paper Sandbox';
         const bannerTitle = isMonitorOnly 
@@ -2312,6 +2370,27 @@ async function checkActiveTradesForSymbol(symbol, ltfCandles) {
 
         await updatePairHealthOnPaperClose(symbol, 'LOSS', trade);
         recordSymbolTradeOutcome(symbol, 'LOSS', true, trade);
+
+        const pStratLoss = trade.strategy || 'Strategy 5B Pro';
+        const pDeskKeyLoss = (pStratLoss.includes('SMC') || pStratLoss.includes('Sweep')) ? 'deskSMC' : 'desk5b';
+        if (dynamicState && dynamicState[pDeskKeyLoss]) {
+          dynamicState[pDeskKeyLoss].paperLosses = (dynamicState[pDeskKeyLoss].paperLosses || 0) + 1;
+          saveDynamicState(dynamicState);
+          // Check if total strategy failures (live + paper) reached maxLossMultiplier
+          const maxLimit = dynamicState.maxLossMultiplier || 3;
+          const desk = dynamicState[pDeskKeyLoss];
+          if (((desk.losses || 0) + (desk.paperLosses || 0)) >= maxLimit && !desk.lossLocked) {
+            desk.lossLocked = true;
+            saveDynamicState(dynamicState);
+            const stratDispName = pDeskKeyLoss === 'deskSMC' ? 'Strategy SMC' : 'Strategy 5B Pro';
+            await sendTelegramMessage(
+              `🛑 🔒 <b>[${stratDispName.toUpperCase()} — DAILY MAX LOSS REACHED]</b>\n` +
+              `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n` +
+              `💸 <b>Desk Losses:</b> <code>${desk.losses || 0} Live / ${desk.paperLosses || 0} Paper (${maxLimit} Total Losses)</code>\n` +
+              `🛑 <b>Action:</b> <i>Circuit breaker engaged! Trading halted for ${stratDispName} until midnight UTC to protect capital.</i>`
+            );
+          }
+        }
 
         const isMonitorOnly = config.SYMBOLS[symbol] && config.SYMBOLS[symbol].monitorOnly;
         const stratName = trade.strategy || 'Paper Sandbox';
