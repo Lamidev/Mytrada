@@ -543,7 +543,15 @@ async function updatePairHealthOnLiveClose(symbol, outcome, stratId = '5B') {
     rec.weeklyNetR = (rec.weeklyNetR || 0) - 1.0;
     rec.totalRealLosses = (rec.totalRealLosses || 0) + 1;
 
-    // 🛡️ SMART 2-LOSS AUTO-QUARANTINE RULES:
+    // 🛡️ SMART 2-LOSS AUTO-QUARANTINE RULES (Strategy 5B Pro Only):
+    // Strategy SMC is a selective, low-frequency sniper engine (1-2 setups/day per universe).
+    // Pair quarantine is disabled for SMC to avoid banishing pairs for days;
+    // SMC is instead protected by Symbol Daily Limit (2 losses/day max) and Desk Max Loss Floor (-3.0R).
+    if (stratKey === 'SMC') {
+      savePairHealthState(pairHealthState);
+      return;
+    }
+
     const isBufferThin = rec.weeklyNetR < 1.0;
     const shouldQuarantine = (rec.consecutiveLosses >= 2 && isBufferThin) || (rec.consecutiveLosses >= 3);
 
@@ -3543,7 +3551,8 @@ async function monitorMarket() {
       const utcMins = now.getUTCMinutes();
       const isMidnightBuffer = (utcHours === 0 && utcMins < 15);
 
-      const is6proPaper = isGlobalPaper || isMidnightBuffer || is6proLockedState || isSmcQuarantined || is6proMonitorOnly || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
+      // Strategy SMC is a selective, high-precision HTF sniper: all pairs trade 100% LIVE (no monitorOnly incubator, no quarantine)
+      const is6proPaper = isGlobalPaper || isMidnightBuffer || is6proLockedState || (dynamicState.mode6pro || 'PAPER') === 'PAPER';
       const is5bPaper = isGlobalPaper || isMidnightBuffer || is5bLockedState || is5bQuarantined || is5bMonitorOnly || (dynamicState.mode5b || 'PAPER') === 'PAPER';
       const isS6Paper = isGlobalPaper || isMidnightBuffer || is6proLockedState || is5bQuarantined || isS6MonitorOnly || (dynamicState.mode6 || 'PAPER') === 'PAPER';
 
