@@ -1216,6 +1216,8 @@ async function checkDailyTargetLock() {
 
   if (isExactTargetReached || isNearTargetSecured) {
     dynamicState.dailyTargetLocked = true;
+    if (dynamicState.desk5b) dynamicState.desk5b.targetLocked = true;
+    if (dynamicState.deskSMC) dynamicState.deskSMC.targetLocked = true;
     saveDynamicState(dynamicState);
 
     // 👑 Auto-close ALL active positions at current market to bank floating profit & eliminate all open risk
@@ -3555,8 +3557,9 @@ async function monitorMarket() {
       const is5bInDeskPause = Boolean(dynamicState.desk5b && dynamicState.desk5b.pauseUntil && nowMs < dynamicState.desk5b.pauseUntil);
       const is6proInDeskPause = Boolean(dynamicState.deskSMC && dynamicState.deskSMC.pauseUntil && nowMs < dynamicState.deskSMC.pauseUntil);
 
-      const is5bLockedState = masterLocked || is5bInDeskPause || (dynamicState.desk5b && (dynamicState.desk5b.targetLocked || dynamicState.desk5b.lossLocked));
-      const is6proLockedState = masterLocked || is6proInDeskPause || (dynamicState.deskSMC && (dynamicState.deskSMC.targetLocked || dynamicState.deskSMC.lossLocked));
+      const isDailyTargetLocked = Boolean(dynamicState.dailyTargetLocked);
+      const is5bLockedState = masterLocked || isDailyTargetLocked || is5bInDeskPause || (dynamicState.desk5b && (dynamicState.desk5b.targetLocked || dynamicState.desk5b.lossLocked));
+      const is6proLockedState = masterLocked || isDailyTargetLocked || is6proInDeskPause || (dynamicState.deskSMC && (dynamicState.deskSMC.targetLocked || dynamicState.deskSMC.lossLocked));
 
       // 🛡️ Midnight Alignment Buffer (00:00 - 00:15 UTC): Observe initial 15M candle completion before live orders
       const utcHours = now.getUTCHours();
