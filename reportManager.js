@@ -1320,12 +1320,14 @@ function generateDayTradeExport(targetDateStr) {
   const totalS6NetR = s6NetR + s6LiveNetR;
   const totalS6WR = totalS6Closed > 0 ? ((totalS6Wins / totalS6Closed) * 100).toFixed(1) : '0.0';
 
-  // Determine Leader among all strategies
+  // Determine Leader among active strategies
   const stratScores = [
-    { name: 'Strategy 6', netR: totalS6NetR },
     { name: 'Strategy 5B Pro', netR: total5bNetR },
     { name: 'Strategy SMC', netR: totalSmcNetR }
   ];
+  if (totalS6Closed > 0) {
+    stratScores.push({ name: 'Strategy 6', netR: totalS6NetR });
+  }
   stratScores.sort((a, b) => b.netR - a.netR);
   const leaderText = `${stratScores[0].name} leading (${stratScores[0].netR >= 0 ? '+' : ''}${stratScores[0].netR.toFixed(1)}R)`;
 
@@ -1337,24 +1339,39 @@ function generateDayTradeExport(targetDateStr) {
   sections.push(`MYTRADA FULL TRADE & SIGNAL AUDIT EXPORT (${targetDateStr})`);
   sections.push(`============================================================\n`);
 
-  sections.push(`--- [TRI-ENGINE STRATEGY HEAD-TO-HEAD PERFORMANCE AUDIT] ---`);
-  sections.push(`🛡️ [1] STRATEGY 6 (BREAK & RETEST CONTINUATION):`);
-  sections.push(`• Closed Trades: ${totalS6Closed} (${totalS6Wins}W / ${totalS6Losses}L • ${totalS6WR}% Win Rate)`);
-  sections.push(`• Net Impact: ${totalS6NetUSD >= 0 ? '+' : '-'}$${Math.abs(totalS6NetUSD).toFixed(2)} USD (${totalS6NetR >= 0 ? '+' : ''}${totalS6NetR.toFixed(1)}R)`);
-  if (s6PaperOpen.length > 0 || s6LiveOpen.length > 0) sections.push(`• Active/Open: ${s6PaperOpen.length + s6LiveOpen.length} trade(s) running`);
-  sections.push(``);
+  if (totalS6Closed > 0 || s6PaperOpen.length > 0 || s6LiveOpen.length > 0) {
+    sections.push(`--- [STRATEGY HEAD-TO-HEAD PERFORMANCE AUDIT] ---`);
+    sections.push(`🛡️ [1] STRATEGY 6 (BREAK & RETEST CONTINUATION):`);
+    sections.push(`• Closed Trades: ${totalS6Closed} (${totalS6Wins}W / ${totalS6Losses}L • ${totalS6WR}% Win Rate)`);
+    sections.push(`• Net Impact: ${totalS6NetUSD >= 0 ? '+' : '-'}$${Math.abs(totalS6NetUSD).toFixed(2)} USD (${totalS6NetR >= 0 ? '+' : ''}${totalS6NetR.toFixed(1)}R)`);
+    if (s6PaperOpen.length > 0 || s6LiveOpen.length > 0) sections.push(`• Active/Open: ${s6PaperOpen.length + s6LiveOpen.length} trade(s) running`);
+    sections.push(``);
 
-  sections.push(`🚀 [2] STRATEGY 5B PRO (DUAL-DESK LIVE / TEST SANDBOX):`);
-  sections.push(`• Closed Trades: ${total5bClosed} (${total5bWins}W / ${total5bLosses}L • ${total5bWR}% Win Rate)`);
-  sections.push(`• Net Impact: ${total5bNetUSD >= 0 ? '+' : '-'}$${Math.abs(total5bNetUSD).toFixed(2)} USD (${total5bNetR >= 0 ? '+' : ''}${total5bNetR.toFixed(1)}R)`);
-  if (s5bPaperOpen.length > 0 || s5bLiveOpen.length > 0) sections.push(`• Active/Open: ${s5bPaperOpen.length + s5bLiveOpen.length} trade(s) running`);
-  sections.push(``);
+    sections.push(`🚀 [2] STRATEGY 5B PRO (DUAL-DESK LIVE / TEST SANDBOX):`);
+    sections.push(`• Closed Trades: ${total5bClosed} (${total5bWins}W / ${total5bLosses}L • ${total5bWR}% Win Rate)`);
+    sections.push(`• Net Impact: ${total5bNetUSD >= 0 ? '+' : '-'}$${Math.abs(total5bNetUSD).toFixed(2)} USD (${total5bNetR >= 0 ? '+' : ''}${total5bNetR.toFixed(1)}R)`);
+    if (s5bPaperOpen.length > 0 || s5bLiveOpen.length > 0) sections.push(`• Active/Open: ${s5bPaperOpen.length + s5bLiveOpen.length} trade(s) running`);
+    sections.push(``);
 
-  sections.push(`🔬 [3] STRATEGY SMC (DUAL-DESK LIVE / TEST SANDBOX):`);
-  sections.push(`• Closed Trades: ${totalSmcClosed} (${totalSmcWins}W / ${totalSmcLosses}L • ${totalSmcWR}% Win Rate)`);
-  sections.push(`• Net Impact: ${totalSmcNetUSD >= 0 ? '+' : '-'}$${Math.abs(totalSmcNetUSD).toFixed(2)} USD (${totalSmcNetR >= 0 ? '+' : ''}${totalSmcNetR.toFixed(1)}R)`);
-  if (smcPaperOpen.length > 0 || smcLiveOpen.length > 0) sections.push(`• Active/Open: ${smcPaperOpen.length + smcLiveOpen.length} trade(s) running`);
-  sections.push(``);
+    sections.push(`🔬 [3] STRATEGY SMC (DUAL-DESK LIVE / TEST SANDBOX):`);
+    sections.push(`• Closed Trades: ${totalSmcClosed} (${totalSmcWins}W / ${totalSmcLosses}L • ${totalSmcWR}% Win Rate)`);
+    sections.push(`• Net Impact: ${totalSmcNetUSD >= 0 ? '+' : '-'}$${Math.abs(totalSmcNetUSD).toFixed(2)} USD (${totalSmcNetR >= 0 ? '+' : ''}${totalSmcNetR.toFixed(1)}R)`);
+    if (smcPaperOpen.length > 0 || smcLiveOpen.length > 0) sections.push(`• Active/Open: ${smcPaperOpen.length + smcLiveOpen.length} trade(s) running`);
+    sections.push(``);
+  } else {
+    sections.push(`--- [DUAL-DESK STRATEGY PERFORMANCE AUDIT (5B PRO + SMC)] ---`);
+    sections.push(`🚀 [1] STRATEGY 5B PRO (DUAL-DESK LIVE / TEST SANDBOX):`);
+    sections.push(`• Closed Trades: ${total5bClosed} (${total5bWins}W / ${total5bLosses}L • ${total5bWR}% Win Rate)`);
+    sections.push(`• Net Impact: ${total5bNetUSD >= 0 ? '+' : '-'}$${Math.abs(total5bNetUSD).toFixed(2)} USD (${total5bNetR >= 0 ? '+' : ''}${total5bNetR.toFixed(1)}R)`);
+    if (s5bPaperOpen.length > 0 || s5bLiveOpen.length > 0) sections.push(`• Active/Open: ${s5bPaperOpen.length + s5bLiveOpen.length} trade(s) running`);
+    sections.push(``);
+
+    sections.push(`🔬 [2] STRATEGY SMC (DUAL-DESK LIVE / TEST SANDBOX):`);
+    sections.push(`• Closed Trades: ${totalSmcClosed} (${totalSmcWins}W / ${totalSmcLosses}L • ${totalSmcWR}% Win Rate)`);
+    sections.push(`• Net Impact: ${totalSmcNetUSD >= 0 ? '+' : '-'}$${Math.abs(totalSmcNetUSD).toFixed(2)} USD (${totalSmcNetR >= 0 ? '+' : ''}${totalSmcNetR.toFixed(1)}R)`);
+    if (smcPaperOpen.length > 0 || smcLiveOpen.length > 0) sections.push(`• Active/Open: ${smcPaperOpen.length + smcLiveOpen.length} trade(s) running`);
+    sections.push(``);
+  }
 
   sections.push(`⚖️ STRATEGY VERDICT: ${leaderText}`);
   sections.push(`\n============================================================\n`);

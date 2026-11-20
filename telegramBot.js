@@ -736,15 +736,20 @@ async function handleCommand(rawText, handlers) {
         const captionLines = [
           `📋 <b>[MYTRADA TRADE EXPORT — ${exp.dateStr}]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `🛡️ <b>Strategy 6 (Break & Retest):</b>`,
-          `• <code>${s6Trades} Trades (${s6Wins}W / ${s6Losses}L • ${s6WR}% WR) • ${s6Sign}$${s6USD} (${s6RSign}${s6R}R)</code>`,
-          ``,
           `🚀 <b>Strategy 5B Pro (Sandbox/Live):</b>`,
           `• <code>${s5bTrades} Trades (${s5bWins}W / ${s5bLosses}L • ${s5bWR}% WR) • ${s5bSign}$${s5bUSD} (${s5bRSign}${s5bR}R)</code>`,
           ``,
           `🔬 <b>Strategy SMC:</b>`,
           `• <code>${smcTrades} Trades (${smcWins}W / ${smcLosses}L • ${smcWR}% WR) • ${smcSign}$${smcUSD} (${smcRSign}${smcR}R)</code>`
         ];
+
+        if (exp.s6Stats && (exp.s6Stats.trades > 0 || exp.s6Stats.open > 0)) {
+          captionLines.splice(2, 0,
+            `🛡️ <b>Strategy 6 (Break & Retest):</b>`,
+            `• <code>${s6Trades} Trades (${s6Wins}W / ${s6Losses}L • ${s6WR}% WR) • ${s6Sign}$${s6USD} (${s6RSign}${s6R}R)</code>`,
+            ``
+          );
+        }
 
         if (exp.otherPaperStats && (exp.otherPaperStats.trades > 0 || exp.otherPaperStats.open > 0)) {
           const otherSign = exp.otherPaperStats.netUSD >= 0 ? '+' : '-';
