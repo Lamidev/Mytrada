@@ -1200,6 +1200,12 @@ async function checkDailyTargetLock() {
     dynamicState = loadDynamicState();
   }
 
+  // 👑 In Dual-Desk mode, each desk is 100% independent and tracks its own target (+$908.43)
+  // in recordTradeOutcomeToDesk(). They are NEVER combined together to halt trading.
+  if (dynamicState.activeStrategy === 'BOTH') {
+    return;
+  }
+
   if (dynamicState.dailyTargetLocked || !dynamicState.dailyTargetUSD || dynamicState.dailyTargetUSD <= 0) {
     return;
   }
@@ -1403,18 +1409,25 @@ const telegramHandlers = {
     const isSmcInPause = dynamicState.deskSMC && dynamicState.deskSMC.pauseUntil && now < dynamicState.deskSMC.pauseUntil;
 
     if (dynamicState.isManuallyPaused) stateBadge = '⏸️ <b>MANUALLY PAUSED (/resume to restart)</b>';
+    else if (dynamicState.activeStrategy === 'BOTH' && dynamicState.desk5b && dynamicState.deskSMC) {
+      const d5b = dynamicState.desk5b;
+      const dSmc = dynamicState.deskSMC;
+      if (d5b.targetLocked && dSmc.targetLocked) stateBadge = '🎯 <b>BOTH DESK TARGETS LOCKED (Resumes 12 AM)</b>';
+      else if (d5b.targetLocked) stateBadge = '🎯 <b>5B PRO TARGET LOCKED | SMC ACTIVE</b>';
+      else if (dSmc.targetLocked) stateBadge = '🎯 <b>SMC TARGET LOCKED | 5B PRO ACTIVE</b>';
+      else if (is5bInPause && isSmcInPause) {
+        const rem = Math.max(Math.ceil((d5b.pauseUntil - now) / 60000), Math.ceil((dSmc.pauseUntil - now) / 60000));
+        stateBadge = `⚠️ <b>BOTH DESKS IN COOLDOWN (${rem}m remaining)</b>`;
+      } else if (is5bInPause) {
+        const rem = Math.ceil((d5b.pauseUntil - now) / 60000);
+        stateBadge = `⚠️ <b>5B PRO COOLDOWN (${rem}m) | SMC ACTIVE</b>`;
+      } else if (isSmcInPause) {
+        const rem = Math.ceil((dSmc.pauseUntil - now) / 60000);
+        stateBadge = `⚠️ <b>SMC COOLDOWN (${rem}m) | 5B PRO ACTIVE</b>`;
+      }
+    }
     else if (dynamicState.dailyTargetLocked) stateBadge = '🎯 <b>DAILY TARGET LOCKED (Resumes 12 AM)</b>';
     else if (dynamicState.dailyLossLocked) stateBadge = '🛑 <b>DAILY MAX LOSS LOCKED (Resumes 12 AM)</b>';
-    else if (is5bInPause && isSmcInPause) {
-      const rem = Math.max(Math.ceil((dynamicState.desk5b.pauseUntil - now) / 60000), Math.ceil((dynamicState.deskSMC.pauseUntil - now) / 60000));
-      stateBadge = `⚠️ <b>BOTH DESKS IN COOLDOWN (${rem}m remaining)</b>`;
-    } else if (is5bInPause) {
-      const rem = Math.ceil((dynamicState.desk5b.pauseUntil - now) / 60000);
-      stateBadge = `⚠️ <b>5B PRO COOLDOWN (${rem}m) | SMC ACTIVE</b>`;
-    } else if (isSmcInPause) {
-      const rem = Math.ceil((dynamicState.deskSMC.pauseUntil - now) / 60000);
-      stateBadge = `⚠️ <b>SMC COOLDOWN (${rem}m) | 5B PRO ACTIVE</b>`;
-    }
 
     const pnlSign = report.netUSD >= 0 ? '+' : '-';
     const targetStatus = (dynamicState.dailyTargetUSD && dynamicState.dailyTargetUSD > 0)
@@ -3508,7 +3521,7 @@ async function monitorMarket() {
     (dynamicState.activeStrategy === 'STRATEGY_5B' && !dynamicState.is5bPaused)
   );
 
-  if (dynamicState.dailyTargetLocked && !hasPaperEngineActive) {
+  if (dynamicState.activeStrategy !== 'BOTH' && dynamicState.dailyTargetLocked && !hasPaperEngineActive) {
     console.log(`\n🎯 [DAILY TARGET LOCKED] Profit target reached! Paused until midnight. Monitoring active positions...`);
     for (const sym of Object.keys(config.SYMBOLS)) {
       const ltf = await getCandles(sym, config.DEFAULT_LTF || '5m', 20, true).catch(() => null);
@@ -3557,7 +3570,8 @@ async function monitorMarket() {
       const is5bInDeskPause = Boolean(dynamicState.desk5b && dynamicState.desk5b.pauseUntil && nowMs < dynamicState.desk5b.pauseUntil);
       const is6proInDeskPause = Boolean(dynamicState.deskSMC && dynamicState.deskSMC.pauseUntil && nowMs < dynamicState.deskSMC.pauseUntil);
 
-      const isDailyTargetLocked = Boolean(dynamicState.dailyTargetLocked);
+      // In Dual-Desk mode, daily target is NEVER combined across desks — each desk locks strictly on its own target
+      const isDailyTargetLocked = dynamicState.activeStrategy !== 'BOTH' && Boolean(dynamicState.dailyTargetLocked);
       const is5bLockedState = masterLocked || isDailyTargetLocked || is5bInDeskPause || (dynamicState.desk5b && (dynamicState.desk5b.targetLocked || dynamicState.desk5b.lossLocked));
       const is6proLockedState = masterLocked || isDailyTargetLocked || is6proInDeskPause || (dynamicState.deskSMC && (dynamicState.deskSMC.targetLocked || dynamicState.deskSMC.lossLocked));
 
