@@ -18,7 +18,7 @@ module.exports = {
     "BOOM300N":  { name: "Boom 300 Index",  mode: "BOOM",  min_spikes: 3 }, // 👑 3-Spike Fast Index Exhaustion
     "BOOM900":   { name: "Boom 900 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
     "BOOM600":   { name: "Boom 600 Index",  mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper
-    "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM",  min_spikes: 2, monitorOnly: true }, // 🔬 Quarantined to Paper Monitor (0% WR protection)
+    "BOOM1000":  { name: "Boom 1000 Index", mode: "BOOM",  min_spikes: 2 }, // 👑 Standard 2-Spike Sniper (Promoted to Live)
     "BOOM150N":  { name: "Boom 150 Index",  mode: "BOOM",  min_spikes: 2, monitorOnly: true }, // 🔬 Incubation Paper Monitor ($0 Risk)
 
     // ── CRASH Pairs (BUY ONLY in Daily/4H/1H Bullish Trend + Price Action Displacement) ──
