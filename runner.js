@@ -744,10 +744,13 @@ async function recordTradeOutcomeToDesk(stratId, outcome, pnlUsd, pnlR) {
     await sendTelegramMessage(targetMsg);
   }
 
-  // 2. Check Desk Daily Max Loss Floor (-$698.79 / -3.0R or 3 live losses)
+  // 2. Check Desk Daily Max Loss Floor (-$698.79 / -3.0R net drawdown)
+  // Trigger ONLY if NET Realized PnL today is negative and breaches maxLossUSD or -3.0R floor
   const maxLossLimit = dynamicState.maxLossMultiplier || 3;
-  const isLossBreached = (desk.maxLossUSD && desk.netUSD <= -desk.maxLossUSD) || 
-                         ((desk.losses || 0) >= maxLossLimit);
+  const isLossBreached = (desk.netUSD < 0) && (
+    (desk.maxLossUSD && desk.netUSD <= -desk.maxLossUSD) || 
+    (typeof desk.netR === 'number' && desk.netR <= -maxLossLimit)
+  );
 
   if (isLossBreached && !desk.lossLocked) {
     desk.lossLocked = true;
@@ -1274,16 +1277,18 @@ async function checkDailyMaxLossLock() {
   // 1. Independent Desk 5B check (Live trades only)
   if (dynamicState.desk5b && !dynamicState.desk5b.lossLocked) {
     const d5b = dynamicState.desk5b;
-    const is5bBreached = (d5b.maxLossUSD && d5b.netUSD <= -d5b.maxLossUSD) ||
-                         ((d5b.losses || 0) >= maxLossLimit);
+    const is5bBreached = (d5b.netUSD < 0) && (
+      (d5b.maxLossUSD && d5b.netUSD <= -d5b.maxLossUSD) ||
+      (typeof d5b.netR === 'number' && d5b.netR <= -maxLossLimit)
+    );
     if (is5bBreached) {
       d5b.lossLocked = true;
       saveDynamicState(dynamicState);
       const msg = [
         `🛑 🔒 <b>[STRATEGY 5B PRO — DAILY MAX LOSS REACHED]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💸 <b>Desk Net Loss:</b> <code>-$${Math.abs(d5b.netUSD || 0).toFixed(2)} USD (${d5b.losses || 0} Live Losses)</code>`,
-        `🛑 <b>Max Loss Floor:</b> <code>-$${(d5b.maxLossUSD || 698.79).toFixed(2)} USD (${maxLossLimit} Losses Cap)</code>`,
+        `💸 <b>Desk Net Loss:</b> <code>-$${Math.abs(d5b.netUSD || 0).toFixed(2)} USD (${d5b.netR || 0}R)</code>`,
+        `🛑 <b>Max Loss Floor:</b> <code>-$${(d5b.maxLossUSD || 698.79).toFixed(2)} USD (-${maxLossLimit.toFixed(1)}R Floor)</code>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🛡️ <b>Action:</b> <i>Live trading halted for Strategy 5B Pro until midnight UTC to protect capital.</i>`
       ].join('\n');
@@ -1295,16 +1300,18 @@ async function checkDailyMaxLossLock() {
   // 2. Independent Desk SMC check (Live trades only)
   if (dynamicState.deskSMC && !dynamicState.deskSMC.lossLocked) {
     const dSmc = dynamicState.deskSMC;
-    const isSmcBreached = (dSmc.maxLossUSD && dSmc.netUSD <= -dSmc.maxLossUSD) ||
-                          ((dSmc.losses || 0) >= maxLossLimit);
+    const isSmcBreached = (dSmc.netUSD < 0) && (
+      (dSmc.maxLossUSD && dSmc.netUSD <= -dSmc.maxLossUSD) ||
+      (typeof dSmc.netR === 'number' && dSmc.netR <= -maxLossLimit)
+    );
     if (isSmcBreached) {
       dSmc.lossLocked = true;
       saveDynamicState(dynamicState);
       const msg = [
         `🛑 🔒 <b>[STRATEGY SMC — DAILY MAX LOSS REACHED]</b>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-        `💸 <b>Desk Net Loss:</b> <code>-$${Math.abs(dSmc.netUSD || 0).toFixed(2)} USD (${dSmc.losses || 0} Live Losses)</code>`,
-        `🛑 <b>Max Loss Floor:</b> <code>-$${(dSmc.maxLossUSD || 698.79).toFixed(2)} USD (${maxLossLimit} Losses Cap)</code>`,
+        `💸 <b>Desk Net Loss:</b> <code>-$${Math.abs(dSmc.netUSD || 0).toFixed(2)} USD (${dSmc.netR || 0}R)</code>`,
+        `🛑 <b>Max Loss Floor:</b> <code>-$${(dSmc.maxLossUSD || 698.79).toFixed(2)} USD (-${maxLossLimit.toFixed(1)}R Floor)</code>`,
         `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
         `🛡️ <b>Action:</b> <i>Live trading halted for Strategy SMC until midnight UTC to protect capital.</i>`
       ].join('\n');
