@@ -3335,90 +3335,78 @@ function detectStrategySMCSweepSetup(ltfCandles, htf1hCandles, htf4hCandles, dai
   const c1 = ltfCandles[ltfCandles.length - 2]; // preceding 5M bar
   const candleEpoch = c0.epoch || c0.time;
 
-  // 3. Liquidity Sweep Detection & 5M Absorption Rejection (Multi-Swing Pool Depth: Last 3 Swings)
+  // 3. Liquidity Sweep Detection & 5M Absorption Rejection (Immediate 15M Swing)
   if (mode === 'CRASH' && swingLows.length > 0) {
-    const candidateLows = swingLows.slice(-3); // Check up to 3 recent 15M swing lows
+    const targetLow = swingLows[swingLows.length - 1];
+    const sweptLow = (c1.low < targetLow || c0.low < targetLow) && c0.close > targetLow;
     const isBullishCandle = c0.close > c0.open;
 
-    if (isBullishCandle) {
-      for (let l = candidateLows.length - 1; l >= 0; l--) {
-        const targetLow = candidateLows[l];
-        const sweptLow = (c1.low < targetLow || c0.low < targetLow) && c0.close > targetLow;
+    if (sweptLow && isBullishCandle) {
+      const sweepExtreme = Math.min(c0.low, c1.low);
+      const entry = c0.close;
+      // 🛡️ Adaptive SMC Buffer: 0.6x ATR buffer with a 0.8x ATR floor for messy market noise protection
+      let slDist = (entry - sweepExtreme) + (atr * 0.6);
+      if (slDist < (atr * 0.8)) slDist = atr * 0.8;
+      if (slDist <= 0 || slDist > atr * 5.0) return null;
 
-        if (sweptLow) {
-          const sweepExtreme = Math.min(c0.low, c1.low);
-          const entry = c0.close;
-          // 🛡️ Adaptive SMC Buffer: 0.6x ATR buffer with a 0.8x ATR floor for messy market noise protection
-          let slDist = (entry - sweepExtreme) + (atr * 0.6);
-          if (slDist < (atr * 0.8)) slDist = atr * 0.8;
-          if (slDist <= 0 || slDist > atr * 5.0) continue;
+      const stopLoss = entry - slDist;
+      const tp = entry + (slDist * 1.3);
 
-          const stopLoss = entry - slDist;
-          const tp = entry + (slDist * 1.3);
-
-          return {
-            strategy: 'Strategy SMC',
-            direction: 'BUY',
-            type: 'bullish',
-            entry,
-            sl: stopLoss,
-            tp,
-            slDistance: slDist,
-            candleEpoch,
-            htf4hTrend: lastH1Close >= lastH1Ema ? 'bullish' : 'bearish',
-            htf1hTrend: 'bullish',
-            dailyTrend: 'bullish',
-            valuationLabel: `Macro Range: ${rangePct.toFixed(1)}% (Discount Sweep)`,
-            liquidityLabel: `15M Low Swept @ ${targetLow.toFixed(2)} (Absorption Rejection)`,
-            spikeCountLabel: '0 Spikes (Non-Spike SMC)',
-            confirmCount: 1,
-            isBlocked: false,
-            blockedReason: null
-          };
-        }
-      }
+      return {
+        strategy: 'Strategy SMC',
+        direction: 'BUY',
+        type: 'bullish',
+        entry,
+        sl: stopLoss,
+        tp,
+        slDistance: slDist,
+        candleEpoch,
+        htf4hTrend: lastH1Close >= lastH1Ema ? 'bullish' : 'bearish',
+        htf1hTrend: 'bullish',
+        dailyTrend: 'bullish',
+        valuationLabel: `Macro Range: ${rangePct.toFixed(1)}% (Discount Sweep)`,
+        liquidityLabel: `15M Low Swept @ ${targetLow.toFixed(2)} (Absorption Rejection)`,
+        spikeCountLabel: '0 Spikes (Non-Spike SMC)',
+        confirmCount: 1,
+        isBlocked: false,
+        blockedReason: null
+      };
     }
   } else if (mode === 'BOOM' && swingHighs.length > 0) {
-    const candidateHighs = swingHighs.slice(-3); // Check up to 3 recent 15M swing highs
+    const targetHigh = swingHighs[swingHighs.length - 1];
+    const sweptHigh = (c1.high > targetHigh || c0.high > targetHigh) && c0.close < targetHigh;
     const isBearishCandle = c0.close < c0.open;
 
-    if (isBearishCandle) {
-      for (let h = candidateHighs.length - 1; h >= 0; h--) {
-        const targetHigh = candidateHighs[h];
-        const sweptHigh = (c1.high > targetHigh || c0.high > targetHigh) && c0.close < targetHigh;
+    if (sweptHigh && isBearishCandle) {
+      const sweepExtreme = Math.max(c0.high, c1.high);
+      const entry = c0.close;
+      // 🛡️ Adaptive SMC Buffer: 0.6x ATR buffer with a 0.8x ATR floor for messy market noise protection
+      let slDist = (sweepExtreme - entry) + (atr * 0.6);
+      if (slDist < (atr * 0.8)) slDist = atr * 0.8;
+      if (slDist <= 0 || slDist > atr * 5.0) return null;
 
-        if (sweptHigh) {
-          const sweepExtreme = Math.max(c0.high, c1.high);
-          const entry = c0.close;
-          // 🛡️ Adaptive SMC Buffer: 0.6x ATR buffer with a 0.8x ATR floor for messy market noise protection
-          let slDist = (sweepExtreme - entry) + (atr * 0.6);
-          if (slDist < (atr * 0.8)) slDist = atr * 0.8;
-          if (slDist <= 0 || slDist > atr * 5.0) continue;
+      const stopLoss = entry + slDist;
+      const tp = entry - (slDist * 1.3);
 
-          const stopLoss = entry + slDist;
-          const tp = entry - (slDist * 1.3);
-
-          return {
-            strategy: 'Strategy SMC',
-            direction: 'SELL',
-            type: 'bearish',
-            entry,
-            sl: stopLoss,
-            tp,
-            slDistance: slDist,
-            candleEpoch,
-            htf4hTrend: lastH1Close <= lastH1Ema ? 'bearish' : 'bullish',
-            htf1hTrend: 'bearish',
-            dailyTrend: 'bearish',
-            valuationLabel: `Macro Range: ${rangePct.toFixed(1)}% (Premium Sweep)`,
-            liquidityLabel: `15M High Swept @ ${targetHigh.toFixed(2)} (Absorption Rejection)`,
-            spikeCountLabel: '0 Spikes (Non-Spike SMC)',
-            confirmCount: 1,
-            isBlocked: false,
-            blockedReason: null
-          };
-        }
-      }
+      return {
+        strategy: 'Strategy SMC',
+        direction: 'SELL',
+        type: 'bearish',
+        entry,
+        sl: stopLoss,
+        tp,
+        slDistance: slDist,
+        candleEpoch,
+        htf4hTrend: lastH1Close <= lastH1Ema ? 'bearish' : 'bullish',
+        htf1hTrend: 'bearish',
+        dailyTrend: 'bearish',
+        valuationLabel: `Macro Range: ${rangePct.toFixed(1)}% (Premium Sweep)`,
+        liquidityLabel: `15M High Swept @ ${targetHigh.toFixed(2)} (Absorption Rejection)`,
+        spikeCountLabel: '0 Spikes (Non-Spike SMC)',
+        confirmCount: 1,
+        isBlocked: false,
+        blockedReason: null
+      };
     }
   }
 
