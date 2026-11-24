@@ -697,57 +697,54 @@ async function handleCommand(rawText, handlers) {
       if (sendToChat) {
         await sendLongTelegramText(exp.content);
       } else {
-        const s6NetUSD = exp.s6Stats ? exp.s6Stats.netUSD : 0;
-        const s6NetR = exp.s6Stats ? exp.s6Stats.netR : 0;
-        const s6Sign = s6NetUSD >= 0 ? '+' : '-';
-        const s6RSign = s6NetR > 0 ? '+' : '';
+        const s5bLive = exp.s5bLiveStats || { trades: 0, wins: 0, losses: 0, winRate: '0.0', netUSD: 0, netR: 0 };
+        const s5bPaper = exp.s5bPaperStats || { trades: 0, wins: 0, losses: 0, winRate: '0.0', netUSD: 0, netR: 0 };
+        const smcLive = exp.smcLiveStats || { trades: 0, wins: 0, losses: 0, winRate: '0.0', netUSD: 0, netR: 0 };
+        const smcPaper = exp.smcPaperStats || { trades: 0, wins: 0, losses: 0, winRate: '0.0', netUSD: 0, netR: 0 };
 
-        const s5bNetUSD = exp.s5bStats ? exp.s5bStats.netUSD : (exp.liveStats ? exp.liveStats.netUSD : (exp.netUSD || 0));
-        const s5bNetR = exp.s5bStats ? exp.s5bStats.netR : (exp.liveStats ? exp.liveStats.netR : (exp.netR || 0));
-        const s5bSign = s5bNetUSD >= 0 ? '+' : '-';
-        const s5bRSign = s5bNetR > 0 ? '+' : '';
+        const s5bLiveSign = s5bLive.netUSD >= 0 ? '+' : '-';
+        const s5bLiveRSign = s5bLive.netR > 0 ? '+' : '';
+        const s5bPaperSign = s5bPaper.netUSD >= 0 ? '+' : '-';
+        const s5bPaperRSign = s5bPaper.netR > 0 ? '+' : '';
 
-        const smcNetUSD = exp.smcStats ? exp.smcStats.netUSD : 0;
-        const smcNetR = exp.smcStats ? exp.smcStats.netR : 0;
-        const smcSign = smcNetUSD >= 0 ? '+' : '-';
-        const smcRSign = smcNetR > 0 ? '+' : '';
+        const smcLiveSign = smcLive.netUSD >= 0 ? '+' : '-';
+        const smcLiveRSign = smcLive.netR > 0 ? '+' : '';
+        const smcPaperSign = smcPaper.netUSD >= 0 ? '+' : '-';
+        const smcPaperRSign = smcPaper.netR > 0 ? '+' : '';
 
-        const s6Trades = exp.s6Stats ? exp.s6Stats.trades : 0;
-        const s6Wins = exp.s6Stats ? exp.s6Stats.wins : 0;
-        const s6Losses = exp.s6Stats ? exp.s6Stats.losses : 0;
-        const s6WR = exp.s6Stats ? exp.s6Stats.winRate : '0.0';
-        const s6USD = Math.abs(s6NetUSD).toFixed(2);
-        const s6R = s6NetR.toFixed(1);
-
-        const s5bTrades = exp.s5bStats ? exp.s5bStats.trades : (exp.liveStats ? exp.liveStats.trades : (exp.liveCount || 0));
-        const s5bWins = exp.s5bStats ? exp.s5bStats.wins : (exp.liveStats ? exp.liveStats.wins : (exp.wins || 0));
-        const s5bLosses = exp.s5bStats ? exp.s5bStats.losses : (exp.liveStats ? exp.liveStats.losses : (exp.losses || 0));
-        const s5bWR = exp.s5bStats ? exp.s5bStats.winRate : (exp.liveStats ? exp.liveStats.winRate : '0.0');
-        const s5bUSD = Math.abs(s5bNetUSD).toFixed(2);
-        const s5bR = s5bNetR.toFixed(1);
-
-        const smcTrades = exp.smcStats ? exp.smcStats.trades : 0;
-        const smcWins = exp.smcStats ? exp.smcStats.wins : 0;
-        const smcLosses = exp.smcStats ? exp.smcStats.losses : 0;
-        const smcWR = exp.smcStats ? exp.smcStats.winRate : '0.0';
-        const smcUSD = Math.abs(smcNetUSD).toFixed(2);
-        const smcR = smcNetR.toFixed(1);
+        const totalLiveUSD = (s5bLive.netUSD || 0) + (smcLive.netUSD || 0);
+        const totalLiveR = (s5bLive.netR || 0) + (smcLive.netR || 0);
+        const totalLiveWins = (s5bLive.wins || 0) + (smcLive.wins || 0);
+        const totalLiveLosses = (s5bLive.losses || 0) + (smcLive.losses || 0);
+        const totalLiveTrades = totalLiveWins + totalLiveLosses;
+        const totalLiveWR = totalLiveTrades > 0 ? ((totalLiveWins / totalLiveTrades) * 100).toFixed(1) : '0.0';
+        const totalLiveSign = totalLiveUSD >= 0 ? '+' : '-';
+        const totalLiveRSign = totalLiveR > 0 ? '+' : '';
 
         const captionLines = [
           `📋 <b>[MYTRADA TRADE EXPORT — ${exp.dateStr}]</b>`,
           `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
-          `🚀 <b>Strategy 5B Pro (Sandbox/Live):</b>`,
-          `• <code>${s5bTrades} Trades (${s5bWins}W / ${s5bLosses}L • ${s5bWR}% WR) • ${s5bSign}$${s5bUSD} (${s5bRSign}${s5bR}R)</code>`,
+          `🚀 <b>DESK 1: STRATEGY 5B PRO</b>`,
+          `  ├ 💰 <b>LIVE:</b> <code>${s5bLive.trades} Trades (${s5bLive.wins}W / ${s5bLive.losses}L • ${s5bLive.winRate}% WR) • ${s5bLiveSign}$${Math.abs(s5bLive.netUSD).toFixed(2)} (${s5bLiveRSign}${s5bLive.netR.toFixed(1)}R)</code>`,
+          `  └ 🧪 <b>PAPER:</b> <code>${s5bPaper.trades} Trades (${s5bPaper.wins}W / ${s5bPaper.losses}L • ${s5bPaper.winRate}% WR) • ${s5bPaperSign}$${Math.abs(s5bPaper.netUSD).toFixed(2)} (${s5bPaperRSign}${s5bPaper.netR.toFixed(1)}R)</code>`,
           ``,
-          `🔬 <b>Strategy SMC:</b>`,
-          `• <code>${smcTrades} Trades (${smcWins}W / ${smcLosses}L • ${smcWR}% WR) • ${smcSign}$${smcUSD} (${smcRSign}${smcR}R)</code>`
+          `🔬 <b>DESK 2: STRATEGY SMC</b>`,
+          `  ├ 💰 <b>LIVE:</b> <code>${smcLive.trades} Trades (${smcLive.wins}W / ${smcLive.losses}L • ${smcLive.winRate}% WR) • ${smcLiveSign}$${Math.abs(smcLive.netUSD).toFixed(2)} (${smcLiveRSign}${smcLive.netR.toFixed(1)}R)</code>`,
+          `  └ 🧪 <b>PAPER:</b> <code>${smcPaper.trades} Trades (${smcPaper.wins}W / ${smcPaper.losses}L • ${smcPaper.winRate}% WR) • ${smcPaperSign}$${Math.abs(smcPaper.netUSD).toFixed(2)} (${smcPaperRSign}${smcPaper.netR.toFixed(1)}R)</code>`,
+          `<code>━━━━━━━━━━━━━━━━━━━━━━━━━━</code>`,
+          `💵 <b>TOTAL REAL MONEY TODAY:</b>`,
+          `• <code>${totalLiveSign}$${Math.abs(totalLiveUSD).toFixed(2)} USD (${totalLiveRSign}${totalLiveR.toFixed(1)}R • ${totalLiveWins}W / ${totalLiveLosses}L • ${totalLiveWR}% WR)</code>`
         ];
 
         if (exp.s6Stats && (exp.s6Stats.trades > 0 || exp.s6Stats.open > 0)) {
-          captionLines.splice(2, 0,
+          const s6NetUSD = exp.s6Stats.netUSD || 0;
+          const s6NetR = exp.s6Stats.netR || 0;
+          const s6Sign = s6NetUSD >= 0 ? '+' : '-';
+          const s6RSign = s6NetR > 0 ? '+' : '';
+          captionLines.splice(5, 0,
+            ``,
             `🛡️ <b>Strategy 6 (Break & Retest):</b>`,
-            `• <code>${s6Trades} Trades (${s6Wins}W / ${s6Losses}L • ${s6WR}% WR) • ${s6Sign}$${s6USD} (${s6RSign}${s6R}R)</code>`,
-            ``
+            `• <code>${exp.s6Stats.trades} Trades (${exp.s6Stats.wins}W / ${exp.s6Stats.losses}L • ${exp.s6Stats.winRate}% WR) • ${s6Sign}$${Math.abs(s6NetUSD).toFixed(2)} (${s6RSign}${s6NetR.toFixed(1)}R)</code>`
           );
         }
 
